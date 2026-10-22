@@ -111,7 +111,7 @@ impl Ui {
     /// Ease an animation value toward `target` and return it smoothed.
     fn animate(&mut self, id: &str, target: f32) -> f32 {
         let t = self.hover.entry(id.to_owned()).or_insert(0.0);
-        *t += (target - *t) * (1.0 - (-14.0 * self.dt).exp());
+        *t += (target - *t) * (1.0 - (-22.0 * self.dt).exp());
         let x = t.clamp(0.0, 1.0);
         x * x * (3.0 - 2.0 * x)
     }
@@ -122,7 +122,7 @@ impl Ui {
         let hot = hovered(r);
         let t = self.animate(id, if hot || focused { 1.0 } else { 0.0 });
         let dir = if side == Side::Left { -1.0 } else { 1.0 };
-        let x = r.x + dir * 16.0 * s * t;
+        let x = r.x + dir * 13.0 * s * t;
         let (y, w, h) = (r.y, r.w, r.h);
         let cut = h * 0.42;
         let slant = h * 0.35;
