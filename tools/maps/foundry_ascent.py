@@ -19,8 +19,9 @@ m = Map(
     players=(4, 12),
 )
 # Four corners: Blue tower base, Red hill, Green tower roof, Gold sniper nest.
-# Fair for 2 or 4 teams; with 3, two teams would share the left side.
-m.d["team_counts"] = [2, 4]
+# With 3 teams the corners would put two teams on the left, so Green moves
+# to the steps beside the centre perch: a triangle.
+m.d["team_counts"] = [2, 3, 4]
 
 # --- Ground and the lava pit -------------------------------------------------
 # The pit has steep walls: walk off the rim and you are in the slag. It is
@@ -67,9 +68,11 @@ for x, y in [(6, 32), (12.5, 26)]:
 for x, y in [(62, 30), (57.5, 21)]:
     m.spawn(x, y, 1)
 for x, y in [(6, 8), (12.5, 8)]:            # Green: the tower roof
-    m.spawn(x, y, 2)
+    m.spawn(x, y, 2, by_teams={"3": None})
 for x, y in [(57.5, 12), (61.5, 12)]:       # Gold: the sniper nest
     m.spawn(x, y, 3)
+for x, y in [(35.2, 11.5), (37.7, 14.5)]:   # Green with 3 teams: the right-hand steps
+    m.spawn(x, y, by_teams={"3": 2})
 for x, y in [(20, 32), (45, 31), (32, 18), (50, 24.5), (7, 20), (48, 17.5)]:
     m.spawn(x, y)
 

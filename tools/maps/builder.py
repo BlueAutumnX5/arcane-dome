@@ -38,8 +38,12 @@ class Map:
         return self
 
     # --- placements --------------------------------------------------------
-    def spawn(self, x, y, team=None):
-        self.d["spawns"].append({"x": x, "y": y, "team": team})
+    def spawn(self, x, y, team=None, by_teams=None):
+        """by_teams: other owners per team count, e.g. {"3": 2} or {"3": None}."""
+        sp = {"x": x, "y": y, "team": team}
+        if by_teams:
+            sp["by_teams"] = by_teams
+        self.d["spawns"].append(sp)
         return self
 
     def pickup(self, kind, x, y, weapon=None, respawn=20):

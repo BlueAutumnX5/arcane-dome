@@ -629,9 +629,11 @@ impl World {
     fn choose_spawn(&mut self, i: usize) -> SpawnDef {
         let team_mode = self.mode.is_team();
         let team = self.fighters[i].team;
+        // Spawns can change hands with the number of teams (see `by_teams`).
+        let n = if team_mode { self.num_sides() } else { 0 };
         let own = |s: &&SpawnDef| {
             if team_mode {
-                s.team == team
+                s.team_for(n) == team
             } else {
                 s.team.is_none()
             }
@@ -643,7 +645,7 @@ impl World {
                 .map
                 .spawns
                 .iter()
-                .filter(|s| s.team.is_none())
+                .filter(|s| s.team.is_none() && s.team_for(n).is_none())
                 .copied()
                 .collect();
         }

@@ -47,11 +47,50 @@ pub struct SpawnDef {
     /// `None` = free-for-all spawn.
     #[serde(default)]
     pub team: Option<u8>,
+    /// Different owners in matches with a given number of teams, say
+    /// `{"3": 2}` (team 2's in 3-team matches) or `{"3": null}` (nobody's).
+    #[serde(default)]
+    pub by_teams: ByTeams,
 }
 
 impl SpawnDef {
     pub fn feet(&self) -> Vec2 {
         vec2(self.x, self.y)
+    }
+
+    /// The team this spawn belongs to in a match with `teams` teams
+    /// (0 = free-for-all, which uses `team` as is).
+    pub fn team_for(&self, teams: usize) -> Option<u8> {
+        match teams.checked_sub(2).and_then(|k| self.by_teams.0.get(k)) {
+            Some(Some(owner)) => *owner,
+            _ => self.team,
+        }
+    }
+}
+
+/// Per team count (2, 3, 4) overrides of a spawn's team: outer `None` =
+/// no override, `Some(None)` = nobody's spawn at that count.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ByTeams(pub [Option<Option<u8>>; 3]);
+
+impl<'de> Deserialize<'de> for ByTeams {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = BTreeMap::<String, Option<u8>>::deserialize(d)?;
+        let mut out = ByTeams::default();
+        for (count, team) in raw {
+            let k = match count.as_str() {
+                "2" => 0,
+                "3" => 1,
+                "4" => 2,
+                other => {
+                    return Err(serde::de::Error::custom(format!(
+                        "by_teams keys are team counts \"2\", \"3\" or \"4\" (got \"{other}\")"
+                    )));
+                }
+            };
+            out.0[k] = Some(team);
+        }
+        Ok(out)
     }
 }
 
@@ -773,8 +812,29 @@ pub fn parse_map(
             "spawns: needs at least 4 free-for-all spawns (team null), found {ffa}"
         ));
     }
-    // Team counts: every team in a supported count needs its own spawns.
-    let with_spawns = counts.iter().take_while(|&&n| n >= 2).count() as u8;
+    // Team counts: in a match with n teams, every team below n needs at
+    // least 2 spawns (after the spawns' `by_teams` overrides).
+    let fair_for = |n: usize| {
+        (0..n).all(|t| {
+            map.spawns
+                .iter()
+                .filter(|s| s.team_for(n) == Some(t as u8))
+                .count()
+                >= 2
+        })
+    };
+    for (i, s) in map.spawns.iter().enumerate() {
+        for n in 2..=4 {
+            if let Some(Some(t)) = s.by_teams.0[n - 2]
+                && t as usize >= n
+            {
+                errs.push(format!(
+                    "spawns[{i}].by_teams: team {t} does not exist in a {n} team match"
+                ));
+            }
+        }
+    }
+    let with_spawns = (2..=4).filter(|&n| fair_for(n)).max().unwrap_or(2) as u8;
     map.team_counts = match &file_team_counts {
         Some(list) => {
             let mut list = list.clone();
@@ -783,9 +843,9 @@ pub fn parse_map(
             for &n in &list {
                 if !(2..=4).contains(&n) {
                     errs.push(format!("team_counts: {n} is not 2, 3 or 4"));
-                } else if n > with_spawns {
+                } else if !fair_for(n as usize) {
                     errs.push(format!(
-                        "team_counts: {n} teams needs spawns for teams 0 to {}",
+                        "team_counts: {n} teams needs 2 spawns each for teams 0 to {}",
                         n - 1
                     ));
                 }
@@ -795,7 +855,9 @@ pub fn parse_map(
             }
             list
         }
-        None => (2..=with_spawns.max(2)).collect(),
+        None => (2..=with_spawns)
+            .filter(|&n| fair_for(n as usize))
+            .collect(),
     };
 
     // Pickups.
@@ -1153,10 +1215,51 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            all.contains("team_counts: 3 teams needs spawns for teams 0 to 2"),
+            all.contains("team_counts: 3 teams needs 2 spawns each for teams 0 to 2"),
             "{all}"
         );
         assert!(all.contains("team_counts: 5 is not 2, 3 or 4"), "{all}");
+    }
+
+    #[test]
+    fn spawns_can_change_teams_with_the_team_count() {
+        // Four corners for 2 and 4 teams; for 3 teams, team 2 moves from its
+        // corner to two free spawns in the middle.
+        let spawns = r#"[{"x":1,"y":5,"team":0},{"x":2,"y":5,"team":0},
+            {"x":7,"y":5,"team":1},{"x":8,"y":5,"team":1},
+            {"x":1,"y":2,"team":2,"by_teams":{"3":null}},{"x":2,"y":2,"team":2,"by_teams":{"3":null}},
+            {"x":7,"y":2,"team":3},{"x":8,"y":2,"team":3},
+            {"x":4,"y":5,"by_teams":{"3":2}},{"x":5,"y":5,"by_teams":{"3":2}},
+            {"x":3,"y":5},{"x":6,"y":5}]"#;
+        let map = parse(&grid_json(GRID, spawns, "[]")).unwrap();
+        assert_eq!(map.team_counts, vec![2, 3, 4]);
+        let owners = |n| map.spawns.iter().map(|s| s.team_for(n)).collect::<Vec<_>>();
+        assert_eq!(owners(3)[4], None);
+        assert_eq!(owners(3)[8], Some(2));
+        assert_eq!(owners(4)[4], Some(2));
+        assert_eq!(owners(4)[8], None);
+        assert_eq!(owners(0)[8], None, "free-for-all keeps it a free spawn");
+        // Without the middle spawns, 3 teams would lack team 2 spawns.
+        let broken = spawns.replace(r#"{"3":2}"#, "{}");
+        assert_eq!(
+            parse(&grid_json(GRID, &broken, "[]")).unwrap().team_counts,
+            vec![2, 4]
+        );
+        // An owner that does not exist at that count.
+        let bad = spawns.replace(
+            r#"{"x":4,"y":5,"by_teams":{"3":2}}"#,
+            r#"{"x":4,"y":5,"by_teams":{"3":3}}"#,
+        );
+        let all = parse(&grid_json(GRID, &bad, "[]"))
+            .unwrap_err()
+            .iter()
+            .map(|e| e.message.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            all.contains("spawns[8].by_teams: team 3 does not exist in a 3 team match"),
+            "{all}"
+        );
     }
 
     #[test]
