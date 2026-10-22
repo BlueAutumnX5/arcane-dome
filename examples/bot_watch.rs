@@ -30,12 +30,12 @@ fn main() {
 
     for seed in 0..matches {
         for difficulty in [Difficulty::Easy, Difficulty::Hard] {
-            // MODE=team_deathmatch TEAMS=4 watches team matches (2 bots a team).
+            // MODE=elimination TEAMS=4 watches team matches (2 bots a team).
             let mode = std::env::var("MODE").unwrap_or_else(|_| "deathmatch".into());
             let teams: u8 = std::env::var("TEAMS")
                 .ok()
                 .and_then(|t| t.parse().ok())
-                .unwrap_or(2);
+                .unwrap_or(0);
             let cfg = MatchConfig {
                 map_id: map.clone(),
                 mode_id: mode,

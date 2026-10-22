@@ -11,12 +11,20 @@ fn shipped() -> Arc<GameData> {
     Arc::new(GameData::load(&assets).unwrap())
 }
 
-fn run_match(data: &Arc<GameData>, map: &str, mode: &str, seconds: u32, seed: u64) -> World {
+/// `teams` 0 plays free-for-all.
+fn run_match(
+    data: &Arc<GameData>,
+    map: &str,
+    mode: &str,
+    teams: u8,
+    seconds: u32,
+    seed: u64,
+) -> World {
     let cfg = MatchConfig {
         map_id: map.into(),
         mode_id: mode.into(),
         bots: 7,
-        teams: 2,
+        teams,
         team_bots: [3, 4, 0, 0],
         difficulty: Difficulty::Hard,
         team_difficulty: [Difficulty::Hard; 4],
@@ -43,16 +51,18 @@ fn bots_fight_on_every_map_and_mode() {
     let data = shipped();
     for map in &data.maps {
         for mode in &data.modes {
-            let w = run_match(&data, &map.id, &mode.id, 90, 7);
-            let kills: u32 = w.fighters.iter().map(|f| f.kills).sum();
-            assert!(
-                kills >= 2,
-                "{} / {}: only {kills} kills in 90s",
-                map.id,
-                mode.id
-            );
-            for f in &w.fighters {
-                assert!(f.feet.is_finite(), "{} escaped to {:?}", f.name, f.feet);
+            for teams in [0, 2] {
+                let w = run_match(&data, &map.id, &mode.id, teams, 90, 7);
+                let kills: u32 = w.fighters.iter().map(|f| f.kills).sum();
+                assert!(
+                    kills >= 2,
+                    "{} / {} ({teams} teams): only {kills} kills in 90s",
+                    map.id,
+                    mode.id
+                );
+                for f in &w.fighters {
+                    assert!(f.feet.is_finite(), "{} escaped to {:?}", f.name, f.feet);
+                }
             }
         }
     }
@@ -98,8 +108,8 @@ fn every_spawn_can_reach_every_spawn_pickup_and_object() {
 #[test]
 fn same_seed_same_match() {
     let data = shipped();
-    let a = run_match(&data, "foundry_ascent", "deathmatch", 20, 42);
-    let b = run_match(&data, "foundry_ascent", "deathmatch", 20, 42);
+    let a = run_match(&data, "foundry_ascent", "deathmatch", 0, 20, 42);
+    let b = run_match(&data, "foundry_ascent", "deathmatch", 0, 20, 42);
     assert_eq!(a.tick, b.tick);
     assert_eq!(a.fighters, b.fighters);
     assert_eq!(a.scores, b.scores);

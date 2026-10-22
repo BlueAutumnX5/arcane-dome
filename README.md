@@ -79,7 +79,7 @@ The second form checks one map and also writes its navigation graph as JSON.
 Unfinished maps live in `drafts/maps/` and are not loaded by the game.
 
 To watch bots play a map and report anyone stuck or falling into hazards (add
-`MODE=team_elimination TEAMS=4` for team matches, `VERBOSE=1` for details):
+`MODE=elimination TEAMS=4` for team matches, `VERBOSE=1` for details):
 
 ```bash
 cargo run --release --example bot_watch -- foundry_ascent 180 4

@@ -509,7 +509,7 @@ fn draw_ffa_scoreboard(world: &World, player: Option<usize>) {
     let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
     draw_rectangle(x, y, w, h, Color::new(0.05, 0.06, 0.09, 0.88));
     draw_rectangle_lines(x, y, w, h, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.2));
-    let title = format!("{}  -  {}", world.mode.display_name(), world.map.name);
+    let title = format!("{}  -  {}", world.mode.match_name(), world.map.name);
     text_center(&title, sw / 2.0, y + 36.0 * s, 26.0 * s, WHITE);
     let cols = [x + w - 230.0 * s, x + w - 150.0 * s, x + w - 70.0 * s];
     let hy = y + 70.0 * s;
@@ -543,7 +543,7 @@ fn draw_team_scoreboard(world: &World, player: Option<usize>) {
     let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
     draw_rectangle(x, y, w, h, Color::new(0.05, 0.06, 0.09, 0.88));
     draw_rectangle_lines(x, y, w, h, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.2));
-    let title = format!("{}  -  {}", world.mode.display_name(), world.map.name);
+    let title = format!("{}  -  {}", world.mode.match_name(), world.map.name);
     text_center(&title, sw / 2.0, y + 38.0 * s, 26.0 * s, WHITE);
 
     let head = Color::new(1.0, 1.0, 1.0, 0.55);

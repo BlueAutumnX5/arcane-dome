@@ -52,7 +52,8 @@ pub struct MatchConfig {
     pub bots: u32,
     /// Free-for-all: how good the bots are.
     pub difficulty: Difficulty,
-    /// Team modes: how many teams (2 to [`MAX_TEAMS`]).
+    /// How many teams: 0 (or 1) plays free-for-all, 2 to [`MAX_TEAMS`]
+    /// plays in teams, if the mode allows it.
     pub teams: u8,
     /// Team modes: bots on each team. Team 0 is the player's; the player is
     /// not counted here.
@@ -84,7 +85,7 @@ impl Default for MatchConfig {
             time_limit_s: None,
             bots: 5,
             difficulty: Difficulty::Normal,
-            teams: 2,
+            teams: 0,
             team_bots: [2, 3, 2, 2],
             team_difficulty: [Difficulty::Normal; MAX_TEAMS],
             powerups: true,
@@ -224,6 +225,18 @@ impl World {
                 map.id, mode.id
             ));
         }
+        // Teams are a setting, not a mode: stamp the actual count into this
+        // match's copy of the mode (1 = free-for-all), so `mode.is_team()`
+        // answers for this match.
+        let num_teams = if mode.teams >= 2 && config.teams >= 2 {
+            (config.teams as usize).clamp(2, (mode.teams as usize).min(MAX_TEAMS))
+        } else {
+            0
+        };
+        mode.teams = num_teams.max(1) as u8;
+        if num_teams > 0 && mode.team_score_limit.is_some() {
+            mode.score_limit = mode.team_score_limit;
+        }
         if let Some(s) = config.score_limit {
             mode.score_limit = Some(s.max(1));
         }
@@ -246,11 +259,6 @@ impl World {
                 n_weapons,
             ));
         }
-        let num_teams = if mode.is_team() {
-            (config.teams as usize).clamp(2, (mode.teams as usize).clamp(2, MAX_TEAMS))
-        } else {
-            0
-        };
         let bot_teams: Vec<u8> = if mode.is_team() {
             (0..num_teams)
                 .flat_map(|t| std::iter::repeat_n(t as u8, config.team_bots[t] as usize))

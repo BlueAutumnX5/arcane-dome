@@ -5,7 +5,7 @@
   "tile_size": 32,
   "size": [70, 40],
   "theme": {"sky_top": "#5f9fd6", "sky_bottom": "#dcefff", "far": "#ffffff", "skyline": "clouds", "sun": [0.18, 0.18], "sun_color": "#fff3c4"},
-  "modes": ["deathmatch", "team_deathmatch", "team_elimination"],
+  "modes": ["deathmatch", "elimination"],
   "recommended_players": [4, 10],
   "shapes": [
     {"kind": "hazard", "material": "void", "points": [[0, 37], [70, 37], [70, 40], [0, 40]], "dps": 500},

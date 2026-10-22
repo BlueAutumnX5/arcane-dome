@@ -33,15 +33,22 @@ enum Screen {
     Error(String),
 }
 
-/// Team counts offered for this map in this mode (never empty).
+/// Team settings offered for this map in this mode: 0 (teams off, every
+/// mode has it), then the team counts both the map and the mode support.
 fn allowed_team_counts(map: &crate::data::MapDef, mode: &crate::data::ModeDef) -> Vec<usize> {
-    let list: Vec<usize> = map
-        .team_counts
-        .iter()
-        .map(|&n| n as usize)
-        .filter(|&n| n <= (mode.teams as usize).min(MAX_TEAMS))
-        .collect();
-    if list.is_empty() { vec![2] } else { list }
+    let most = (mode.teams as usize).min(MAX_TEAMS);
+    std::iter::once(0)
+        .chain(
+            map.team_counts
+                .iter()
+                .map(|&n| n as usize)
+                .filter(|&n| n >= 2 && n <= most),
+        )
+        .collect()
+}
+
+fn teams_label(n: usize) -> String {
+    if n >= 2 { n.to_string() } else { "Off".into() }
 }
 
 /// Choices on the match setup screen.
@@ -97,7 +104,7 @@ pub async fn run() {
             time: 5,
             ffa_bots: 3,
             ffa_skill: 1,
-            teams: 2,
+            teams: 0,
             team_bots: [2, 3, 3, 3],
             team_skill: [1; MAX_TEAMS],
             powerups: true,
@@ -361,7 +368,12 @@ impl App {
                 .min_by(|&a, &b| (list[a] - v).abs().total_cmp(&(list[b] - v).abs()))
                 .unwrap_or(0)
         };
-        if let Some(s) = mode.score_limit {
+        let score = if self.setup.teams >= 2 {
+            mode.team_score_limit.or(mode.score_limit)
+        } else {
+            mode.score_limit
+        };
+        if let Some(s) = score {
             let l: Vec<f32> = SCORE_LIMITS.iter().map(|&v| v as f32).collect();
             self.setup.score = nearest(&l, s as f32);
         }
@@ -431,7 +443,7 @@ impl App {
             &map.name,
             Rect::new(pv.x, ny - 20.0 * s, pv.w, 28.0 * s),
             false,
-            true,
+            data.maps.len() > 1,
         );
         if is_key_pressed(KeyCode::Left) {
             map_delta = -1;
@@ -524,21 +536,20 @@ impl App {
         let rx = sw * 0.55 + 20.0 * s;
         let rw = sw - rx - 40.0 * s;
         let half = (rw - 30.0 * s) / 2.0;
-        let mut d_teams = 0;
         let mut d_bots = [0i32; MAX_TEAMS];
         let mut d_skill = [0i32; MAX_TEAMS];
         let (mut d_ffa_bots, mut d_ffa_skill) = (0, 0);
         let total;
-        if mode.is_team() {
-            let choices = allowed_team_counts(map, &mode);
-            d_teams = self.ui.stepper(
-                "s_teams",
-                "Teams",
-                &self.setup.teams.to_string(),
-                Rect::new(rx, top, rw, 34.0 * s),
-                false,
-                choices.len() > 1,
-            );
+        let choices = allowed_team_counts(map, &mode);
+        let d_teams = self.ui.stepper(
+            "s_teams",
+            "Teams",
+            &teams_label(self.setup.teams),
+            Rect::new(rx, top, rw, 34.0 * s),
+            false,
+            choices.len() > 1,
+        );
+        if self.setup.teams >= 2 {
             let box_h = 86.0 * s;
             for t in 0..self.setup.teams {
                 let y = top + 48.0 * s + t as f32 * (box_h + 10.0 * s);
@@ -581,7 +592,7 @@ impl App {
             total = 1 + self.setup.team_bots[..self.setup.teams].iter().sum::<u32>();
         } else {
             let box_h = 140.0 * s;
-            let y = top;
+            let y = top + 48.0 * s;
             let color = TEAM_COLORS[1];
             ui::panel(Rect::new(rx, y, rw, box_h), None);
             draw_rectangle(rx, y, 6.0 * s, box_h, color);
@@ -663,7 +674,9 @@ impl App {
             .position(|&n| n >= c.teams)
             .unwrap_or(allowed.len() - 1);
         let at = (at as i32 + d_teams).clamp(0, allowed.len() as i32 - 1) as usize;
+        let was_team = c.teams >= 2;
         c.teams = allowed[at];
+        let score_default_changed = was_team != (c.teams >= 2);
         for t in 0..MAX_TEAMS {
             // Your team may be just you; every other team needs a bot.
             let min = if t == 0 { 0 } else { 1 };
@@ -674,6 +687,20 @@ impl App {
         c.ffa_skill = step(c.ffa_skill, d_ffa_skill, Difficulty::ALL.len());
         if reset {
             self.reset_mode_defaults();
+        } else if score_default_changed {
+            // Teams on or off: the usual score limit differs (say 50 vs 25).
+            let mode = &data.modes[modes[self.setup.mode.min(modes.len() - 1)]];
+            let score = if self.setup.teams >= 2 {
+                mode.team_score_limit.or(mode.score_limit)
+            } else {
+                mode.score_limit
+            };
+            if let Some(v) = score {
+                self.setup.score = SCORE_LIMITS
+                    .iter()
+                    .position(|&l| l >= v)
+                    .unwrap_or(SCORE_LIMITS.len() - 1);
+            }
         }
 
         // Back (slides left) and Start (slides right).
@@ -842,7 +869,7 @@ impl App {
         if self.data.is_none() {
             return;
         }
-        // ARCANE_SHOT_MODE=team_deathmatch ARCANE_SHOT_TEAMS=4 preset the setup.
+        // ARCANE_SHOT_MODE=elimination ARCANE_SHOT_TEAMS=4 preset the setup.
         if let Ok(id) = std::env::var("ARCANE_SHOT_MODE") {
             let modes = self.modes_for_map();
             let data = self.data();

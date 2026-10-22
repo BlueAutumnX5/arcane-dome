@@ -26,9 +26,9 @@ the world) is planned for much later and is out of scope for now.
 - Matches are arena fights against AI bots, not linear levels.
 
 ## Modes (Milestone 1)
-- Deathmatch (free for all)
-- Team Deathmatch (2 to 4 teams: Blue, Red, Green, Gold)
-- Team Elimination (no respawn, last team standing, 2 to 4 teams)
+- Deathmatch: most kills wins
+- Elimination: no respawn, last one standing wins the round
+- Both play free-for-all or in 2 to 4 teams (Team Deathmatch, Team Elimination)
 
 Custom match screen: map, mode, score or time limit, number of teams, bots and difficulty per
 team (or bot count and difficulty in free-for-all). Every match and every elimination round
@@ -143,7 +143,7 @@ position of whoever stands there.
   "size": [64, 36],
   "theme": { "sky_top": "#150f12", "sky_bottom": "#5c2f1c", "far": "#2c1d1a",
              "skyline": "girders", "sun": [0.5, 0.95], "sun_color": "#ff8a3c" },
-  "modes": ["deathmatch", "team_deathmatch", "team_elimination"],
+  "modes": ["deathmatch", "elimination"],
   "recommended_players": [4, 12],
   "shapes": [
     { "kind": "solid",  "material": "rock",  "points": [[0, 32], [23, 32], [25.5, 34.2], [25.5, 36], [0, 36]] },
@@ -205,13 +205,14 @@ spawn, pickup and object. The old ASCII `grid` + `legend` format still loads
 
 ```json
 {
-  "deathmatch":       { "teams": 1, "respawn": true,  "score_limit": 25, "time_limit_s": 600 },
-  "team_deathmatch":  { "teams": 4, "respawn": true,  "score_limit": 50, "time_limit_s": 600 },
-  "team_elimination": { "teams": 4, "respawn": false, "rounds": 5,       "time_limit_s": 180 }
+  "deathmatch":  { "teams": 4, "respawn": true,  "score_limit": 25, "team_score_limit": 50, "time_limit_s": 600 },
+  "elimination": { "teams": 4, "respawn": false, "rounds": 5, "time_limit_s": 180 }
 }
 ```
 
-`teams`: 1 means free-for-all; 2 to 4 is a team mode allowing up to that many teams. The
-match setup offers the team counts that both the mode and the map support.
+`teams`: the most teams the mode can be played with (1 = free-for-all only). Teams are a
+match setting, not a separate mode: "Teams: Off" plays free-for-all, 2 to 4 plays Team
+Deathmatch or Team Elimination. The setup offers the team counts the mode and the map both
+support. `team_score_limit` is the default score limit when played in teams.
 
 

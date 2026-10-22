@@ -14,7 +14,10 @@ fn shipped_content_loads() {
     let data = shipped();
     assert_eq!(data.weapons.len(), 10);
     assert!(!data.maps.is_empty(), "at least one map");
-    assert_eq!(data.modes.len(), 3);
+    // Deathmatch and Elimination, each playable free-for-all or in teams.
+    let ids: Vec<&str> = data.modes.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, vec!["deathmatch", "elimination"]);
+    assert!(data.modes.iter().all(|m| m.teams == 4));
 }
 
 #[test]

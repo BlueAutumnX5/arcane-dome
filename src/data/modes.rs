@@ -14,13 +14,17 @@ pub struct ModeDef {
     /// One or two sentences for the match setup screen.
     #[serde(default)]
     pub description: String,
-    /// 1 = everyone for themselves; 2 to 4 = a team mode allowing up to
-    /// that many teams (the match setup picks how many).
+    /// Most teams the mode can be played with: 1 = free-for-all only, 2 to 4
+    /// = teams optional. In a running match the world's copy holds the actual
+    /// count (1 when teams are off).
     pub teams: u8,
     /// false = elimination rounds.
     pub respawn: bool,
     #[serde(default)]
     pub score_limit: Option<u32>,
+    /// Score limit when played in teams (default: `score_limit`).
+    #[serde(default)]
+    pub team_score_limit: Option<u32>,
     #[serde(default)]
     pub rounds: Option<u32>,
     /// Whole match when respawning, per round otherwise.
@@ -43,6 +47,15 @@ impl ModeDef {
             })
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    /// The name in a match: "Team Deathmatch" when played in teams.
+    pub fn match_name(&self) -> String {
+        if self.is_team() {
+            format!("Team {}", self.display_name())
+        } else {
+            self.display_name()
+        }
     }
 
     pub fn is_team(&self) -> bool {
@@ -91,13 +104,19 @@ mod tests {
     #[test]
     fn parses_spec_modes() {
         let text = r#"{
-          "deathmatch":       { "teams": 1, "respawn": true,  "score_limit": 25, "time_limit_s": 600 },
-          "team_elimination": { "teams": 2, "respawn": false, "rounds": 5,       "time_limit_s": 180 }
+          "deathmatch":  { "teams": 4, "respawn": true,  "score_limit": 25, "team_score_limit": 50, "time_limit_s": 600 },
+          "elimination": { "teams": 4, "respawn": false, "rounds": 5,       "time_limit_s": 180 }
         }"#;
-        let modes = parse_modes("modes.json", text).unwrap();
+        let mut modes = parse_modes("modes.json", text).unwrap();
         assert_eq!(modes.len(), 2);
-        assert_eq!(modes[1].display_name(), "Team Elimination");
+        assert_eq!(modes[1].display_name(), "Elimination");
         assert!(!modes[1].respawn);
+        assert_eq!(modes[0].team_score_limit, Some(50));
+        // In a match the count is stamped in: 1 = free-for-all.
+        modes[1].teams = 1;
+        assert_eq!(modes[1].match_name(), "Elimination");
+        modes[1].teams = 3;
+        assert_eq!(modes[1].match_name(), "Team Elimination");
     }
 
     #[test]

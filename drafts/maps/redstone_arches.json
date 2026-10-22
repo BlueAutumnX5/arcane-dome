@@ -5,7 +5,7 @@
   "tile_size": 32,
   "size": [72, 34],
   "theme": {"sky_top": "#2b3a67", "sky_bottom": "#f0a35e", "far": "#8a4b38", "skyline": "mountains", "sun": [0.76, 0.6], "sun_color": "#ffd27a"},
-  "modes": ["deathmatch", "team_deathmatch", "team_elimination"],
+  "modes": ["deathmatch", "elimination"],
   "recommended_players": [4, 12],
   "shapes": [
     {"kind": "solid", "material": "sand", "points": [[0, 30], [11, 30], [14, 29.4], [18, 30], [26, 30], [28.5, 31.6], [30.5, 32.5], [41.5, 32.5], [43.5, 31.6], [46, 30], [54, 30], [58, 29.4], [61, 30], [72, 30], [72, 34], [0, 34]]},

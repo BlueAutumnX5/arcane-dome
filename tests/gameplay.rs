@@ -29,9 +29,8 @@ const POWERUPS: &str = r##"{ "first_spawn_s": 1, "respawn_s": 120, "powerups": [
 ] }"##;
 
 const MODES: &str = r#"{
-  "deathmatch":       { "teams": 1, "respawn": true,  "score_limit": 3, "time_limit_s": 600 },
-  "team_deathmatch":  { "teams": 4, "respawn": true,  "score_limit": 5, "time_limit_s": 600 },
-  "team_elimination": { "teams": 4, "respawn": false, "rounds": 3,      "time_limit_s": 60 }
+  "deathmatch":  { "teams": 4, "respawn": true,  "score_limit": 3, "team_score_limit": 5, "time_limit_s": 600 },
+  "elimination": { "teams": 4, "respawn": false, "rounds": 3, "time_limit_s": 60 }
 }"#;
 
 fn arena_json() -> String {
@@ -47,7 +46,7 @@ fn arena_json() -> String {
     ];
     format!(
         r##"{{ "id": "arena", "name": "Arena",
-        "modes": ["deathmatch", "team_deathmatch", "team_elimination"],
+        "modes": ["deathmatch", "elimination"],
         "legend": {{ "#": "solid", ".": "air" }},
         "grid": {},
         "spawns": [
@@ -84,12 +83,21 @@ fn data() -> Arc<GameData> {
     Arc::new(data)
 }
 
+/// "team_deathmatch" means deathmatch with teams on, "deathmatch" without.
+fn mode_and_teams(mode: &str, teams: u8) -> (String, u8) {
+    match mode.strip_prefix("team_") {
+        Some(base) => (base.to_owned(), teams),
+        None => (mode.to_owned(), 0),
+    }
+}
+
 fn world(mode: &str, enemies: u32, friends: u32) -> World {
+    let (mode, teams) = mode_and_teams(mode, 2);
     let cfg = MatchConfig {
         map_id: "arena".into(),
-        mode_id: mode.into(),
+        mode_id: mode,
         bots: enemies,
-        teams: 2,
+        teams,
         team_bots: [friends, enemies, 0, 0],
         countdown_s: 0.0,
         ..Default::default()
@@ -525,10 +533,11 @@ fn powerup_spot_appears_after_the_first_delay() {
 fn teams_world(mode: &str, bots: &[u32]) -> World {
     let mut team_bots = [0; 4];
     team_bots[..bots.len()].copy_from_slice(bots);
+    let (mode, teams) = mode_and_teams(mode, bots.len() as u8);
     let cfg = MatchConfig {
         map_id: "arena".into(),
-        mode_id: mode.into(),
-        teams: bots.len() as u8,
+        mode_id: mode,
+        teams,
         team_bots,
         countdown_s: 0.0,
         ..Default::default()
@@ -565,18 +574,18 @@ fn team_count_is_capped_by_the_mode_and_needs_two_manned_teams() {
     // Asking for more teams than exist is capped at four.
     let cfg = MatchConfig {
         map_id: "arena".into(),
-        mode_id: "team_deathmatch".into(),
+        mode_id: "deathmatch".into(),
         teams: 9,
         team_bots: [1, 1, 1, 1],
         countdown_s: 0.0,
         ..Default::default()
     };
     assert_eq!(World::new(data(), cfg).unwrap().num_sides(), 4);
-    // Free-for-all ignores teams entirely.
+    // Teams off: free-for-all, whatever the team bot counts say.
     let cfg = MatchConfig {
         map_id: "arena".into(),
         mode_id: "deathmatch".into(),
-        teams: 4,
+        teams: 0,
         bots: 3,
         countdown_s: 0.0,
         ..Default::default()
@@ -586,7 +595,7 @@ fn team_count_is_capped_by_the_mode_and_needs_two_manned_teams() {
     // Bots only on one team and no player: not a match.
     let cfg = MatchConfig {
         map_id: "arena".into(),
-        mode_id: "team_deathmatch".into(),
+        mode_id: "deathmatch".into(),
         teams: 3,
         team_bots: [0, 3, 0, 0],
         include_player: false,
@@ -644,7 +653,7 @@ fn teams_without_spawns_use_free_spawns_near_each_other() {
     for seed in 0..20 {
         let cfg = MatchConfig {
             map_id: "arena".into(),
-            mode_id: "team_elimination".into(),
+            mode_id: "elimination".into(),
             teams: 4,
             team_bots: [1, 2, 2, 2],
             seed,
@@ -676,11 +685,12 @@ fn teams_without_spawns_use_free_spawns_near_each_other() {
 
 /// A world with the real pre-match countdown.
 fn counted_world(mode: &str) -> World {
+    let (mode, teams) = mode_and_teams(mode, 2);
     let cfg = MatchConfig {
         map_id: "arena".into(),
-        mode_id: mode.into(),
+        mode_id: mode,
         bots: 1,
-        teams: 2,
+        teams,
         team_bots: [0, 1, 0, 0],
         ..Default::default()
     };
@@ -742,4 +752,36 @@ fn every_elimination_round_starts_with_a_countdown() {
         "round 2 did not count down: {}",
         w.countdown
     );
+}
+
+#[test]
+fn free_for_all_elimination_goes_to_the_last_one_standing() {
+    let mut w = world("elimination", 2, 0);
+    assert!(!w.mode.is_team());
+    assert_eq!(w.mode.match_name(), "Elimination");
+    assert_eq!(w.num_sides(), 3);
+    run(&mut w, 5);
+    w.damage(1, Some(0), None, 500.0, false, false);
+    run(&mut w, 1);
+    assert_eq!(w.phase, Phase::Playing, "two still standing");
+    w.damage(2, Some(0), None, 500.0, false, false);
+    run(&mut w, 1);
+    assert!(matches!(
+        w.phase,
+        Phase::RoundOver {
+            winner: Some(0),
+            ..
+        }
+    ));
+    assert_eq!(w.round_wins, vec![1, 0, 0]);
+}
+
+#[test]
+fn teams_switch_the_mode_name_and_score_limit() {
+    let solo = world("deathmatch", 1, 0);
+    assert_eq!(solo.mode.match_name(), "Deathmatch");
+    assert_eq!(solo.mode.score_limit, Some(3));
+    let team = world("team_deathmatch", 1, 1);
+    assert_eq!(team.mode.match_name(), "Team Deathmatch");
+    assert_eq!(team.mode.score_limit, Some(5), "team_score_limit not used");
 }
