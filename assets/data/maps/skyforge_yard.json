@@ -66,8 +66,15 @@
     {"type":"thruster","x":41,"y":10,"height_tiles":8.5},
     {"type":"powerup_spot","x":28,"y":6},
     {"type":"weapon_station","x":34,"y":16},
-    {"type":"weapon_station","x":19,"y":16},
-    {"type":"shield_station","x":21,"y":6,"min_delay_s":90,"max_delay_s":120,"shield":100}
+    {"type":"weapon_station","x":20,"y":16},
+    {"type":"weapon_station","x":21,"y":6},
+    {"type":"weapon_station","x":46,"y":22},
+    {"type":"weapon_station","x":34,"y":6},
+    {"type":"weapon_station","x":8,"y":16},
+    {"type":"shield_station","x":9,"y":22},
+    {"type":"shield_station","x":33,"y":22},
+    {"type":"shield_station","x":23,"y":13},
+    {"type":"shield_station","x":22,"y":22}
   ],
   "bot_hints": [
     {"x": 27, "y": 6, "kind": "camp_spot"},

@@ -54,7 +54,7 @@ fn placeable(map: &MapDef, (x, y): (i32, i32)) -> bool {
     map.tile(x, y) == TileKind::Air && map.tile(x, y - 1) == TileKind::Air
 }
 
-fn place(map: &mut MapDef, idx: usize, rng: &mut Rng) -> Vec<MapObject> {
+fn place(map: &mut MapDef, _idx: usize, rng: &mut Rng) -> Vec<MapObject> {
     let mut taken: HashSet<(i32, i32)> = map.spawns.iter().map(|s| (s.x, s.y)).collect();
     taken.extend(map.pickups.iter().map(|p| (p.x, p.y)));
     let w = map.width as i32;
@@ -161,7 +161,9 @@ fn place(map: &mut MapDef, idx: usize, rng: &mut Rng) -> Vec<MapObject> {
         objects.push(object(ObjectKind::PowerupSpot, nav.nodes[n]));
     }
 
-    // Two weapon stations and one shield station, spread far apart.
+    // Stations, spread far apart. Shield stations are rarer than weapon
+    // stations: 1-4 small and 0-2 big per map, with weapon stations
+    // always outnumbering them.
     let mut avoid: Vec<(i32, i32)> = taken.iter().copied().collect();
     let pick = |rng: &mut Rng, avoid: &mut Vec<(i32, i32)>| -> Option<(i32, i32)> {
         let best = (0..60)
@@ -175,20 +177,27 @@ fn place(map: &mut MapDef, idx: usize, rng: &mut Rng) -> Vec<MapObject> {
         avoid.push(best);
         Some(best)
     };
-    for _ in 0..2 {
+    let small = 1 + rng.below(4);
+    let big = rng.below(3);
+    let weapons = small + big + 1 + rng.below(2);
+    for _ in 0..weapons {
         if let Some(c) = pick(rng, &mut avoid) {
             objects.push(object(ObjectKind::WeaponStation, c));
         }
     }
-    if let Some(c) = pick(rng, &mut avoid) {
-        let mut o = object(ObjectKind::ShieldStation, c);
-        // Alternate small and big shield stations between maps; big ones are rarer.
-        if idx % 2 == 1 {
+    for _ in 0..small {
+        if let Some(c) = pick(rng, &mut avoid) {
+            objects.push(object(ObjectKind::ShieldStation, c));
+        }
+    }
+    for _ in 0..big {
+        if let Some(c) = pick(rng, &mut avoid) {
+            let mut o = object(ObjectKind::ShieldStation, c);
             o.shield = Some(100.0);
             o.min_delay_s = Some(90.0);
             o.max_delay_s = Some(120.0);
+            objects.push(o);
         }
-        objects.push(o);
     }
     objects
 }

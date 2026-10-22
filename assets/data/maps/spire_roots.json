@@ -81,7 +81,11 @@
     {"type":"powerup_spot","x":11,"y":15},
     {"type":"weapon_station","x":23,"y":13},
     {"type":"weapon_station","x":32,"y":16},
-    {"type":"shield_station","x":13,"y":7}
+    {"type":"weapon_station","x":13,"y":7},
+    {"type":"weapon_station","x":13,"y":25},
+    {"type":"shield_station","x":38,"y":31},
+    {"type":"shield_station","x":24,"y":26},
+    {"type":"shield_station","x":9,"y":22}
   ],
   "bot_hints": []
 }

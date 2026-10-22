@@ -68,8 +68,10 @@
     {"type":"thruster","x":39,"y":10,"height_tiles":8.5},
     {"type":"powerup_spot","x":54,"y":10},
     {"type":"weapon_station","x":44,"y":3},
-    {"type":"weapon_station","x":33,"y":22},
-    {"type":"shield_station","x":20,"y":6,"min_delay_s":90,"max_delay_s":120,"shield":100}
+    {"type":"weapon_station","x":35,"y":16},
+    {"type":"weapon_station","x":20,"y":6},
+    {"type":"shield_station","x":34,"y":22},
+    {"type":"shield_station","x":45,"y":16,"min_delay_s":90,"max_delay_s":120,"shield":100}
   ],
   "bot_hints": []
 }

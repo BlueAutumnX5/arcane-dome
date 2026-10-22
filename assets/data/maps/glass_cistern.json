@@ -70,7 +70,14 @@
     {"type":"powerup_spot","x":37,"y":12},
     {"type":"weapon_station","x":37,"y":25},
     {"type":"weapon_station","x":50,"y":12},
-    {"type":"shield_station","x":7,"y":12,"min_delay_s":90,"max_delay_s":120,"shield":100}
+    {"type":"weapon_station","x":9,"y":12},
+    {"type":"weapon_station","x":22,"y":6},
+    {"type":"weapon_station","x":36,"y":6},
+    {"type":"weapon_station","x":32,"y":15},
+    {"type":"shield_station","x":42,"y":25},
+    {"type":"shield_station","x":22,"y":12},
+    {"type":"shield_station","x":6,"y":25},
+    {"type":"shield_station","x":25,"y":15}
   ],
   "bot_hints": [
     {"x": 29, "y": 6, "kind": "camp_spot"}
