@@ -60,7 +60,8 @@ fn clear(k: TileKind) -> bool {
 fn standable(map: &MapDef, x: i32, y: i32) -> bool {
     let k = map.tile(x, y);
     if k.is_slope() {
-        return open(map.tile(x, y - 1));
+        // Standing mid-ramp puts the head about two rows up.
+        return open(map.tile(x, y - 1)) && open(map.tile(x, y - 2));
     }
     let below = map.tile(x, y + 1);
     open(k) && open(map.tile(x, y - 1)) && below.is_floor() && !below.is_slope()

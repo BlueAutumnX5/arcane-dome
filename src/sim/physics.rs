@@ -125,7 +125,9 @@ pub fn move_body(
             let gap = surface - feet.y;
             // Below the ramp surface: push up onto it. Slightly above while
             // walking down it: snap down so we don't bounce.
-            if gap <= SKIN || (stick && gap < STICK_DIST) {
+            // Never snap up a ramp into rock overhead.
+            let fits = !overlaps_solid(map, vec2(feet.x, surface), size);
+            if fits && (gap <= SKIN || (stick && gap < STICK_DIST)) {
                 feet.y = surface;
                 vel.y = 0.0;
                 res.landed = true;

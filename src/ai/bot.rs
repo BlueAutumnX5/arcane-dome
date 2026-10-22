@@ -202,15 +202,20 @@ impl Brain {
             })
             .map(|o| o.id);
 
+        // Commit to a goal for a few seconds instead of re-deciding constantly
+        // (which made bots walk back and forth). Re-decide early only when the
+        // goal is done or gone, or health just got low.
         self.goal_timer -= DT;
-        if self.goal_timer <= 0.0 || !self.goal_valid(world, nav) {
+        let hurt =
+            me.health < LOW_HEALTH && !matches!(self.goal, Goal::Pickup(_) | Goal::Retreat(_));
+        if self.goal_timer <= 0.0 || hurt || !self.goal_valid(world, nav) {
             let goal = self.choose_goal(world, nav, target, nearest);
             if goal != self.goal {
                 self.path.clear();
                 self.replan = 0.0;
             }
             self.goal = goal;
-            self.goal_timer = 0.7;
+            self.goal_timer = self.rng.range(2.5, 4.0);
         }
 
         let eye = me.eye();
