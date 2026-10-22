@@ -13,7 +13,7 @@ fn shipped() -> GameData {
 fn shipped_content_loads() {
     let data = shipped();
     assert_eq!(data.weapons.len(), 10);
-    assert_eq!(data.maps.len(), 3);
+    assert!(data.maps.len() >= 3, "at least the three base maps");
     assert_eq!(data.modes.len(), 3);
 }
 

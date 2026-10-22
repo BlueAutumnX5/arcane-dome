@@ -38,6 +38,18 @@ OpenGL driver (for example `alsa-lib libx11 libxi mesa` on Arch).
 
 No code changes are needed to add a weapon or a map. Schemas are in [SPEC.md](SPEC.md).
 
+### Map variations
+
+`examples/mapgen.rs` roughens a hand-made base map into seeded variants (uneven
+ground, ragged edges, shifted platforms, asymmetric halves). Every result is
+checked with the bot nav graph so all spawns and pickups stay reachable.
+
+```bash
+cargo run --release --example mapgen
+```
+
+Edit the `VARIANTS` list in that file to add variants or change seeds.
+
 ## License
 
 Code is released under the [MIT License](LICENSE). Third-party assets keep their
