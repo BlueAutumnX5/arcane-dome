@@ -1,4 +1,5 @@
 use super::fighter::*;
+use super::gadgets::thruster_under;
 use super::physics::{self, hazard_dps, in_water, move_body, overlaps_solid, standing_on_hatch};
 use super::{DT, Input, ObjectState, Phase, Projectile, Rng};
 use crate::data::{
@@ -370,6 +371,20 @@ impl World {
                 f.on_ground = false;
             } else if f.in_water {
                 f.vel.y = -SWIM_VEL;
+            } else if let Some((pad, speed)) = (f.on_ground || f.coyote > 0.0)
+                .then(|| thruster_under(&self.objects, f.aabb()))
+                .flatten()
+            {
+                f.vel.y = -speed;
+                f.on_ground = false;
+                f.crouching = false;
+                f.coyote = 0.0;
+                f.air_jumps = 1;
+                f.jump_rising = false;
+                self.events.push(Event::Thrust {
+                    fighter: i,
+                    pos: pad,
+                });
             } else if f.on_ground || f.coyote > 0.0 {
                 f.vel.y = -JUMP_VEL;
                 f.coyote = 0.0;
@@ -412,13 +427,11 @@ impl World {
         if f.vel.y >= 0.0 {
             f.jump_rising = false;
         }
-        f.thrust_cooldown = (f.thrust_cooldown - DT).max(0.0);
         let hazard = hazard_dps(map, f.feet, size);
         let burn = f.burn;
 
         self.handle_weapons(i, &input);
         self.update_buffs(i);
-        self.check_thrusters(i);
         if input.ability {
             self.use_ability(i);
         }
@@ -511,8 +524,11 @@ impl World {
 
     pub(crate) fn spawn_fighter(&mut self, i: usize) {
         let spawn = self.choose_spawn(i);
+        // Stand on the floor, not half sunk into it on a slope.
+        let feet = spawn.feet();
+        let rest = self.map.rest_height(feet, STAND_SIZE.x * 0.5);
         let f = &mut self.fighters[i];
-        f.feet = spawn.feet();
+        f.feet = vec2(feet.x, rest.unwrap_or(feet.y));
         f.vel = Vec2::ZERO;
         f.health = MAX_HEALTH;
         f.alive = true;
@@ -535,7 +551,6 @@ impl World {
         f.buffs.clear();
         f.teleport_charges = 0;
         f.teleport_powerup = None;
-        f.thrust_cooldown = 0.0;
         self.give_loadout(i);
         self.events.push(Event::Spawn { fighter: i });
     }

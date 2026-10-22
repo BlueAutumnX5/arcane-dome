@@ -133,18 +133,15 @@ impl NavGraph {
 
         for n in 0..graph.nodes.len() {
             let p = graph.nodes[n];
-            // Standing on a thruster always launches you: only thrust edges out.
+            let mut edges = graph.edges_from(map, n);
+            // On a thruster pad, pressing jump launches instead of jumping.
             if let Some(&(pad, height)) = pads
                 .iter()
                 .find(|(pad, _)| (pad.x - p.x).abs() < 0.6 && (pad.y - p.y).abs() < 0.5)
             {
-                let edges = graph.thrust_edges(map, n, pad, height);
-                if !edges.is_empty() {
-                    graph.edges[n] = edges;
-                    continue;
-                }
+                edges.retain(|e| e.kind != EdgeKind::Jump);
+                edges.extend(graph.thrust_edges(map, n, pad, height));
             }
-            let edges = graph.edges_from(map, n);
             graph.edges[n] = edges;
         }
         graph

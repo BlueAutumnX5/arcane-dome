@@ -40,6 +40,14 @@ impl BotSet {
         }
     }
 
+    /// One line about what bot `i` is up to, for debugging tools.
+    pub fn describe(&self, world: &World, i: usize) -> String {
+        match self.brains.get(i) {
+            Some(Some(b)) => b.describe(world, &self.nav),
+            _ => String::from("not a bot"),
+        }
+    }
+
     pub fn nav(&self) -> &NavGraph {
         &self.nav
     }

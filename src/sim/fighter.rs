@@ -92,7 +92,6 @@ pub struct Fighter {
     /// Shadowstep-style teleports waiting to be used, and which powerup gave them.
     pub teleport_charges: u32,
     pub teleport_powerup: Option<usize>,
-    pub thrust_cooldown: f32,
 
     pub kills: u32,
     pub deaths: u32,
@@ -150,7 +149,6 @@ impl Fighter {
             buffs: Vec::new(),
             teleport_charges: 0,
             teleport_powerup: None,
-            thrust_cooldown: 0.0,
             kills: 0,
             deaths: 0,
         }

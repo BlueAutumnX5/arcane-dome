@@ -20,16 +20,18 @@ m = Map(
 )
 
 # --- Ground and the lava pit -------------------------------------------------
-m.poly("solid", "rock", [(0, 32), (23, 32), (25.5, 34.2), (25.5, 36), (0, 36)])
-m.poly("hazard", "lava", [(25, 34), (39, 34), (39, 36), (25, 36)], dps=60)
-m.poly("solid", "rock", [(38.5, 36), (38.5, 34.2), (41, 32), (43, 32), (51, 28), (57, 28),
+# The pit has steep walls: walk off the rim and you are in the slag. It is
+# shallow (2 tiles), so one quick jump gets you back out.
+m.poly("solid", "rock", [(0, 32), (24.8, 32), (24.8, 34), (39.2, 34), (39.2, 36), (0, 36)])
+m.poly("hazard", "lava", [(24.8, 33.2), (39.2, 33.2), (39.2, 34), (24.8, 34)], dps=60)
+m.poly("solid", "rock", [(39.2, 36), (39.2, 32), (43, 32), (51, 28), (57, 28),
                          (60, 30), (64, 30), (64, 36)])
 # Stepping plates over the lava.
 m.slab(27.5, 30, 30.5)
 m.slab(34, 36.5, 30.5)
 
-# --- Left tower: four floors with a hatch shaft at x 9.3..10.7 ----------------
-SHAFT = (9.3, 10.7)
+# --- Left tower: four floors with a hatch shaft at x 8.9..11.1 ----------------
+SHAFT = (8.9, 11.1)
 m.floor(3, 15, 26, hatch=SHAFT)      # F1
 m.floor(5, 18, 20, hatch=SHAFT)      # F2
 m.floor(3, 17, 14, hatch=SHAFT)      # F3
@@ -49,11 +51,11 @@ m.slab(34.5, 36, 11.5)
 m.slab(30.5, 33.5, 8.5)              # the perch
 
 # --- Right: catwalk stack, nest and the high walkway ---------------------------
-m.slab(47, 55, 24.5)                 # catwalk A (over the hill top)
+m.slab(47, 54, 24.5)                 # catwalk A (over the hill top)
 m.floor(55, 62, 21)                  # catwalk B (thruster at x=60)
 m.slab(46, 54, 17.5)                 # catwalk C
 m.slab(41, 44, 18)                   # link to the bridge
-m.floor(56, 63, 12, hatch=(59.3, 60.7))  # sniper nest
+m.floor(56, 63, 12, hatch=(58.9, 61.1))  # sniper nest
 m.slab(41, 53, 11.5)                 # high walkway back to the centre
 
 # --- Placements ------------------------------------------------------------

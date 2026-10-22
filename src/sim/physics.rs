@@ -27,6 +27,9 @@ const STEP_UP: f32 = 0.35;
 const STICK_DIST: f32 = 0.45;
 /// Feet rays sit this far in from the body's sides.
 const FEET_INSET: f32 = 0.06;
+/// Rise per unit of run of the steepest walkable slope (just above what the
+/// walkable normal limit allows).
+const MAX_SLOPE: f32 = 1.6;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Aabb {
@@ -125,11 +128,25 @@ pub fn move_body(
             let want = step.x.abs();
             match wall_distance(map, *feet, size, dir, want + SKIN, grounded) {
                 Some(d) if d - SKIN < want => {
-                    feet.x += dir * (d - SKIN).max(0.0);
+                    // A negative distance means the side already overlaps the
+                    // wall (say, a floor corner met while dropping through a
+                    // hatch): this pushes the body back out.
+                    feet.x += dir * (d - SKIN);
                     res.hit_wall = true;
                     vel.x = 0.0;
                 }
                 _ => feet.x += step.x,
+            }
+            // Moving sideways into a rising slope (even in the air, say after
+            // a knock-back) must ride up onto it rather than sink in.
+            let climb = step.x.abs() * MAX_SLOPE + SKIN;
+            if let Some(y) = floor_at(map, *feet, size, climb, climb, feet.y, drop_through)
+                && y < feet.y - 1e-4
+            {
+                feet.y = y;
+                if vel.y > 0.0 {
+                    vel.y = 0.0;
+                }
             }
         }
 
@@ -177,7 +194,9 @@ pub fn move_body(
     res
 }
 
-/// Distance to the nearest wall in direction `dir` (+1 / -1).
+/// Distance from the body's side to the nearest wall in direction `dir`
+/// (+1 / -1). Rays start at the body's centre, so a wall already inside the
+/// body gives a negative distance instead of being missed.
 fn wall_distance(
     map: &MapDef,
     feet: Vec2,
@@ -186,7 +205,7 @@ fn wall_distance(
     max: f32,
     grounded: bool,
 ) -> Option<f32> {
-    let side = feet.x + dir * size.x * 0.5;
+    let half = size.x * 0.5;
     let bottom = if grounded {
         feet.y - STEP_UP - 0.01
     } else {
@@ -198,17 +217,19 @@ fn wall_distance(
         .filter_map(|i| {
             let y = bottom + (top - bottom) * i as f32 / (rays - 1) as f32;
             map.terrain
-                .cast(vec2(side, y), vec2(dir, 0.0), max, |e| {
+                .cast(vec2(feet.x, y), vec2(dir, 0.0), half + max, |e| {
                     e.kind == ShapeKind::Solid && !e.walkable()
                 })
-                .map(|(t, _)| t)
+                .map(|(t, _)| t - half)
         })
         .reduce(f32::min)
 }
 
 /// Distance to the nearest ceiling above the head.
 fn ceiling_distance(map: &MapDef, feet: Vec2, size: Vec2, max: f32) -> Option<f32> {
-    let half = size.x * 0.5 - FEET_INSET;
+    // Nearly the full width (unlike the feet), so a body rising past the
+    // corner of a floor cannot clip into it.
+    let half = size.x * 0.5 - SKIN * 0.5;
     let head = feet.y - size.y;
     [-half, 0.0, half]
         .into_iter()

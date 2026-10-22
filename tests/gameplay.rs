@@ -437,6 +437,15 @@ fn thrusters_launch_high() {
     let mut w = world("deathmatch", 1, 0);
     place(&mut w, 0, 12.5, "pistol");
     place(&mut w, 1, 3.0, "pistol");
+    // Standing on the pad does nothing by itself.
+    run(&mut w, 30);
+    assert!(w.fighters[0].on_ground, "pad launched without a jump");
+    assert!((w.fighters[0].feet.y - 7.0).abs() < 0.01);
+
+    let mut jump = idle(2);
+    jump[0].jump = true;
+    jump[0].jump_held = true;
+    w.step(&jump);
     let mut top = 7.0f32;
     for _ in 0..90 {
         w.step(&idle(2));
