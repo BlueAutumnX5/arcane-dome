@@ -241,6 +241,9 @@ pub fn draw_object_labels(world: &World, cam: &GameCamera) {
         };
         let Some(label) = label else { continue };
         let at = cam.world_to_screen(o.item_pos() + vec2(0.0, -0.75));
+        if at.y > screen_height() - 64.0 * s {
+            continue;
+        }
         let dims = measure_text(&label, None, size, 1.0);
         draw_text(
             &label,

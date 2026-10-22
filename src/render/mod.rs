@@ -3,6 +3,7 @@
 mod effects;
 mod gadgets;
 mod hud;
+mod terrain;
 
 pub use effects::Effects;
 pub use hud::{draw_crosshair, draw_hud, draw_scoreboard};
@@ -149,42 +150,8 @@ pub fn draw_world(world: &World, cam: &GameCamera, effects: &Effects, player: Op
     let y1 = (cam.pos.y + half.y).ceil() as i32 + 1;
     let map = &world.map;
 
-    let solid = Color::from_rgba(52, 58, 78, 255);
-    let solid_top = Color::from_rgba(96, 104, 132, 255);
-    let one_way = Color::from_rgba(170, 140, 90, 255);
-    let spikes = Color::from_rgba(210, 70, 70, 255);
-    for y in y0..=y1 {
-        for x in x0..=x1 {
-            if x < 0 || y < 0 || x >= map.width as i32 || y >= map.height as i32 {
-                continue;
-            }
-            let (fx, fy) = (x as f32, y as f32);
-            match map.tile(x, y) {
-                TileKind::Solid => {
-                    draw_rectangle(fx, fy, 1.0, 1.0, solid);
-                    if map.tile(x, y - 1) != TileKind::Solid && y > 0 {
-                        draw_rectangle(fx, fy, 1.0, 0.12, solid_top);
-                    }
-                }
-                TileKind::OneWay => {
-                    draw_rectangle(fx, fy, 1.0, 0.22, one_way);
-                    draw_rectangle(fx, fy + 0.22, 1.0, 0.06, shade(one_way, 0.6));
-                }
-                TileKind::Spikes => {
-                    for k in 0..3 {
-                        let bx = fx + k as f32 / 3.0;
-                        draw_triangle(
-                            vec2(bx, fy + 1.0),
-                            vec2(bx + 1.0 / 3.0, fy + 1.0),
-                            vec2(bx + 1.0 / 6.0, fy + 0.35),
-                            spikes,
-                        );
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
+    terrain::draw_interior(map, x0, x1, y0, y1, world.time);
+    terrain::draw_terrain(map, x0, x1, y0, y1, world.time);
 
     draw_pickups(world);
     gadgets::draw_objects(world);
@@ -427,6 +394,10 @@ fn draw_labels(world: &World, cam: &GameCamera, player: Option<usize>) {
         if let Some(w) = p.weapon {
             let name = &world.data.weapons[w].name;
             let at = cam.world_to_screen(p.pos + vec2(0.0, -0.55));
+            // Keep world labels out of the weapon bar strip.
+            if at.y > screen_height() - 64.0 * s {
+                continue;
+            }
             let size = (13.0 * s) as u16;
             let dims = measure_text(name, None, size, 1.0);
             draw_text(
