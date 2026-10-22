@@ -1,0 +1,15 @@
+{
+  "id": "rail_spike",
+  "name": "Rail Spike",
+  "category": "long_range",
+  "damage": 70.0,
+  "headshot_mult": 2.0,
+  "fire_rate_rps": 0.6,
+  "recoil": 3.0,
+  "magazine": 4,
+  "reserve_ammo": 16,
+  "reload_time_s": 2.4,
+  "range_tiles": 60,
+  "projectile": { "type": "hitscan", "pierce": 2 },
+  "specials": ["shield_break"]
+}

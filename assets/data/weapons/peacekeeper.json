@@ -1,0 +1,15 @@
+{
+  "id": "peacekeeper",
+  "name": "Peacekeeper",
+  "category": "starter",
+  "damage": 17.0,
+  "headshot_mult": 2.0,
+  "fire_rate_rps": 4.0,
+  "spread_deg": 1.0,
+  "recoil": 0.6,
+  "magazine": 12,
+  "reserve_ammo": 0,
+  "reload_time_s": 1.1,
+  "range_tiles": 32,
+  "projectile": { "type": "bullet", "speed": 75.0, "lifetime_s": 0.6 }
+}

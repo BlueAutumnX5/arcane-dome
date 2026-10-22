@@ -1,0 +1,16 @@
+{
+  "id": "leechfang",
+  "name": "Leechfang",
+  "category": "automatic",
+  "damage": 6.0,
+  "headshot_mult": 1.5,
+  "fire_rate_rps": 13.0,
+  "spread_deg": 5.0,
+  "recoil": 0.3,
+  "magazine": 36,
+  "reserve_ammo": 180,
+  "reload_time_s": 1.5,
+  "range_tiles": 18,
+  "projectile": { "type": "bullet", "speed": 70.0, "lifetime_s": 0.3 },
+  "specials": [{ "type": "lifesteal", "ratio": 0.3 }]
+}

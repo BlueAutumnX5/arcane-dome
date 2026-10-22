@@ -1,0 +1,15 @@
+{
+  "id": "cinder_spitter",
+  "name": "Cinder Spitter",
+  "category": "close_range",
+  "damage": 4.0,
+  "headshot_mult": 1.0,
+  "fire_rate_rps": 12.0,
+  "spread_deg": 8.0,
+  "magazine": 60,
+  "reserve_ammo": 180,
+  "reload_time_s": 2.0,
+  "range_tiles": 10,
+  "projectile": { "type": "bullet", "speed": 25.0, "gravity": 8.0, "lifetime_s": 0.6 },
+  "specials": [{ "type": "burn", "dps": 8.0, "duration_s": 2.5 }]
+}

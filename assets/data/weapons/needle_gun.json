@@ -1,0 +1,15 @@
+{
+  "id": "needle_gun",
+  "name": "Needle Gun",
+  "category": "long_range",
+  "damage": 30.0,
+  "headshot_mult": 3.0,
+  "fire_rate_rps": 1.8,
+  "spread_deg": 0.3,
+  "recoil": 1.0,
+  "magazine": 8,
+  "reserve_ammo": 32,
+  "reload_time_s": 1.8,
+  "range_tiles": 45,
+  "projectile": { "type": "bullet", "speed": 140.0, "lifetime_s": 0.5 }
+}

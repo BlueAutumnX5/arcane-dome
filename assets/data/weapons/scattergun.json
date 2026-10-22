@@ -1,0 +1,16 @@
+{
+  "id": "scattergun",
+  "name": "Scattergun",
+  "category": "close_range",
+  "damage": 9.0,
+  "headshot_mult": 1.25,
+  "fire_rate_rps": 1.4,
+  "pellets": 8,
+  "spread_deg": 18.0,
+  "recoil": 2.0,
+  "magazine": 6,
+  "reserve_ammo": 30,
+  "reload_time_s": 2.0,
+  "range_tiles": 12,
+  "projectile": { "type": "bullet", "speed": 60.0, "lifetime_s": 0.3 }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "hellbarrel",
+  "name": "Hellbarrel",
+  "category": "heavy",
+  "damage": 25.0,
+  "fire_rate_rps": 0.9,
+  "recoil": 2.5,
+  "magazine": 1,
+  "reserve_ammo": 10,
+  "reload_time_s": 1.4,
+  "range_tiles": 60,
+  "projectile": {
+    "type": "rocket",
+    "speed": 28.0,
+    "lifetime_s": 3.0,
+    "explosion": { "radius_tiles": 3.5, "damage": 90, "falloff": "linear", "knockback": 18 }
+  }
+}

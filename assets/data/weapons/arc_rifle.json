@@ -1,0 +1,15 @@
+{
+  "id": "arc_rifle",
+  "name": "Arc Rifle",
+  "category": "automatic",
+  "damage": 9.0,
+  "headshot_mult": 2.0,
+  "fire_rate_rps": 8.0,
+  "spread_deg": 2.5,
+  "recoil": 0.4,
+  "magazine": 30,
+  "reserve_ammo": 150,
+  "reload_time_s": 1.6,
+  "range_tiles": 28,
+  "projectile": { "type": "bullet", "speed": 90.0, "lifetime_s": 1.2 }
+}

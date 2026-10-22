@@ -1,0 +1,20 @@
+{
+  "id": "thumper",
+  "name": "Thumper",
+  "category": "explosive",
+  "damage": 10.0,
+  "fire_rate_rps": 1.2,
+  "spread_deg": 1.0,
+  "magazine": 6,
+  "reserve_ammo": 18,
+  "reload_time_s": 2.2,
+  "range_tiles": 30,
+  "projectile": {
+    "type": "grenade",
+    "speed": 22.0,
+    "gravity": 30.0,
+    "lifetime_s": 2.0,
+    "bounces": 6,
+    "explosion": { "radius_tiles": 3.0, "damage": 75, "falloff": "linear", "knockback": 14 }
+  }
+}
