@@ -38,32 +38,42 @@ OpenGL driver (for example `alsa-lib libx11 libxi mesa` on Arch).
 
 - Weapons: one JSON file per weapon in `assets/data/weapons/`
 - Maps: one JSON file per map in `assets/data/maps/`
+- Powerups: `assets/data/powerups.json`
 
 No code changes are needed to add a weapon or a map. Schemas are in [SPEC.md](SPEC.md).
 
-### Map variations
+### Maps
 
-`examples/mapgen.rs` roughens a hand-made base map into seeded variants (uneven
-ground, ragged edges, shifted platforms, asymmetric halves). Every result is
-checked with the bot nav graph so all spawns and pickups stay reachable.
+Maps are hand-designed out of freeform polygons (`shapes`). Each shape has a
+`kind`:
+
+- `solid`: blocks bodies and bullets from every side
+- `hatch`: a thin floor you can stand on and drop through, and that thruster
+  riders fly up through from below
+- `water`: slows you down and lets you swim
+- `hazard`: hurts anything inside it (`dps`), for lava, spikes or a bottomless void
+
+A `material` (rock, metal, wood, sand, moss, sludge, lava...) picks the look.
+All positions are in tiles. Spawns, pickups and objects are given by their
+**feet** position (the point where a fighter would stand).
+
+Objects are thrusters (`height_tiles`), weapon stations, shield stations
+(`shield` 50 or 100) and powerup spots (`powerup`: always the same powerup).
+Purely visual `decor` (walls, windows, girders, chains, lamps, trees...) and a
+`theme` (sky colours, sun, skyline) set the mood.
+
+Check that every spawn, pickup and object can be reached by bots:
 
 ```bash
-cargo run --release --example mapgen
+cargo run --release --example map_check
 ```
-
-Edit the `VARIANTS` list in that file to add variants or change seeds.
-
-### Map objects
-
-Maps have an `objects` list for thrusters, weapon stations, shield stations and
-the powerup spot. `examples/place_objects.rs` places them automatically using
-the bot nav graph (run it after `mapgen`):
 
 ```bash
-cargo run --release --example place_objects
+cargo run --release --example map_check -- foundry_ascent nav.json
 ```
 
-Powerups live in `assets/data/powerups.json`.
+The second form checks one map and also writes its navigation graph as JSON.
+Unfinished maps live in `drafts/maps/` and are not loaded by the game.
 
 ## License
 

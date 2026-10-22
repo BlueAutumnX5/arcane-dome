@@ -42,7 +42,7 @@ Custom match screen: map, mode, score or time limit, number of friendly and enem
 ## Milestone 1 checklist
 - [ ] Window, fixed-step loop, tilemap rendering, camera
 - [ ] Player movement with gravity, double jump, crouch, one-way platforms
-- [ ] Tile collision (AABB vs grid), tests for edge cases (corners, slopes not needed yet)
+- [x] Terrain collision (polygon ray probes), tests for edge cases (corners, slopes, hatches)
 - [ ] Weapon loader from JSON, 10 weapons covering at least 5 projectile types
 - [ ] Hitscan, bullet, bouncing grenade, rocket with splash, beam
 - [ ] Health, damage, headshot multiplier, death, respawn at spawn points
@@ -128,56 +128,68 @@ Hellbarrel (rocket, splash), Sunbeam (continuous beam), Leechfang (SMG with life
 
 ## Map JSON schema
 
-One file per map in `assets/data/maps/`. The collision grid is human-editable ASCII.
+One file per map in `assets/data/maps/`. Terrain is a list of freeform polygons
+in tile units (y grows downward). Spawns, pickups and objects give the **feet**
+position of whoever stands there.
 
 ```json
 {
-  "id": "foundry_01",
-  "name": "The Foundry",
+  "id": "foundry_ascent",
+  "name": "Foundry Ascent",
+  "description": "One or two sentences for the setup screen.",
   "tile_size": 32,
-  "tileset": "tilesets/industrial.png",
-  "background": { "sky_color": "#1b1f2a", "parallax": ["bg/pipes_far.png", "bg/pipes_near.png"] },
+  "size": [64, 36],
+  "theme": { "sky_top": "#150f12", "sky_bottom": "#5c2f1c", "far": "#2c1d1a",
+             "skyline": "girders", "sun": [0.5, 0.95], "sun_color": "#ff8a3c" },
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],
   "recommended_players": [4, 12],
-  "legend": {
-    "#": "solid",
-    "=": "one_way",
-    "^": "spikes",
-    "~": "water",
-    ".": "air"
-  },
-  "grid": [
-    "##########################",
-    "#........................#",
-    "#...====........====.....#",
-    "#........................#",
-    "#.....##############.....#",
-    "#........................#",
-    "##########################"
+  "shapes": [
+    { "kind": "solid",  "material": "rock",  "points": [[0, 32], [23, 32], [25.5, 34.2], [25.5, 36], [0, 36]] },
+    { "kind": "hatch",  "material": "metal", "points": [[9.3, 26], [10.7, 26], [10.7, 26.25], [9.3, 26.25]] },
+    { "kind": "hazard", "material": "lava",  "points": [[25, 34], [39, 34], [39, 36], [25, 36]], "dps": 60 }
+  ],
+  "decor": [
+    { "type": "window", "x": 5, "y": 30, "w": 1.6, "h": 1.2, "color": "#ff9a4a", "front": false, "flip": false }
   ],
   "spawns": [
-    { "x": 3,  "y": 5, "team": 0 },
-    { "x": 22, "y": 5, "team": 1 },
-    { "x": 12, "y": 1, "team": null }
+    { "x": 6, "y": 32, "team": 0 },
+    { "x": 20, "y": 32, "team": null }
   ],
   "pickups": [
-    { "type": "health", "x": 12, "y": 3, "respawn_s": 20 },
-    { "type": "ammo",   "x": 6,  "y": 5, "respawn_s": 15 },
-    { "type": "weapon", "x": 18, "y": 3, "weapon_id": "rail_spike", "respawn_s": 40 }
+    { "type": "health", "x": 2, "y": 23, "respawn_s": 25 },
+    { "type": "weapon", "x": 26, "y": 18, "weapon_id": "thumper", "respawn_s": 30 }
   ],
-  "hazards": [],
-  "bot_hints": [
-    { "x": 12, "y": 3, "kind": "camp_spot" }
+  "objects": [
+    { "type": "thruster", "x": 10, "y": 32, "height_tiles": 24.5 },
+    { "type": "weapon_station", "x": 14, "y": 26 },
+    { "type": "shield_station", "x": 62, "y": 12, "shield": 100, "min_delay_s": 90, "max_delay_s": 120 },
+    { "type": "powerup_spot", "x": 32, "y": 8.5, "powerup": "critical_strike" }
   ]
 }
 ```
 
-Validation rules the loader must enforce:
-- All rows in `grid` have equal length, and every character exists in `legend`.
+- Shape kinds: `solid` (blocks bodies and bullets from all sides), `hatch` (a
+  floor only from above; drop through it, thrusters fly up through it), `water`,
+  `hazard` (`dps` per second inside).
+- Materials: rock, metal, wood, ice, sand, moss, sludge, glass, lava, spikes,
+  water, void. Sludge is for sewer-themed maps only.
+- Skylines: city, mountains, spires, clouds, girders, none.
+- Decor types: wall, window, girder, pipe, lamp, tree, crystal, chain, banner,
+  tank, fence, vines, cactus. `front: true` draws over the fighters.
+- Powerup spots: 0 to 4 per map (1 is the norm), each always spawning the same
+  powerup. Shield stations: 1 to 4 small (50) and 0 to 2 big (100).
+
+Validation rules the loader enforces:
+- The map is at least 8 x 8 and every polygon has at least 3 points.
 - At least 2 spawns per team and 4 free-for-all spawns.
-- Every `weapon_id` exists in the weapons folder.
-- Every spawn and pickup sits on an `air` tile with solid or one-way ground reachable below.
-- Report errors as `maps/foundry_01.json: spawns[2] is inside a solid tile`.
+- Every `weapon_id` and `powerup` exists.
+- Every spawn, pickup and object has room for a body and a floor close below it.
+- Errors name the file and the field, for example
+  `maps/foundry_ascent.json: spawns[2]: is inside solid terrain`.
+
+Run `cargo run --release --example map_check` to confirm bots can reach every
+spawn, pickup and object. The old ASCII `grid` + `legend` format still loads
+(used by tests) but new maps should use shapes.
 
 ---
 
