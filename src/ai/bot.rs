@@ -335,10 +335,8 @@ impl Brain {
                 input.jump_held = true;
                 let first_jump = me.on_ground && (higher || dx.abs() > 1.2);
                 // Double jump near the apex when the target is still above.
-                let double_jump = !me.on_ground
-                    && me.air_jumps > 0
-                    && me.vel.y > -3.0
-                    && p.y < me.feet.y - 0.8;
+                let double_jump =
+                    !me.on_ground && me.air_jumps > 0 && me.vel.y > -3.0 && p.y < me.feet.y - 0.8;
                 input.jump = first_jump || double_jump;
             }
             EdgeKind::Drop => {
