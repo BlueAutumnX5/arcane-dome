@@ -3,5 +3,6 @@
 pub mod ai;
 pub mod app;
 pub mod data;
+pub mod geo;
 pub mod render;
 pub mod sim;

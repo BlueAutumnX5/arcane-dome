@@ -397,7 +397,7 @@ impl App {
         ui::panel(Rect::new(lx, top, lw, sh - top - 100.0 * s), None);
         let pad = 12.0 * s;
         let pv = Rect::new(lx + pad, top + pad, lw - 2.0 * pad, 170.0 * s);
-        ui::map_preview(map, pv, map.sky_color);
+        ui::map_preview(map, pv);
         let ny = pv.y + pv.h + 26.0 * s;
         let mut map_delta = self.ui.stepper(
             "s_map",

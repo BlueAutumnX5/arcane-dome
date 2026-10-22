@@ -4,7 +4,7 @@
 use super::fighter::*;
 use super::world::{Event, give_weapon};
 use super::{DT, World};
-use crate::data::{Category, GameData, MapDef, MapObject, ObjectKind, PowerupEffect, TileKind};
+use crate::data::{Category, GameData, MapDef, MapObject, ObjectKind, PowerupEffect};
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
 
@@ -61,7 +61,7 @@ impl ObjectState {
         };
         Self {
             def: def.clone(),
-            pos: vec2(def.x as f32 + 0.5, def.y as f32 + 1.0),
+            pos: def.feet(),
             ready,
             timer,
             delay: timer.max(0.01),
@@ -86,22 +86,33 @@ impl ObjectState {
     }
 }
 
-/// Every cell a fighter can stand in (as feet positions), except thruster pads.
+/// Spots a fighter can stand on (feet positions), sampled about one tile
+/// apart along every walkable surface. Used as teleport destinations.
+/// Thruster pads are left out.
 pub fn stand_cells(map: &MapDef) -> Vec<Vec2> {
-    let pads: Vec<(i32, i32)> = map
+    let pads: Vec<Vec2> = map
         .objects
         .iter()
         .filter(|o| o.kind == ObjectKind::Thruster)
-        .map(|o| (o.x, o.y))
+        .map(|o| o.feet())
         .collect();
     let mut out = Vec::new();
-    for y in 1..map.height as i32 {
-        for x in 0..map.width as i32 {
-            let standable = map.tile(x, y) == TileKind::Air
-                && map.tile(x, y - 1) == TileKind::Air
-                && map.tile(x, y + 1).is_floor();
-            if standable && !pads.contains(&(x, y)) {
-                out.push(vec2(x as f32 + 0.5, y as f32 + 1.0));
+    for e in map.terrain.edges.iter().filter(|e| e.walkable()) {
+        let len = (e.b - e.a).length();
+        let n = (len.floor() as i32).max(1);
+        for k in 0..n {
+            let t = (k as f32 + 0.5) / n as f32;
+            let feet = e.a.lerp(e.b, t);
+            let fits = !super::physics::overlaps_solid(map, feet - vec2(0.0, 0.05), STAND_SIZE);
+            let on_pad = pads.iter().any(|p| p.distance(feet) < 1.2);
+            if fits
+                && !on_pad
+                && map
+                    .terrain
+                    .hazard_dps(feet - vec2(0.3, 1.8), feet + vec2(0.3, 0.0))
+                    == 0.0
+            {
+                out.push(feet);
             }
         }
     }
@@ -159,11 +170,12 @@ impl World {
             if o.def.kind != ObjectKind::Thruster {
                 return false;
             }
-            let (x, y) = (o.def.x as f32, o.def.y as f32);
-            body.min.x < x + 0.9
-                && body.max.x > x + 0.1
-                && body.max.y > y + 0.6
-                && body.min.y < y + 1.0
+            // The pad: a small zone on the floor around its feet position.
+            let p = o.pos;
+            body.min.x < p.x + 0.4
+                && body.max.x > p.x - 0.4
+                && body.max.y > p.y - 0.4
+                && body.min.y < p.y + 0.05
         });
         let Some(pad) = pad else { return };
         let height = pad.def.launch_height();

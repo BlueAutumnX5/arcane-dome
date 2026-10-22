@@ -4,7 +4,7 @@
 use super::ui::{self, Side, Ui};
 use crate::ai::BotSet;
 use crate::data::GameData;
-use crate::render::{self, Effects, GameCamera};
+use crate::render::{self, Effects, GameCamera, MapArt};
 use crate::sim::{DT, Input, MatchConfig, Phase, World};
 use macroquad::prelude::*;
 use std::sync::Arc;
@@ -32,6 +32,8 @@ pub struct Session {
     player: usize,
     effects: Effects,
     cam: GameCamera,
+    /// Terrain drawing data, prepared once for this map.
+    art: MapArt,
     acc: f32,
     paused: bool,
     edges: Edges,
@@ -57,12 +59,14 @@ impl Session {
         let bots = BotSet::new(&world);
         let mut cam = GameCamera::new(world.fighters[0].center());
         cam.snap(world.fighters[0].center());
+        let art = MapArt::new(&world.map);
         Ok(Self {
             world,
             bots,
             player: 0,
             effects: Effects::default(),
             cam,
+            art,
             acc: 0.0,
             paused: false,
             edges: Edges::default(),
@@ -101,7 +105,13 @@ impl Session {
         let focus = self.focus_point();
         self.cam.update(&self.world, focus, mouse, dt);
 
-        render::draw_world(&self.world, &self.cam, &self.effects, Some(self.player));
+        render::draw_world(
+            &self.world,
+            &self.cam,
+            &self.effects,
+            Some(self.player),
+            &self.art,
+        );
         render::draw_hud(&self.world, &self.effects, self.player);
         if !self.paused && !over {
             render::draw_crosshair(&self.world, &self.cam, &self.effects, self.player, mouse);

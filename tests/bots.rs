@@ -71,18 +71,13 @@ fn every_spawn_can_reach_every_spawn_pickup_and_object() {
         .unwrap();
         let bots = BotSet::new(&world);
         let nav = bots.nav();
-        let cells = map
+        let spots = map
             .spawns
             .iter()
-            .map(|s| (s.x, s.y))
-            .chain(map.pickups.iter().map(|p| (p.x, p.y)))
-            .chain(map.objects.iter().map(|o| (o.x, o.y)));
-        let nodes: Vec<usize> = cells
-            .map(|(x, y)| {
-                nav.nearest(macroquad::math::vec2(x as f32 + 0.5, y as f32 + 1.0))
-                    .unwrap()
-            })
-            .collect();
+            .map(|s| s.feet())
+            .chain(map.pickups.iter().map(|p| p.feet()))
+            .chain(map.objects.iter().map(|o| o.feet()));
+        let nodes: Vec<usize> = spots.map(|p| nav.nearest(p).unwrap()).collect();
         for &a in &nodes[..map.spawns.len()] {
             for &b in &nodes {
                 assert!(

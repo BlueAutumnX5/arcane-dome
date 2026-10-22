@@ -1,9 +1,9 @@
 use super::fighter::*;
-use super::physics::{self, move_body, overlaps_kind, overlaps_solid, standing_on_one_way};
+use super::physics::{self, hazard_dps, in_water, move_body, overlaps_solid, standing_on_hatch};
 use super::{DT, Input, ObjectState, Phase, Projectile, Rng};
 use crate::data::{
     Category, GameData, MapDef, ModeDef, ObjectKind, PickupDef, PickupKind, ProjectileKind,
-    SpawnDef, TileKind,
+    SpawnDef,
 };
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
@@ -245,7 +245,7 @@ impl World {
             .iter()
             .map(|p| PickupState {
                 def: p.clone(),
-                pos: vec2(p.x as f32 + 0.5, p.y as f32 + 0.6),
+                pos: p.feet() - vec2(0.0, 0.4),
                 weapon: p.weapon_id.as_deref().and_then(|id| data.weapon_index(id)),
                 active: true,
                 timer: 0.0,
@@ -355,7 +355,7 @@ impl World {
         } else if f.crouching && !overlaps_solid(map, f.feet, STAND_SIZE) {
             f.crouching = false;
         }
-        f.in_water = overlaps_kind(map, f.feet, f.size(), TileKind::Water);
+        f.in_water = in_water(map, f.feet, f.size());
 
         let slow = if f.freeze > 0.0 { f.freeze_slow } else { 1.0 };
         let water = if f.in_water { WATER_SPEED } else { 1.0 };
@@ -365,7 +365,7 @@ impl World {
         f.vel.x = approach(f.vel.x, target, accel * DT);
 
         if input.jump {
-            if f.crouching && f.on_ground && standing_on_one_way(map, f.feet, f.size()) {
+            if f.crouching && f.on_ground && standing_on_hatch(map, f.feet, f.size()) {
                 f.drop_timer = DROP_THROUGH_TIME;
                 f.on_ground = false;
             } else if f.in_water {
@@ -413,7 +413,7 @@ impl World {
             f.jump_rising = false;
         }
         f.thrust_cooldown = (f.thrust_cooldown - DT).max(0.0);
-        let spiked = overlaps_kind(map, f.feet, size, TileKind::Spikes);
+        let hazard = hazard_dps(map, f.feet, size);
         let burn = f.burn;
 
         self.handle_weapons(i, &input);
@@ -428,8 +428,8 @@ impl World {
             self.fighters[i].burn = (b.time_left > 0.0).then_some(b);
             self.damage(i, Some(b.source), Some(b.weapon), b.dps * DT, false, false);
         }
-        if spiked {
-            self.damage(i, None, None, SPIKE_DPS * DT, false, false);
+        if hazard > 0.0 {
+            self.damage(i, None, None, hazard * DT, false, false);
         }
     }
 
@@ -512,7 +512,7 @@ impl World {
     pub(crate) fn spawn_fighter(&mut self, i: usize) {
         let spawn = self.choose_spawn(i);
         let f = &mut self.fighters[i];
-        f.feet = vec2(spawn.x as f32 + 0.5, spawn.y as f32 + 1.0);
+        f.feet = spawn.feet();
         f.vel = Vec2::ZERO;
         f.health = MAX_HEALTH;
         f.alive = true;
@@ -569,7 +569,7 @@ impl World {
         let mut best = candidates[0];
         let mut best_score = f32::MIN;
         for s in candidates {
-            let p = vec2(s.x as f32 + 0.5, s.y as f32 + 1.0);
+            let p = s.feet();
             let nearest = enemies
                 .iter()
                 .map(|e| e.distance(p))

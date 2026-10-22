@@ -27,7 +27,6 @@ pub(crate) const SWIM_VEL: f32 = 9.0;
 pub(crate) const WATER_GRAVITY: f32 = 0.35;
 pub(crate) const WATER_SPEED: f32 = 0.6;
 pub(crate) const WATER_MAX_FALL: f32 = 5.0;
-pub(crate) const SPIKE_DPS: f32 = 45.0;
 pub(crate) const RESPAWN_DELAY: f32 = 3.0;
 pub(crate) const SPAWN_PROTECT: f32 = 1.5;
 pub(crate) const SWITCH_DELAY: f32 = 0.2;

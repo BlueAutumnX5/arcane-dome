@@ -16,7 +16,8 @@ pub fn rgb(c: [u8; 3]) -> Color {
 pub fn draw_objects(world: &World) {
     let t = world.time;
     for o in &world.objects {
-        let (x, y) = (o.def.x as f32, o.def.y as f32);
+        // Art is laid out in a one-tile box whose bottom-centre is the feet position.
+        let (x, y) = (o.pos.x - 0.5, o.pos.y - 1.0);
         match o.def.kind {
             ObjectKind::Thruster => draw_thruster(x, y, t),
             ObjectKind::WeaponStation | ObjectKind::ShieldStation => draw_station(world, o, t),
@@ -46,7 +47,7 @@ fn draw_thruster(x: f32, y: f32, t: f32) {
 }
 
 fn draw_station(world: &World, o: &ObjectState, t: f32) {
-    let (x, y) = (o.def.x as f32, o.def.y as f32);
+    let (x, y) = (o.pos.x - 0.5, o.pos.y - 1.0);
     let accent = match (o.def.kind, o.weapon) {
         (ObjectKind::ShieldStation, _) => SHIELD_COLOR,
         (_, Some(w)) => category_color(world.data.weapons[w].category),
@@ -111,7 +112,7 @@ fn draw_station(world: &World, o: &ObjectState, t: f32) {
 }
 
 fn draw_powerup_spot(world: &World, o: &ObjectState, t: f32) {
-    let (x, y) = (o.def.x as f32, o.def.y as f32);
+    let (x, y) = (o.pos.x - 0.5, o.pos.y - 1.0);
     draw_rectangle(
         x + 0.15,
         y + 0.85,

@@ -4,7 +4,8 @@
 //! Hovering eases the tab to white and slides it outward (left tabs move
 //! left, right tabs mirror that and move right); leaving eases it back.
 
-use crate::data::{MapDef, ObjectKind, TileKind};
+use crate::data::{MapDef, ObjectKind};
+use crate::geo::{Material, ShapeKind, triangulate};
 use macroquad::prelude::*;
 use std::collections::HashMap;
 
@@ -330,78 +331,63 @@ pub fn backdrop(time: f32) {
     }
 }
 
-/// Miniature of a map's tiles, spawns and objects fitted into `r`.
-pub fn map_preview(map: &MapDef, r: Rect, sky: [u8; 3]) {
-    draw_rectangle(
-        r.x,
-        r.y,
-        r.w,
-        r.h,
-        Color::from_rgba(sky[0], sky[1], sky[2], 255),
+/// Miniature of a map's terrain, water, hazards and objects fitted into `r`.
+pub fn map_preview(map: &MapDef, r: Rect) {
+    let t = &map.theme;
+    let top = Color::from_rgba(t.sky_top[0], t.sky_top[1], t.sky_top[2], 255);
+    let bottom = Color::from_rgba(t.sky_bottom[0], t.sky_bottom[1], t.sky_bottom[2], 255);
+    let bands = 12;
+    for i in 0..bands {
+        let k = i as f32 / bands as f32;
+        let c = Color::new(
+            top.r + (bottom.r - top.r) * k,
+            top.g + (bottom.g - top.g) * k,
+            top.b + (bottom.b - top.b) * k,
+            1.0,
+        );
+        draw_rectangle(r.x, r.y + r.h * k, r.w, r.h / bands as f32 + 1.0, c);
+    }
+    let k = (r.w / map.width).min(r.h / map.height);
+    let o = vec2(
+        r.x + (r.w - k * map.width) / 2.0,
+        r.y + (r.h - k * map.height) / 2.0,
     );
-    let k = (r.w / map.width as f32).min(r.h / map.height as f32);
-    let ox = r.x + (r.w - k * map.width as f32) / 2.0;
-    let oy = r.y + (r.h - k * map.height as f32) / 2.0;
-    for y in 0..map.height as i32 {
-        for x in 0..map.width as i32 {
-            let (px, py) = (ox + x as f32 * k, oy + y as f32 * k);
-            match map.tile(x, y) {
-                TileKind::Solid => {
-                    draw_rectangle(px, py, k + 0.5, k + 0.5, Color::from_rgba(70, 78, 104, 255))
-                }
-                TileKind::OneWay => draw_rectangle(
-                    px,
-                    py,
-                    k + 0.5,
-                    k * 0.35,
-                    Color::from_rgba(190, 155, 95, 255),
-                ),
-                TileKind::Spikes => draw_rectangle(
-                    px,
-                    py + k * 0.4,
-                    k + 0.5,
-                    k * 0.6,
-                    Color::from_rgba(220, 70, 70, 255),
-                ),
-                TileKind::Water => draw_rectangle(
-                    px,
-                    py,
-                    k + 0.5,
-                    k + 0.5,
-                    Color::from_rgba(60, 130, 220, 200),
-                ),
-                TileKind::Sludge => {
-                    draw_rectangle(px, py, k + 0.5, k + 0.5, Color::from_rgba(96, 110, 58, 255))
-                }
-                TileKind::SlopeUpRight => draw_triangle(
-                    vec2(px, py + k),
-                    vec2(px + k, py + k),
-                    vec2(px + k, py),
-                    Color::from_rgba(70, 78, 104, 255),
-                ),
-                TileKind::SlopeUpLeft => draw_triangle(
-                    vec2(px, py + k),
-                    vec2(px + k, py + k),
-                    vec2(px, py),
-                    Color::from_rgba(70, 78, 104, 255),
-                ),
-                TileKind::Air => {}
-            }
+    let to_screen = |p: Vec2| o + p * k;
+    for s in &map.terrain.shapes {
+        if s.material == Material::Void {
+            continue;
+        }
+        let color = match (s.kind, s.material) {
+            (ShapeKind::Water, _) => Color::from_rgba(60, 130, 220, 170),
+            (ShapeKind::Hazard, Material::Lava) => Color::from_rgba(230, 100, 40, 255),
+            (ShapeKind::Hazard, _) => Color::from_rgba(220, 70, 70, 255),
+            (ShapeKind::Hatch, _) => Color::from_rgba(190, 155, 95, 200),
+            (_, Material::Ice) => Color::from_rgba(200, 230, 245, 255),
+            (_, Material::Sand) => Color::from_rgba(196, 160, 104, 255),
+            (_, Material::Wood) => Color::from_rgba(150, 110, 70, 255),
+            (_, Material::Metal) => Color::from_rgba(110, 118, 134, 255),
+            (_, Material::Moss) => Color::from_rgba(80, 110, 70, 255),
+            (_, Material::Sludge) => Color::from_rgba(110, 124, 64, 255),
+            _ => Color::from_rgba(80, 86, 108, 255),
+        };
+        for tri in triangulate(&s.points) {
+            draw_triangle(
+                to_screen(tri[0]),
+                to_screen(tri[1]),
+                to_screen(tri[2]),
+                color,
+            );
         }
     }
-    for o in &map.objects {
-        let c = match o.kind {
+    for obj in &map.objects {
+        let c = match obj.kind {
             ObjectKind::Thruster => Color::new(0.3, 1.0, 0.75, 1.0),
             ObjectKind::WeaponStation => Color::new(1.0, 0.6, 0.25, 1.0),
             ObjectKind::ShieldStation => Color::new(0.35, 0.85, 1.0, 1.0),
             ObjectKind::PowerupSpot => Color::new(0.75, 0.45, 1.0, 1.0),
         };
-        draw_circle(
-            ox + (o.x as f32 + 0.5) * k,
-            oy + (o.y as f32 + 0.5) * k,
-            k * 0.7,
-            c,
-        );
+        let p = to_screen(obj.feet() - vec2(0.0, 0.5));
+        draw_circle(p.x, p.y, (k * 0.6).max(2.0), c);
     }
     draw_rectangle_lines(
         r.x,

@@ -5,10 +5,12 @@ mod gadgets;
 mod hud;
 mod terrain;
 
+pub use terrain::MapArt;
+
 pub use effects::Effects;
 pub use hud::{draw_crosshair, draw_hud, draw_scoreboard};
 
-use crate::data::{Category, PickupKind, ProjectileKind, TileKind};
+use crate::data::{Category, PickupKind, ProjectileKind};
 use crate::sim::{Fighter, HEAD_HEIGHT, World};
 use macroquad::prelude::*;
 
@@ -65,7 +67,7 @@ impl GameCamera {
         let t = 1.0 - (-8.0 * dt).exp();
         self.pos = self.pos.lerp(desired, t);
         let half = screen / self.ppt * 0.5;
-        let size = vec2(world.map.width as f32, world.map.height as f32);
+        let size = vec2(world.map.width, world.map.height);
         for axis in 0..2 {
             self.pos[axis] = if size[axis] <= half[axis] * 2.0 {
                 size[axis] * 0.5
@@ -99,10 +101,6 @@ impl GameCamera {
     }
 }
 
-fn rgb(c: [u8; 3]) -> Color {
-    Color::from_rgba(c[0], c[1], c[2], 255)
-}
-
 fn shade(c: Color, k: f32) -> Color {
     Color::new(c.r * k, c.g * k, c.b * k, c.a)
 }
@@ -111,47 +109,20 @@ fn with_alpha(c: Color, a: f32) -> Color {
     Color::new(c.r, c.g, c.b, a)
 }
 
-/// Far-away silhouettes that scroll slower than the world.
-fn draw_backdrop(world: &World, cam: &GameCamera) {
-    let sky = rgb(world.map.sky_color);
-    clear_background(sky);
-    let far = shade(sky, 0.7);
-    let sw = screen_width();
-    let sh = screen_height();
-    let parallax = 0.3;
-    let spacing = 140.0 * cam.ppt / 32.0;
-    let offset = (cam.pos.x * cam.ppt * parallax) % spacing;
-    let mut seed = world
-        .map
-        .id
-        .bytes()
-        .fold(7u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32));
-    let count = (sw / spacing) as i32 + 3;
-    let first = (cam.pos.x * cam.ppt * parallax / spacing) as i32;
-    for k in -1..count {
-        let idx = (first + k) as u32;
-        seed = idx.wrapping_mul(2654435761) ^ seed.rotate_left(5);
-        let h = sh * (0.25 + (seed % 1000) as f32 / 1000.0 * 0.45);
-        let w = spacing * (0.45 + (seed / 1000 % 100) as f32 / 100.0 * 0.35);
-        let x = k as f32 * spacing - offset;
-        draw_rectangle(x, sh - h, w, h, far);
-        draw_rectangle(x + w * 0.2, sh - h - 18.0, w * 0.15, 18.0, far);
-    }
-}
-
-pub fn draw_world(world: &World, cam: &GameCamera, effects: &Effects, player: Option<usize>) {
-    draw_backdrop(world, cam);
+pub fn draw_world(
+    world: &World,
+    cam: &GameCamera,
+    effects: &Effects,
+    player: Option<usize>,
+    art: &MapArt,
+) {
+    let map = &world.map;
+    terrain::draw_sky(map, cam.pos.x, cam.ppt, world.time);
     set_camera(&cam.camera2d());
 
     let half = vec2(screen_width(), screen_height()) / cam.ppt * 0.5;
-    let x0 = (cam.pos.x - half.x).floor() as i32 - 1;
-    let x1 = (cam.pos.x + half.x).ceil() as i32 + 1;
-    let y0 = (cam.pos.y - half.y).floor() as i32 - 1;
-    let y1 = (cam.pos.y + half.y).ceil() as i32 + 1;
-    let map = &world.map;
-
-    terrain::draw_interior(map, x0, x1, y0, y1, world.time);
-    terrain::draw_terrain(map, x0, x1, y0, y1, world.time);
+    let (view_min, view_max) = (cam.pos - half - Vec2::ONE, cam.pos + half + Vec2::ONE);
+    art.draw_back(map, view_min, view_max, world.time);
 
     draw_pickups(world);
     gadgets::draw_objects(world);
@@ -206,24 +177,8 @@ pub fn draw_world(world: &World, cam: &GameCamera, effects: &Effects, player: Op
 
     effects.draw_world();
 
-    // Water drawn over everything inside it.
-    let water = Color::from_rgba(50, 120, 210, 110);
-    for y in y0..=y1 {
-        for x in x0..=x1 {
-            if map.tile(x, y) == TileKind::Water && x >= 0 && y >= 0 {
-                draw_rectangle(x as f32, y as f32, 1.0, 1.0, water);
-                if map.tile(x, y - 1) != TileKind::Water {
-                    draw_rectangle(
-                        x as f32,
-                        y as f32,
-                        1.0,
-                        0.06,
-                        Color::from_rgba(160, 210, 255, 160),
-                    );
-                }
-            }
-        }
-    }
+    // Water and front props drawn over everything inside them.
+    art.draw_front(map, world.time);
 
     set_default_camera();
     draw_labels(world, cam, player);

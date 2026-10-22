@@ -1,6 +1,6 @@
 use super::nav::{EdgeKind, NavGraph};
-use crate::data::{Category, ObjectKind, PickupKind, TileKind, WeaponDef};
-use crate::sim::physics::line_of_sight;
+use crate::data::{Category, ObjectKind, PickupKind, WeaponDef};
+use crate::sim::physics::{hazard_dps, line_of_sight};
 use crate::sim::{DT, Difficulty, Fighter, Input, Rng, World};
 use macroquad::math::{Vec2, vec2};
 use std::f32::consts::PI;
@@ -559,7 +559,7 @@ impl Brain {
         }
         while let Some(&(n, _)) = self.path.first() {
             let p = nav.pos(n);
-            if me.on_ground && (me.feet.x - p.x).abs() < 0.3 && (me.feet.y - p.y).abs() < 0.3 {
+            if me.on_ground && (me.feet.x - p.x).abs() < 0.35 && (me.feet.y - p.y).abs() < 0.45 {
                 self.path.remove(0);
             } else {
                 break;
@@ -612,9 +612,9 @@ impl Brain {
         if dir == 0.0 {
             return false;
         }
-        let x = (me.feet.x + dir * 0.9).floor() as i32;
-        let y = (me.feet.y - 0.5).floor() as i32;
-        world.map.tile(x, y) == TileKind::Spikes
+        // Would the body hurt one step ahead?
+        let ahead = vec2(me.feet.x + dir * 0.9, me.feet.y);
+        hazard_dps(&world.map, ahead, me.size()) > 0.0
     }
 
     fn combat_move(
