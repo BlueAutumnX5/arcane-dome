@@ -4,7 +4,7 @@
 //! nodes: walk, jump (with double jump), fall off a ledge, or drop through a
 //! one-way platform. Bots path over this graph with A*.
 
-use crate::data::{MapDef, TileKind};
+use crate::data::{MapDef, ObjectKind, TileKind};
 use macroquad::math::{Vec2, vec2};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
@@ -24,6 +24,8 @@ pub enum EdgeKind {
     Jump,
     Fall,
     Drop,
+    /// Launched by a thruster pad.
+    Thrust,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -82,6 +84,17 @@ impl NavGraph {
 
     fn edges_from(&self, map: &MapDef, n: usize) -> Vec<Edge> {
         let (x, y) = self.nodes[n];
+        // Standing on a thruster always launches you, so its only ways out go up.
+        if let Some(pad) = map
+            .objects
+            .iter()
+            .find(|o| o.kind == ObjectKind::Thruster && (o.x, o.y) == (x, y))
+        {
+            let edges = self.thrust_edges(map, x, y, pad.launch_height());
+            if !edges.is_empty() {
+                return edges;
+            }
+        }
         let mut out = Vec::new();
         let mut add = |to: usize, kind: EdgeKind, cost: f32| {
             if !out.iter().any(|e: &Edge| e.to == to) {
@@ -129,6 +142,31 @@ impl NavGraph {
                         EdgeKind::Jump,
                         2.0 + reach as f32 + rise.max(0) as f32 * 0.5,
                     );
+                }
+            }
+        }
+        out
+    }
+
+    /// Landing spots reachable from a thruster at (x, y) launching `height` tiles.
+    fn thrust_edges(&self, map: &MapDef, x: i32, y: i32, height: f32) -> Vec<Edge> {
+        let max_rise = (height - 0.3).floor() as i32;
+        let mut out = Vec::new();
+        for ty in (y - max_rise)..y {
+            for tx in (x - 3)..=(x + 3) {
+                let Some(&to) = self.index.get(&(tx, ty)) else {
+                    continue;
+                };
+                let column = (ty - 1..y).all(|r| clear(map.tile(x, r)));
+                let (a, b) = if tx > x { (x, tx) } else { (tx, x) };
+                let across = (a..=b).all(|c| (ty - 1..=ty).all(|r| clear(map.tile(c, r))));
+                if column && across {
+                    let rise = (y - ty) as f32;
+                    out.push(Edge {
+                        to,
+                        kind: EdgeKind::Thrust,
+                        cost: 2.0 + rise * 0.15 + (tx - x).abs() as f32 * 0.5,
+                    });
                 }
             }
         }
@@ -190,6 +228,57 @@ impl NavGraph {
             let wb = db.x.abs() + db.y.abs() * if db.y < 0.0 { 2.0 } else { 1.0 };
             wa.total_cmp(&wb)
         })
+    }
+
+    /// Nodes that can both reach `start` and be reached from it.
+    pub fn mutually_reachable(&self, start: usize) -> Vec<bool> {
+        let n = self.nodes.len();
+        let mut back: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for (a, edges) in self.edges.iter().enumerate() {
+            for e in edges {
+                back[e.to].push(a);
+            }
+        }
+        let flood = |next: &dyn Fn(usize) -> Vec<usize>| {
+            let mut seen = vec![false; n];
+            let mut stack = vec![start];
+            seen[start] = true;
+            while let Some(a) = stack.pop() {
+                for b in next(a) {
+                    if !seen[b] {
+                        seen[b] = true;
+                        stack.push(b);
+                    }
+                }
+            }
+            seen
+        };
+        let fwd = flood(&|a| self.edges[a].iter().map(|e| e.to).collect());
+        let bwd = flood(&|a| back[a].clone());
+        (0..n).map(|i| fwd[i] && bwd[i]).collect()
+    }
+
+    /// Cheapest travel cost from any of `sources` to every node (Dijkstra).
+    pub fn costs_from(&self, sources: &[usize]) -> Vec<f32> {
+        let mut best = vec![f32::INFINITY; self.nodes.len()];
+        let mut open = BinaryHeap::new();
+        for &s in sources {
+            best[s] = 0.0;
+            open.push(Reverse((0u32, s)));
+        }
+        while let Some(Reverse((c, n))) = open.pop() {
+            if c as f32 / 100.0 > best[n] + 1e-3 {
+                continue;
+            }
+            for e in &self.edges[n] {
+                let g = best[n] + e.cost;
+                if g < best[e.to] {
+                    best[e.to] = g;
+                    open.push(Reverse(((g * 100.0) as u32, e.to)));
+                }
+            }
+        }
+        best
     }
 
     /// A* from `from` to `to`. Returns the nodes to visit (excluding `from`)

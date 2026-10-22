@@ -53,6 +53,18 @@ cargo run --release --example mapgen
 
 Edit the `VARIANTS` list in that file to add variants or change seeds.
 
+### Map objects
+
+Maps have an `objects` list for thrusters, weapon stations, shield stations and
+the powerup spot. `examples/place_objects.rs` places them automatically using
+the bot nav graph (run it after `mapgen`):
+
+```bash
+cargo run --release --example place_objects
+```
+
+Powerups live in `assets/data/powerups.json`.
+
 ## License
 
 Code is released under the [MIT License](LICENSE). Third-party assets keep their

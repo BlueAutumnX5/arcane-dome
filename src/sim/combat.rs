@@ -74,6 +74,7 @@ impl World {
 
     fn try_fire(&mut self, i: usize) {
         let data = Arc::clone(&self.data);
+        let rate_mult = self.fire_rate_mult(i);
         let f = &mut self.fighters[i];
         let w = f.current;
         let def = &data.weapons[w];
@@ -91,7 +92,7 @@ impl World {
             }
             f.inventory[w].mag -= 1;
         }
-        f.fire_cooldown += 1.0 / def.fire_rate_rps;
+        f.fire_cooldown += 1.0 / (def.fire_rate_rps * rate_mult);
 
         let origin = f.eye();
         let base = f.aim.y.atan2(f.aim.x);
@@ -371,12 +372,20 @@ impl World {
         {
             return;
         }
+        if self.is_invulnerable(victim) {
+            return;
+        }
         let data = Arc::clone(&self.data);
         let on_hit: &[Special] = match (specials, weapon) {
             (true, Some(w)) => &data.weapons[w].specials,
             _ => &[],
         };
         let mut amount = amount;
+        if let Some(a) = attacker
+            && a != victim
+        {
+            amount *= self.damage_mult(a);
+        }
         for s in on_hit {
             if let Special::Crit { chance, mult } = *s
                 && self.rng.chance(chance)
@@ -387,7 +396,9 @@ impl World {
 
         let time = self.time;
         let v = &mut self.fighters[victim];
-        v.health -= amount;
+        let (to_shield, to_health) = super::absorb(v.shield, amount);
+        v.shield -= to_shield;
+        v.health -= to_health;
         if let Some(a) = attacker
             && a != victim
         {

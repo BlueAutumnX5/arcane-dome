@@ -23,6 +23,7 @@ struct Edges {
     reload: bool,
     select: Option<usize>,
     cycle: i32,
+    ability: bool,
 }
 
 pub struct Session {
@@ -126,6 +127,9 @@ impl Session {
         if is_key_pressed(KeyCode::R) {
             self.edges.reload = true;
         }
+        if is_key_pressed(KeyCode::F) {
+            self.edges.ability = true;
+        }
         for (i, k) in SLOT_KEYS.iter().enumerate() {
             if is_key_pressed(*k) {
                 self.edges.select = Some(i);
@@ -159,6 +163,7 @@ impl Session {
             reload: edges.reload,
             select: edges.select,
             cycle: edges.cycle,
+            ability: edges.ability,
         };
         let mut inputs = vec![Input::default(); self.world.fighters.len()];
         inputs[self.player] = player;
@@ -204,7 +209,7 @@ impl Session {
             return Outcome::Menu;
         }
         ui::text_center(
-            "Move A/D  Jump W/Space (twice to double jump)  Crouch S  Fire mouse  Reload R  Weapons 1-0 / Q E / wheel  Scores Tab",
+            "Move A/D  Jump W/Space (twice to double jump)  Crouch S  Fire mouse  Reload R  Shadowstep F  Weapons 1-0 / Q E / wheel  Scores Tab",
             sw / 2.0,
             sh - 30.0 * s,
             16.0 * s,

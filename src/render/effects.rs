@@ -54,6 +54,20 @@ impl Effects {
                     radius: *radius,
                     age: 0.0,
                 }),
+                Event::Thrust { pos, .. } => self.blasts.push(Blast {
+                    pos: *pos - vec2(0.0, 0.3),
+                    radius: 0.9,
+                    age: 0.0,
+                }),
+                Event::Teleport { from, to, .. } => {
+                    for p in [*from, *to] {
+                        self.blasts.push(Blast {
+                            pos: p - vec2(0.0, 0.9),
+                            radius: 1.4,
+                            age: 0.0,
+                        });
+                    }
+                }
                 Event::Hit {
                     victim,
                     attacker,

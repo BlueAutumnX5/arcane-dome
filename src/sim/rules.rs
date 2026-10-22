@@ -1,7 +1,7 @@
 //! Scoring, win conditions and rounds. Driven entirely by `ModeDef` fields.
 
-use super::World;
 use super::world::Event;
+use super::{ObjectState, World};
 
 /// Seconds between elimination rounds.
 const INTERMISSION: f32 = 3.0;
@@ -132,6 +132,10 @@ impl World {
         for p in &mut self.pickups {
             p.active = true;
             p.timer = 0.0;
+        }
+        let first_powerup = self.data.powerups.first_spawn_s;
+        for o in &mut self.objects {
+            *o = ObjectState::new(&o.def, first_powerup);
         }
         for f in &mut self.fighters {
             f.alive = false;

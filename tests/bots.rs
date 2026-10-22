@@ -56,7 +56,7 @@ fn bots_fight_on_every_map_and_mode() {
 }
 
 #[test]
-fn every_spawn_can_reach_every_spawn_and_pickup() {
+fn every_spawn_can_reach_every_spawn_pickup_and_object() {
     let data = shipped();
     for map in &data.maps {
         let world = World::new(
@@ -75,7 +75,8 @@ fn every_spawn_can_reach_every_spawn_and_pickup() {
             .spawns
             .iter()
             .map(|s| (s.x, s.y))
-            .chain(map.pickups.iter().map(|p| (p.x, p.y)));
+            .chain(map.pickups.iter().map(|p| (p.x, p.y)))
+            .chain(map.objects.iter().map(|o| (o.x, o.y)));
         let nodes: Vec<usize> = cells
             .map(|(x, y)| {
                 nav.nearest(macroquad::math::vec2(x as f32 + 0.5, y as f32 + 1.0))

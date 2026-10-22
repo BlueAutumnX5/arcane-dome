@@ -1,6 +1,7 @@
 //! Drawing the world with placeholder shapes. Reads the sim, never changes it.
 
 mod effects;
+mod gadgets;
 mod hud;
 
 pub use effects::Effects;
@@ -186,6 +187,7 @@ pub fn draw_world(world: &World, cam: &GameCamera, effects: &Effects, player: Op
     }
 
     draw_pickups(world);
+    gadgets::draw_objects(world);
     for p in &world.projectiles {
         let def = &world.data.weapons[p.weapon];
         match p.kind {
@@ -231,6 +233,8 @@ pub fn draw_world(world: &World, cam: &GameCamera, effects: &Effects, player: Op
 
     for f in world.fighters.iter().filter(|f| f.alive) {
         draw_fighter(world, f, player == Some(f.id));
+        gadgets::draw_shield_hint(f);
+        gadgets::draw_powerup_glow(world, f);
     }
 
     effects.draw_world();
@@ -256,6 +260,7 @@ pub fn draw_world(world: &World, cam: &GameCamera, effects: &Effects, player: Op
 
     set_default_camera();
     draw_labels(world, cam, player);
+    gadgets::draw_object_labels(world, cam);
 }
 
 fn draw_pickups(world: &World) {

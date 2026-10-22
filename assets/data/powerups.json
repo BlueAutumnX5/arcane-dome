@@ -1,0 +1,33 @@
+{
+  "first_spawn_s": 45,
+  "respawn_s": 120,
+  "powerups": [
+    {
+      "id": "divine_shield",
+      "name": "Divine Shield",
+      "color": "#a45cff",
+      "duration_s": 20,
+      "effect": { "type": "invulnerable" }
+    },
+    {
+      "id": "rapid_fire",
+      "name": "Rapid Fire",
+      "color": "#ffd23c",
+      "duration_s": 20,
+      "effect": { "type": "fire_rate", "mult": 2.0 }
+    },
+    {
+      "id": "critical_strike",
+      "name": "Critical Strike",
+      "color": "#ff3c3c",
+      "duration_s": 20,
+      "effect": { "type": "damage", "mult": 2.0 }
+    },
+    {
+      "id": "shadowstep",
+      "name": "Shadowstep",
+      "color": "#3c8cff",
+      "effect": { "type": "teleport", "charges": 1 }
+    }
+  ]
+}

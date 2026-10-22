@@ -1,4 +1,4 @@
-use super::{DataError, is_snake_case, parse_json};
+use super::{DataError, is_snake_case, parse_hex_color, parse_json};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 
@@ -71,6 +71,71 @@ pub struct BotHint {
     pub kind: String,
 }
 
+/// Placeable map gadgets. Kept separate from pickups so a level editor can
+/// drop them anywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObjectKind {
+    /// Launch pad that throws fighters straight up.
+    Thruster,
+    /// Small pod that deploys a random weapon every so often.
+    WeaponStation,
+    /// Small pod that deploys shield every so often (rarer than weapons).
+    ShieldStation,
+    /// Fixed spot where a random powerup appears.
+    PowerupSpot,
+}
+
+impl ObjectKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Thruster => "thruster",
+            Self::WeaponStation => "weapon_station",
+            Self::ShieldStation => "shield_station",
+            Self::PowerupSpot => "powerup_spot",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MapObject {
+    #[serde(rename = "type")]
+    pub kind: ObjectKind,
+    pub x: i32,
+    pub y: i32,
+    /// Thruster: how high it launches, in tiles. Defaults to 8.
+    #[serde(default)]
+    pub height_tiles: Option<f32>,
+    /// Stations: random wait between deployments.
+    #[serde(default)]
+    pub min_delay_s: Option<f32>,
+    #[serde(default)]
+    pub max_delay_s: Option<f32>,
+    /// Shield station: shield points given (50 small, 100 big). Defaults to 50.
+    #[serde(default)]
+    pub shield: Option<f32>,
+}
+
+impl MapObject {
+    pub fn launch_height(&self) -> f32 {
+        self.height_tiles.unwrap_or(8.0)
+    }
+
+    pub fn delay_range(&self) -> (f32, f32) {
+        let (lo, hi): (f32, f32) = match self.kind {
+            ObjectKind::ShieldStation => (60.0, 90.0),
+            _ => (30.0, 45.0),
+        };
+        let min = self.min_delay_s.unwrap_or(lo);
+        (min, self.max_delay_s.unwrap_or(hi.max(min)))
+    }
+
+    pub fn shield_amount(&self) -> f32 {
+        self.shield.unwrap_or(50.0)
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MapFile {
@@ -95,6 +160,8 @@ struct MapFile {
     #[serde(default)]
     #[allow(dead_code)]
     hazards: Vec<serde_json::Value>,
+    #[serde(default)]
+    objects: Vec<MapObject>,
     #[serde(default)]
     bot_hints: Vec<BotHint>,
 }
@@ -140,6 +207,7 @@ pub struct MapDef {
     tiles: Vec<TileKind>,
     pub spawns: Vec<SpawnDef>,
     pub pickups: Vec<PickupDef>,
+    pub objects: Vec<MapObject>,
     pub bot_hints: Vec<BotHint>,
 }
 
@@ -184,6 +252,7 @@ impl MapDef {
             tiles,
             spawns: Vec::new(),
             pickups: Vec::new(),
+            objects: Vec::new(),
             bot_hints: Vec::new(),
         }
     }
@@ -296,6 +365,7 @@ pub fn parse_map(
         tiles,
         spawns: file.spawns,
         pickups: file.pickups,
+        objects: file.objects,
         bot_hints: file.bot_hints,
     };
 
@@ -345,6 +415,63 @@ pub fn parse_map(
         }
     }
 
+    // Objects.
+    for (i, o) in map.objects.iter().enumerate() {
+        let what = format!("objects[{i}]");
+        check_placement(&map, &what, o.x, o.y, true, &mut errs);
+        let only = |field: &str, ok: bool, errs: &mut Vec<String>| {
+            if !ok {
+                errs.push(format!(
+                    "{what}.{field}: not used by {} objects",
+                    o.kind.name()
+                ));
+            }
+        };
+        let station = matches!(
+            o.kind,
+            ObjectKind::WeaponStation | ObjectKind::ShieldStation
+        );
+        only(
+            "height_tiles",
+            o.height_tiles.is_none() || o.kind == ObjectKind::Thruster,
+            &mut errs,
+        );
+        only("min_delay_s", o.min_delay_s.is_none() || station, &mut errs);
+        only("max_delay_s", o.max_delay_s.is_none() || station, &mut errs);
+        only(
+            "shield",
+            o.shield.is_none() || o.kind == ObjectKind::ShieldStation,
+            &mut errs,
+        );
+        if o.kind == ObjectKind::Thruster {
+            let h = o.launch_height();
+            if !(2.0..=30.0).contains(&h) {
+                errs.push(format!(
+                    "{what}.height_tiles: must be between 2 and 30 (got {h})"
+                ));
+            }
+            if map.tile(o.x, o.y + 1) != TileKind::Solid {
+                errs.push(format!(
+                    "{what}: thrusters must sit directly on a solid tile"
+                ));
+            }
+        }
+        if station {
+            let (lo, hi) = o.delay_range();
+            if lo <= 0.0 || hi < lo {
+                errs.push(format!(
+                    "{what}: min_delay_s must be > 0 and max_delay_s >= min_delay_s (got {lo}, {hi})"
+                ));
+            }
+        }
+        if o.kind == ObjectKind::ShieldStation && !(1.0..=100.0).contains(&o.shield_amount()) {
+            errs.push(format!(
+                "{what}.shield: must be between 1 and 100 (got {})",
+                o.shield_amount()
+            ));
+        }
+    }
+
     for (i, h) in map.bot_hints.iter().enumerate() {
         if map.tile(h.x, h.y) == TileKind::Solid {
             errs.push(format!("bot_hints[{i}]: is inside a solid tile"));
@@ -389,15 +516,6 @@ fn check_placement(
 
 fn to_errors(label: &str, msgs: Vec<String>) -> Vec<DataError> {
     msgs.into_iter().map(|m| DataError::new(label, m)).collect()
-}
-
-fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
-    let hex = s.strip_prefix('#')?;
-    if hex.len() != 6 {
-        return None;
-    }
-    let v = u32::from_str_radix(hex, 16).ok()?;
-    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
 }
 
 #[cfg(test)]

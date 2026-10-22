@@ -6,11 +6,15 @@
 mod error;
 mod map;
 mod modes;
+mod powerups;
 mod weapon;
 
 pub use error::{DataError, DataErrors};
-pub use map::{BotHint, MapDef, PickupDef, PickupKind, SpawnDef, TileKind, parse_map};
+pub use map::{
+    BotHint, MapDef, MapObject, ObjectKind, PickupDef, PickupKind, SpawnDef, TileKind, parse_map,
+};
 pub use modes::{ModeDef, parse_modes};
+pub use powerups::{PowerupConfig, PowerupDef, PowerupEffect, parse_powerups};
 pub use weapon::{
     Category, ExplosionDef, Falloff, ProjectileDef, ProjectileKind, Special, WeaponDef,
     parse_weapon,
@@ -26,6 +30,7 @@ pub struct GameData {
     pub weapons: Vec<WeaponDef>,
     pub maps: Vec<MapDef>,
     pub modes: Vec<ModeDef>,
+    pub powerups: PowerupConfig,
 }
 
 impl GameData {
@@ -45,6 +50,17 @@ impl GameData {
             }
         };
 
+        let powerups = match read_file(&data_dir, "powerups.json") {
+            Ok(text) => parse_powerups("powerups.json", &text).unwrap_or_else(|e| {
+                errors.extend(e);
+                PowerupConfig::default()
+            }),
+            Err(e) => {
+                errors.push(e);
+                PowerupConfig::default()
+            }
+        };
+
         let weapons = load_dir(&data_dir, "weapons", &mut errors, |label, stem, text| {
             parse_weapon(label, stem, text)
         });
@@ -56,13 +72,16 @@ impl GameData {
         });
 
         if errors.is_empty() {
-            Self::from_parts(weapons, maps, modes)
+            let mut data = Self::from_parts(weapons, maps, modes)?;
+            data.powerups = powerups;
+            Ok(data)
         } else {
             Err(DataErrors(errors))
         }
     }
 
     /// Build from already-parsed parts (used by `load` and by tests).
+    /// Powerups start empty; set `powerups` afterwards if needed.
     pub fn from_parts(
         mut weapons: Vec<WeaponDef>,
         mut maps: Vec<MapDef>,
@@ -95,6 +114,7 @@ impl GameData {
             weapons,
             maps,
             modes,
+            powerups: PowerupConfig::default(),
         })
     }
 
@@ -196,4 +216,14 @@ pub(crate) fn is_snake_case(s: &str) -> bool {
         && s.chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
         && !s.starts_with('_')
+}
+
+/// `#rrggbb` to bytes.
+pub(crate) fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
+    let hex = s.strip_prefix('#')?;
+    if hex.len() != 6 {
+        return None;
+    }
+    let v = u32::from_str_radix(hex, 16).ok()?;
+    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
 }

@@ -1,6 +1,6 @@
 use super::{BLUE, Effects, GameCamera, RED, category_color, fighter_color};
 use crate::data::ProjectileKind;
-use crate::sim::{MAX_HEALTH, Phase, World};
+use crate::sim::{MAX_HEALTH, MAX_SHIELD, Phase, World};
 use macroquad::prelude::*;
 
 fn ui_scale() -> f32 {
@@ -113,6 +113,60 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
         22.0 * s,
         WHITE,
     );
+
+    // Shield, just above health.
+    if f.shield > 0.0 {
+        let sy = hy - 10.0 * s;
+        draw_rectangle(hx, sy, hw, 6.0 * s, Color::new(0.0, 0.0, 0.0, 0.55));
+        draw_rectangle(
+            hx,
+            sy,
+            hw * (f.shield / MAX_SHIELD).clamp(0.0, 1.0),
+            6.0 * s,
+            super::gadgets::SHIELD_COLOR,
+        );
+        text(
+            &format!("Shield {:.0}", f.shield),
+            hx + hw + 8.0 * s,
+            sy + 8.0 * s,
+            16.0 * s,
+            super::gadgets::SHIELD_COLOR,
+        );
+    }
+
+    // Active powerups, stacked above health.
+    let mut row = 0.0;
+    for b in &f.buffs {
+        if let Some(p) = world.data.powerups.powerups.get(b.powerup) {
+            let c = super::gadgets::rgb(p.color);
+            let y = hy - (34.0 + row * 24.0) * s;
+            draw_rectangle(hx, y, 14.0 * s, 14.0 * s, c);
+            text(
+                &format!("{}  {:.0}s", p.name, b.time_left.ceil()),
+                hx + 22.0 * s,
+                y + 13.0 * s,
+                18.0 * s,
+                c,
+            );
+            row += 1.0;
+        }
+    }
+    if f.teleport_charges > 0
+        && let Some(p) = f
+            .teleport_powerup
+            .and_then(|p| world.data.powerups.powerups.get(p))
+    {
+        let c = super::gadgets::rgb(p.color);
+        let y = hy - (34.0 + row * 24.0) * s;
+        draw_rectangle(hx, y, 14.0 * s, 14.0 * s, c);
+        text(
+            &format!("{} x{}  [F]", p.name, f.teleport_charges),
+            hx + 22.0 * s,
+            y + 13.0 * s,
+            18.0 * s,
+            c,
+        );
+    }
 
     // Ammo, bottom right.
     let def = &world.data.weapons[f.current];

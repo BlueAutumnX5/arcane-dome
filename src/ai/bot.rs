@@ -1,5 +1,5 @@
 use super::nav::{EdgeKind, NavGraph};
-use crate::data::{Category, PickupKind, TileKind, WeaponDef};
+use crate::data::{Category, ObjectKind, PickupKind, TileKind, WeaponDef};
 use crate::sim::physics::line_of_sight;
 use crate::sim::{DT, Difficulty, Fighter, Input, Rng, World};
 use macroquad::math::{Vec2, vec2};
@@ -54,6 +54,8 @@ enum Goal {
     Pickup(usize),
     Hunt(usize),
     Retreat(usize),
+    /// A station or the powerup spot (index into `World::objects`).
+    Object(usize),
 }
 
 pub(crate) struct Brain {
@@ -186,6 +188,11 @@ impl Brain {
 
         self.pick_weapon(world, me, target, &mut input);
 
+        // Shadowstep away when a fight is going badly.
+        if me.teleport_charges > 0 && me.health < 35.0 && target.is_some() {
+            input.ability = true;
+        }
+
         // Unstick: jump when pushing against something, then replan.
         if input.move_x != 0.0 && (me.feet.x - self.last_x).abs() < 0.01 {
             self.stuck += DT;
@@ -206,9 +213,36 @@ impl Brain {
         input
     }
 
+    /// The best station or powerup worth walking to right now.
+    fn wanted_object(&self, world: &World, armed: bool) -> Option<usize> {
+        let me = &world.fighters[self.id];
+        (0..world.objects.len())
+            .filter(|&k| world.objects[k].ready)
+            .filter_map(|k| {
+                let o = &world.objects[k];
+                let dist = me.feet.distance(o.pos);
+                let worth = match o.def.kind {
+                    ObjectKind::PowerupSpot if o.powerup.is_some() => 60.0,
+                    ObjectKind::ShieldStation if me.shield < 50.0 => 30.0,
+                    ObjectKind::WeaponStation if o.weapon.is_some_and(|w| !me.owns(w)) => {
+                        if armed {
+                            15.0
+                        } else {
+                            35.0
+                        }
+                    }
+                    _ => return None,
+                };
+                (dist < worth).then_some((k, dist / worth))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(k, _)| k)
+    }
+
     fn goal_valid(&self, world: &World, nav: &NavGraph) -> bool {
         match self.goal {
             Goal::Pickup(k) => world.pickups[k].active,
+            Goal::Object(k) => world.objects[k].ready,
             Goal::Hunt(j) => world.fighters[j].alive,
             Goal::Wander(n) | Goal::Retreat(n) => {
                 world.fighters[self.id].feet.distance(nav.pos(n)) > 1.0
@@ -219,6 +253,7 @@ impl Brain {
     fn goal_dest(&self, world: &World, nav: &NavGraph) -> Vec2 {
         match self.goal {
             Goal::Pickup(k) => world.pickups[k].pos + vec2(0.0, 0.4),
+            Goal::Object(k) => world.objects[k].pos,
             Goal::Hunt(j) => world.fighters[j].feet,
             Goal::Wander(n) | Goal::Retreat(n) => nav.pos(n),
         }
@@ -287,6 +322,9 @@ impl Brain {
             return Goal::Pickup(k);
         }
 
+        if let Some(k) = self.wanted_object(world, armed) {
+            return Goal::Object(k);
+        }
         if let Some(t) = nearest {
             return Goal::Hunt(t);
         }
@@ -338,6 +376,12 @@ impl Brain {
                 let double_jump =
                     !me.on_ground && me.air_jumps > 0 && me.vel.y > -3.0 && p.y < me.feet.y - 0.8;
                 input.jump = first_jump || double_jump;
+            }
+            EdgeKind::Thrust => {
+                // The pad does the launching; steer and add a double jump if short.
+                input.jump_held = true;
+                input.jump =
+                    !me.on_ground && me.air_jumps > 0 && me.vel.y > -3.0 && p.y < me.feet.y - 0.8;
             }
             EdgeKind::Drop => {
                 if me.on_ground {

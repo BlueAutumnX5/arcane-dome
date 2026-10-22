@@ -1,6 +1,6 @@
 use super::fighter::*;
 use super::physics::{self, move_body, overlaps_kind, standing_on_one_way};
-use super::{DT, Input, Phase, Projectile, Rng};
+use super::{DT, Input, ObjectState, Phase, Projectile, Rng};
 use crate::data::{
     Category, GameData, MapDef, ModeDef, PickupDef, PickupKind, ProjectileKind, SpawnDef, TileKind,
 };
@@ -110,6 +110,24 @@ pub enum Event {
     MatchOver {
         winner: Option<usize>,
     },
+    Thrust {
+        fighter: usize,
+        pos: Vec2,
+    },
+    /// A station or powerup spot just became available.
+    Deployed {
+        object: usize,
+    },
+    /// A fighter took what a station or powerup spot offered.
+    Taken {
+        object: usize,
+        fighter: usize,
+    },
+    Teleport {
+        fighter: usize,
+        from: Vec2,
+        to: Vec2,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,6 +149,10 @@ pub struct World {
     pub fighters: Vec<Fighter>,
     pub projectiles: Vec<Projectile>,
     pub pickups: Vec<PickupState>,
+    /// Thrusters, stations and powerup spots.
+    pub objects: Vec<ObjectState>,
+    /// Standable cells (feet positions) used as teleport destinations.
+    pub stand_cells: Vec<Vec2>,
     /// Events from the most recent tick only.
     pub events: Vec<Event>,
     pub rng: Rng,
@@ -216,6 +238,14 @@ impl World {
             })
             .collect();
 
+        let first_powerup = data.powerups.first_spawn_s;
+        let objects = map
+            .objects
+            .iter()
+            .map(|o| ObjectState::new(o, first_powerup))
+            .collect();
+        let stand_cells = super::gadgets::stand_cells(&map);
+
         let sides = if mode.is_team() { 2 } else { fighters.len() };
         let mut world = Self {
             rng: Rng::new(config.seed),
@@ -227,6 +257,8 @@ impl World {
             fighters,
             projectiles: Vec::new(),
             pickups,
+            objects,
+            stand_cells,
             events: Vec::new(),
             tick: 0,
             time: 0.0,
@@ -263,6 +295,7 @@ impl World {
         }
         self.update_projectiles();
         self.update_pickups();
+        self.update_objects();
         self.update_respawns();
         self.check_rules();
     }
@@ -353,10 +386,16 @@ impl World {
         if f.vel.y >= 0.0 {
             f.jump_rising = false;
         }
+        f.thrust_cooldown = (f.thrust_cooldown - DT).max(0.0);
         let spiked = overlaps_kind(map, f.feet, size, TileKind::Spikes);
         let burn = f.burn;
 
         self.handle_weapons(i, &input);
+        self.update_buffs(i);
+        self.check_thrusters(i);
+        if input.ability {
+            self.use_ability(i);
+        }
 
         if let Some(mut b) = burn {
             b.time_left -= DT;
@@ -422,27 +461,10 @@ impl World {
                 }
                 took
             }
-            PickupKind::Weapon => {
-                let Some(w) = p.weapon else { return false };
-                let def = &data.weapons[w];
-                let slot = &mut f.inventory[w];
-                if !slot.owned {
-                    *slot = Slot {
-                        owned: true,
-                        mag: def.magazine,
-                        reserve: def.reserve_ammo,
-                    };
-                    f.current = w;
-                    f.reload_timer = 0.0;
-                    f.fire_cooldown = f.fire_cooldown.max(SWITCH_DELAY);
-                    true
-                } else if slot.reserve < def.reserve_ammo {
-                    slot.reserve = def.reserve_ammo;
-                    true
-                } else {
-                    false
-                }
-            }
+            PickupKind::Weapon => match p.weapon {
+                Some(w) => give_weapon(f, &data.weapons[w], w),
+                None => false,
+            },
         }
     }
 
@@ -483,6 +505,11 @@ impl World {
         f.stun = 0.0;
         f.freeze = 0.0;
         f.last_attacker = None;
+        f.shield = 0.0;
+        f.buffs.clear();
+        f.teleport_charges = 0;
+        f.teleport_powerup = None;
+        f.thrust_cooldown = 0.0;
         self.give_loadout(i);
         self.events.push(Event::Spawn { fighter: i });
     }
@@ -566,6 +593,28 @@ impl World {
     /// Player-facing helper: the fighter's line of sight to a point.
     pub fn can_see(&self, i: usize, p: Vec2) -> bool {
         physics::line_of_sight(&self.map, self.fighters[i].eye(), p)
+    }
+}
+
+/// Give a weapon with full ammo (and equip it), or top up its reserve.
+/// Returns false if there was nothing to gain.
+pub(crate) fn give_weapon(f: &mut Fighter, def: &crate::data::WeaponDef, w: usize) -> bool {
+    let slot = &mut f.inventory[w];
+    if !slot.owned {
+        *slot = Slot {
+            owned: true,
+            mag: def.magazine,
+            reserve: def.reserve_ammo,
+        };
+        f.current = w;
+        f.reload_timer = 0.0;
+        f.fire_cooldown = f.fire_cooldown.max(SWITCH_DELAY);
+        true
+    } else if slot.reserve < def.reserve_ammo {
+        slot.reserve = def.reserve_ammo;
+        true
+    } else {
+        false
     }
 }
 

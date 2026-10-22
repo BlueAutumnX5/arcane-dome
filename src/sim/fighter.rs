@@ -6,6 +6,7 @@ pub const CROUCH_SIZE: Vec2 = Vec2::new(0.7, 1.2);
 /// Top part of the body that counts as a headshot.
 pub const HEAD_HEIGHT: f32 = 0.45;
 pub const MAX_HEALTH: f32 = 100.0;
+pub const MAX_SHIELD: f32 = 100.0;
 
 // Movement tuning, in tiles and seconds.
 pub(crate) const RUN_SPEED: f32 = 9.0;
@@ -85,8 +86,24 @@ pub struct Fighter {
     pub freeze_slow: f32,
     pub last_attacker: Option<(usize, f32)>,
 
+    /// Damage-reducing shield, 0..=MAX_SHIELD.
+    pub shield: f32,
+    /// Timed powerups currently active.
+    pub buffs: Vec<Buff>,
+    /// Shadowstep-style teleports waiting to be used, and which powerup gave them.
+    pub teleport_charges: u32,
+    pub teleport_powerup: Option<usize>,
+    pub thrust_cooldown: f32,
+
     pub kills: u32,
     pub deaths: u32,
+}
+
+/// An active timed powerup (index into `GameData::powerups.powerups`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Buff {
+    pub powerup: usize,
+    pub time_left: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -130,6 +147,11 @@ impl Fighter {
             freeze: 0.0,
             freeze_slow: 1.0,
             last_attacker: None,
+            shield: 0.0,
+            buffs: Vec::new(),
+            teleport_charges: 0,
+            teleport_powerup: None,
+            thrust_cooldown: 0.0,
             kills: 0,
             deaths: 0,
         }

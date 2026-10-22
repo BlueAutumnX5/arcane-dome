@@ -63,6 +63,14 @@
     {"type": "weapon", "x": 22, "y": 18, "weapon_id": "cinder_spitter", "respawn_s": 25},
     {"type": "weapon", "x": 37, "y": 18, "weapon_id": "cinder_spitter", "respawn_s": 25}
   ],
+  "objects": [
+    {"type":"thruster","x":23,"y":25,"height_tiles":8.5},
+    {"type":"thruster","x":48,"y":25,"height_tiles":8.5},
+    {"type":"powerup_spot","x":37,"y":12},
+    {"type":"weapon_station","x":37,"y":25},
+    {"type":"weapon_station","x":50,"y":12},
+    {"type":"shield_station","x":7,"y":12,"min_delay_s":90,"max_delay_s":120,"shield":100}
+  ],
   "bot_hints": [
     {"x": 29, "y": 6, "kind": "camp_spot"}
   ]

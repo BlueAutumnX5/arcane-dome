@@ -200,7 +200,8 @@ pub struct WeaponDef {
     #[serde(default)]
     pub unlock_cost: u32,
     pub damage: f32,
-    #[serde(default = "one")]
+    /// Defaults to 1.9 (nearly double); set it per weapon to override.
+    #[serde(default = "default_headshot")]
     pub headshot_mult: f32,
     pub fire_rate_rps: f32,
     #[serde(default = "one_u32")]
@@ -224,8 +225,8 @@ pub struct WeaponDef {
     pub sounds: BTreeMap<String, String>,
 }
 
-fn one() -> f32 {
-    1.0
+fn default_headshot() -> f32 {
+    1.9
 }
 
 fn one_u32() -> u32 {

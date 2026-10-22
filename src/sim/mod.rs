@@ -3,6 +3,7 @@
 
 mod combat;
 mod fighter;
+mod gadgets;
 mod input;
 pub mod physics;
 mod rng;
@@ -10,8 +11,9 @@ mod rules;
 mod world;
 
 pub use combat::Projectile;
-pub use fighter::{CROUCH_SIZE, HEAD_HEIGHT, MAX_HEALTH, STAND_SIZE};
-pub use fighter::{Fighter, Slot};
+pub use fighter::{Buff, Fighter, Slot};
+pub use fighter::{CROUCH_SIZE, HEAD_HEIGHT, MAX_HEALTH, MAX_SHIELD, STAND_SIZE};
+pub use gadgets::{ObjectState, absorb};
 pub use input::Input;
 pub use rng::Rng;
 pub use rules::Phase;

@@ -19,4 +19,6 @@ pub struct Input {
     pub select: Option<usize>,
     /// -1 / +1 to cycle owned weapons.
     pub cycle: i32,
+    /// Use the held ability (e.g. a Shadowstep teleport).
+    pub ability: bool,
 }

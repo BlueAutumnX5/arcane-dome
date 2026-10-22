@@ -1,7 +1,9 @@
 //! Movement, damage and match-rule tests on a small hand-made arena.
 
-use arcane_dome::data::{GameData, parse_map, parse_modes, parse_weapon};
-use arcane_dome::sim::{DT, Event, Input, MAX_HEALTH, MatchConfig, Phase, STAND_SIZE, World};
+use arcane_dome::data::{GameData, parse_map, parse_modes, parse_powerups, parse_weapon};
+use arcane_dome::sim::{
+    DT, Event, Input, MAX_HEALTH, MAX_SHIELD, MatchConfig, Phase, STAND_SIZE, World,
+};
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
 
@@ -18,6 +20,13 @@ const BOOM: &str = r#"{ "id": "boom", "name": "Boom", "category": "explosive",
 const LEECH: &str = r#"{ "id": "leech", "name": "Leech", "category": "automatic",
   "damage": 20, "fire_rate_rps": 10, "magazine": 30, "reserve_ammo": 0, "range_tiles": 30,
   "projectile": { "type": "hitscan" }, "specials": [{ "type": "lifesteal", "ratio": 0.5 }] }"#;
+
+const POWERUPS: &str = r##"{ "first_spawn_s": 1, "respawn_s": 120, "powerups": [
+  { "id": "divine_shield", "name": "Divine Shield", "color": "#a45cff", "duration_s": 20, "effect": { "type": "invulnerable" } },
+  { "id": "rapid_fire", "name": "Rapid Fire", "color": "#ffd23c", "duration_s": 20, "effect": { "type": "fire_rate", "mult": 2 } },
+  { "id": "critical_strike", "name": "Critical Strike", "color": "#ff3c3c", "duration_s": 20, "effect": { "type": "damage", "mult": 2 } },
+  { "id": "shadowstep", "name": "Shadowstep", "color": "#3c8cff", "effect": { "type": "teleport", "charges": 1 } }
+] }"##;
 
 const MODES: &str = r#"{
   "deathmatch":       { "teams": 1, "respawn": true,  "score_limit": 3, "time_limit_s": 600 },
@@ -46,7 +55,12 @@ fn arena_json() -> String {
           {{"x":26,"y":6,"team":1}},{{"x":27,"y":6,"team":1}},
           {{"x":5,"y":6}},{{"x":10,"y":6}},{{"x":19,"y":6}},{{"x":24,"y":6}}
         ],
-        "pickups": [{{"type":"health","x":8,"y":6,"respawn_s":10}}] }}"##,
+        "pickups": [{{"type":"health","x":8,"y":6,"respawn_s":10}}],
+        "objects": [
+          {{"type":"thruster","x":12,"y":6,"height_tiles":4}},
+          {{"type":"shield_station","x":21,"y":6,"shield":50}},
+          {{"type":"powerup_spot","x":22,"y":6}}
+        ] }}"##,
         serde_json::to_string(&grid).unwrap()
     )
 }
@@ -65,7 +79,9 @@ fn data() -> Arc<GameData> {
     let modes = parse_modes("modes.json", MODES).unwrap();
     let mode_ids: Vec<&str> = modes.iter().map(|m| m.id.as_str()).collect();
     let map = parse_map("maps/arena.json", "arena", &arena_json(), &ids, &mode_ids).unwrap();
-    Arc::new(GameData::from_parts(weapons, vec![map], modes).unwrap())
+    let mut data = GameData::from_parts(weapons, vec![map], modes).unwrap();
+    data.powerups = parse_powerups("powerups.json", POWERUPS).unwrap();
+    Arc::new(data)
 }
 
 fn world(mode: &str, enemies: u32, friends: u32) -> World {
@@ -385,4 +401,111 @@ fn kill_events_are_emitted() {
             ..
         }
     )));
+}
+
+#[test]
+fn shield_absorbs_part_of_a_hit() {
+    let mut w = world("deathmatch", 1, 0);
+    run(&mut w, 2);
+    w.fighters[1].shield = 100.0;
+    w.damage(1, Some(0), None, 40.0, false, false);
+    assert!((w.fighters[1].shield - 72.0).abs() < 1e-3);
+    assert!((w.fighters[1].health - 88.0).abs() < 1e-3);
+}
+
+#[test]
+fn shield_station_tops_up_and_goes_on_cooldown() {
+    let mut w = world("deathmatch", 1, 0);
+    let k = w
+        .objects
+        .iter()
+        .position(|o| o.def.kind == arcane_dome::data::ObjectKind::ShieldStation)
+        .unwrap();
+    w.objects[k].ready = true;
+    w.objects[k].timer = 0.0;
+    place(&mut w, 0, 21.5, "pistol");
+    place(&mut w, 1, 3.0, "pistol");
+    run(&mut w, 1);
+    assert_eq!(w.fighters[0].shield, 50.0);
+    assert!(!w.objects[k].ready);
+    assert!(w.objects[k].timer >= 59.0);
+    assert!(w.fighters[0].shield <= MAX_SHIELD);
+}
+
+#[test]
+fn thrusters_launch_high() {
+    let mut w = world("deathmatch", 1, 0);
+    place(&mut w, 0, 12.5, "pistol");
+    place(&mut w, 1, 3.0, "pistol");
+    let mut top = 7.0f32;
+    for _ in 0..90 {
+        w.step(&idle(2));
+        top = top.min(w.fighters[0].feet.y);
+    }
+    // 4 tiles requested; the room is only 6 tall so the ceiling may cap it.
+    assert!(top < 3.6, "launched to {top}");
+}
+
+#[test]
+fn powerups_change_damage_fire_rate_and_invulnerability() {
+    let mut w = world("deathmatch", 1, 0);
+    run(&mut w, 2);
+    let id = |w: &World, name: &str| {
+        w.data
+            .powerups
+            .powerups
+            .iter()
+            .position(|p| p.id == name)
+            .unwrap()
+    };
+    let crit = id(&w, "critical_strike");
+    w.apply_powerup(0, crit);
+    w.damage(1, Some(0), None, 10.0, false, false);
+    assert_eq!(w.fighters[1].health, MAX_HEALTH - 20.0);
+    assert_eq!(w.fire_rate_mult(0), 1.0);
+    let rapid = id(&w, "rapid_fire");
+    w.apply_powerup(0, rapid);
+    assert_eq!(w.fire_rate_mult(0), 2.0);
+    let shield = id(&w, "divine_shield");
+    w.apply_powerup(1, shield);
+    w.damage(1, Some(0), None, 50.0, false, false);
+    assert_eq!(w.fighters[1].health, MAX_HEALTH - 20.0);
+    run(&mut w, (20.0 / DT) as usize + 2);
+    assert!(w.fighters[1].buffs.is_empty(), "buffs expire after 20 s");
+}
+
+#[test]
+fn shadowstep_teleports_once() {
+    let mut w = world("deathmatch", 1, 0);
+    run(&mut w, 2);
+    let p = w
+        .data
+        .powerups
+        .powerups
+        .iter()
+        .position(|p| p.id == "shadowstep")
+        .unwrap();
+    w.apply_powerup(0, p);
+    assert_eq!(w.fighters[0].teleport_charges, 1);
+    let before = w.fighters[0].feet;
+    w.step(&[Input {
+        ability: true,
+        ..Default::default()
+    }]);
+    assert_eq!(w.fighters[0].teleport_charges, 0);
+    assert!(w.fighters[0].feet.distance(before) > 3.0);
+    assert!(w.events.iter().any(|e| matches!(e, Event::Teleport { .. })));
+}
+
+#[test]
+fn powerup_spot_appears_after_the_first_delay() {
+    let mut w = world("deathmatch", 1, 0);
+    let k = w
+        .objects
+        .iter()
+        .position(|o| o.def.kind == arcane_dome::data::ObjectKind::PowerupSpot)
+        .unwrap();
+    assert!(!w.objects[k].ready);
+    run(&mut w, (1.0 / DT) as usize + 2);
+    assert!(w.objects[k].ready);
 }
