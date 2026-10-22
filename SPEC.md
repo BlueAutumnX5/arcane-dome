@@ -191,12 +191,4 @@ Validation rules the loader must enforce:
 }
 ```
 
----
 
-## Legal and sharing checklist
-
-- Code you write is yours. Pick a license (MIT or GPL) before making the repo public.
-- Do not include any file ripped from the original SWFs, and do not use the names "Raze", "Raze 2" or "Raze 3" as the title.
-- Credit every CC0 or CC-BY asset in a `CREDITS.md`.
-- Mechanics (double jump, arena bots, unlockable weapons) are fine to reuse. Specific art, sounds, map layouts and exact weapon stat tables are not.
-- Personal use only is the lowest-risk path. For a public release with anything resembling the originals, ask the original developers first.
