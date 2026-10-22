@@ -5,7 +5,6 @@
 //! left, right tabs mirror that and move right); leaving eases it back.
 
 use crate::data::{MapDef, ObjectKind};
-use crate::geo::{Material, ShapeKind, triangulate};
 use macroquad::prelude::*;
 use std::collections::HashMap;
 
@@ -332,53 +331,24 @@ pub fn backdrop(time: f32) {
 }
 
 /// Miniature of a map's terrain, water, hazards and objects fitted into `r`.
-pub fn map_preview(map: &MapDef, r: Rect) {
-    let t = &map.theme;
-    let top = Color::from_rgba(t.sky_top[0], t.sky_top[1], t.sky_top[2], 255);
-    let bottom = Color::from_rgba(t.sky_bottom[0], t.sky_bottom[1], t.sky_bottom[2], 255);
-    let bands = 12;
-    for i in 0..bands {
-        let k = i as f32 / bands as f32;
-        let c = Color::new(
-            top.r + (bottom.r - top.r) * k,
-            top.g + (bottom.g - top.g) * k,
-            top.b + (bottom.b - top.b) * k,
-            1.0,
-        );
-        draw_rectangle(r.x, r.y + r.h * k, r.w, r.h / bands as f32 + 1.0, c);
-    }
+pub fn map_preview(map: &MapDef, thumb: &Texture2D, r: Rect) {
+    draw_rectangle(r.x, r.y, r.w, r.h, Color::from_rgba(8, 10, 16, 255));
     let k = (r.w / map.width).min(r.h / map.height);
     let o = vec2(
         r.x + (r.w - k * map.width) / 2.0,
         r.y + (r.h - k * map.height) / 2.0,
     );
     let to_screen = |p: Vec2| o + p * k;
-    for s in &map.terrain.shapes {
-        if s.material == Material::Void {
-            continue;
-        }
-        let color = match (s.kind, s.material) {
-            (ShapeKind::Water, _) => Color::from_rgba(60, 130, 220, 170),
-            (ShapeKind::Hazard, Material::Lava) => Color::from_rgba(230, 100, 40, 255),
-            (ShapeKind::Hazard, _) => Color::from_rgba(220, 70, 70, 255),
-            (ShapeKind::Hatch, _) => Color::from_rgba(190, 155, 95, 200),
-            (_, Material::Ice) => Color::from_rgba(200, 230, 245, 255),
-            (_, Material::Sand) => Color::from_rgba(196, 160, 104, 255),
-            (_, Material::Wood) => Color::from_rgba(150, 110, 70, 255),
-            (_, Material::Metal) => Color::from_rgba(110, 118, 134, 255),
-            (_, Material::Moss) => Color::from_rgba(80, 110, 70, 255),
-            (_, Material::Sludge) => Color::from_rgba(110, 124, 64, 255),
-            _ => Color::from_rgba(80, 86, 108, 255),
-        };
-        for tri in triangulate(&s.points) {
-            draw_triangle(
-                to_screen(tri[0]),
-                to_screen(tri[1]),
-                to_screen(tri[2]),
-                color,
-            );
-        }
-    }
+    draw_texture_ex(
+        thumb,
+        o.x,
+        o.y,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(vec2(map.width, map.height) * k),
+            ..Default::default()
+        },
+    );
     for obj in &map.objects {
         let c = match obj.kind {
             ObjectKind::Thruster => Color::new(0.3, 1.0, 0.75, 1.0),

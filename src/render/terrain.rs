@@ -391,7 +391,29 @@ fn draw_hazard(s: &ShapeArt, time: f32) {
                 let pulse = 0.5 + 0.5 * (time * 2.0 + v * 6.0).sin();
                 draw_circle(p.x, p.y, r * 1.6, alpha(lip, 0.3 + 0.4 * pulse));
             }
-            for e in &s.tops {
+            for (i, e) in s.tops.iter().enumerate() {
+                // Heat shimmer rising off the surface.
+                let flicker = 0.85 + 0.15 * (time * 3.1 + i as f32).sin();
+                for k in 0..4 {
+                    let (h0, h1) = (k as f32 * 0.35, (k + 1) as f32 * 0.35);
+                    let c = alpha(lip, 0.16 / (k + 1) as f32 * flicker);
+                    let (a0, b0) = (e.a - vec2(0.0, h0), e.b - vec2(0.0, h0));
+                    let (a1, b1) = (e.a - vec2(0.0, h1), e.b - vec2(0.0, h1));
+                    draw_triangle(a0, b0, b1, c);
+                    draw_triangle(a0, b1, a1, c);
+                }
+                // Bubbles that swell and pop at the surface.
+                let len = (e.b - e.a).length();
+                let n = (len * 0.9) as i32 + 1;
+                for k in 0..n {
+                    let phase = hash(i as i32, k, 11);
+                    let cycle = (time * (0.5 + phase * 0.4) + phase * 7.0).fract();
+                    let along =
+                        (hash(i as i32, k, 12) + (time * 0.05 + phase).floor() * 0.37).fract();
+                    let p = e.a.lerp(e.b, 0.05 + along * 0.9) + vec2(0.0, 0.12);
+                    let r = 0.05 + cycle * 0.14;
+                    draw_circle(p.x, p.y - cycle * 0.1, r, alpha(lip, 0.9 * (1.0 - cycle)));
+                }
                 draw_line(e.a.x, e.a.y, e.b.x, e.b.y, 0.12, lip);
             }
         }
@@ -704,8 +726,12 @@ fn draw_decor(d: &Decor, map: &MapDef, time: f32) {
 
 /// Sky gradient, sun and far skyline, drawn in screen space.
 pub fn draw_sky(map: &MapDef, cam_x: f32, ppt: f32, time: f32) {
+    draw_sky_sized(map, screen_width(), screen_height(), cam_x, ppt, time);
+}
+
+/// The sky over a `sw` x `sh` area whose top-left is the origin.
+pub fn draw_sky_sized(map: &MapDef, sw: f32, sh: f32, cam_x: f32, ppt: f32, time: f32) {
     let t = &map.theme;
-    let (sw, sh) = (screen_width(), screen_height());
     let (top, bottom) = (rgb(t.sky_top), rgb(t.sky_bottom));
     let bands = 32;
     for i in 0..bands {

@@ -54,6 +54,8 @@ struct App {
     seed: u64,
     time: f32,
     quit: bool,
+    /// Rendered map pictures for the setup screen, by map id.
+    thumbs: std::collections::HashMap<String, crate::render::MapThumb>,
 }
 
 pub async fn run() {
@@ -88,6 +90,7 @@ pub async fn run() {
         seed: macroquad::miniquad::date::now() as u64,
         time: 0.0,
         quit: false,
+        thumbs: Default::default(),
     };
     app.reset_mode_defaults();
 
@@ -397,7 +400,11 @@ impl App {
         ui::panel(Rect::new(lx, top, lw, sh - top - 100.0 * s), None);
         let pad = 12.0 * s;
         let pv = Rect::new(lx + pad, top + pad, lw - 2.0 * pad, 170.0 * s);
-        ui::map_preview(map, pv);
+        let thumb = self
+            .thumbs
+            .entry(map.id.clone())
+            .or_insert_with(|| crate::render::MapThumb::new(map, 768));
+        ui::map_preview(map, thumb.draw(map), pv);
         let ny = pv.y + pv.h + 26.0 * s;
         let mut map_delta = self.ui.stepper(
             "s_map",
@@ -810,10 +817,18 @@ impl App {
             s if s.starts_with("game") => {
                 let mut cfg = self.setup_config();
                 cfg.seed = 3;
+                // game:<map>@x,y also puts the player at x, y.
+                let (s, at) = s.split_once('@').unwrap_or((s, ""));
                 if let Some(map) = s.strip_prefix("game:") {
                     cfg.map_id = map.to_owned();
                 }
                 self.screen = self.start(cfg);
+                let at = at
+                    .split_once(',')
+                    .and_then(|(x, y)| Some(vec2(x.parse().ok()?, y.parse().ok()?)));
+                if let (Screen::Game(g), Some(at)) = (&mut self.screen, at) {
+                    g.debug_place_player(at);
+                }
             }
             _ => {}
         }
@@ -821,7 +836,7 @@ impl App {
 }
 
 /// Optional screenshot hook for checking visuals without a person at the keyboard:
-/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|game[:map_id] ARCANE_SHOT_AFTER=2`.
+/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|game[:map_id[@x,y]] ARCANE_SHOT_AFTER=2`.
 mod debug {
     pub struct Shot {
         pub path: String,

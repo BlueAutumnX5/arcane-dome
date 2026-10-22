@@ -4,7 +4,7 @@
   "description": "A steel mill built around a pit of molten slag. Climb the old smelter tower, or ride its thruster shaft straight to the roof.",
   "tile_size": 32,
   "size": [64, 36],
-  "theme": {"sky_top": "#150f12", "sky_bottom": "#5c2f1c", "far": "#2c1d1a", "skyline": "girders", "sun": [0.5, 0.95], "sun_color": "#ff8a3c"},
+  "theme": {"sky_top": "#150f12", "sky_bottom": "#5c2f1c", "far": "#2c1d1a", "skyline": "girders", "sun": [0.78, 0.2], "sun_color": "#ff8a3c"},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],
   "recommended_players": [4, 12],
   "shapes": [

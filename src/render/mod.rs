@@ -10,7 +10,7 @@ pub use terrain::MapArt;
 pub use effects::Effects;
 pub use hud::{draw_crosshair, draw_hud, draw_scoreboard};
 
-use crate::data::{Category, PickupKind, ProjectileKind};
+use crate::data::{Category, MapDef, PickupKind, ProjectileKind};
 use crate::sim::{Fighter, HEAD_HEIGHT, World};
 use macroquad::prelude::*;
 
@@ -98,6 +98,56 @@ impl GameCamera {
 
     pub fn screen_to_world(&self, s: Vec2) -> Vec2 {
         (s - vec2(screen_width(), screen_height()) * 0.5) / self.ppt + self.pos
+    }
+}
+
+/// A picture of the whole map (sky, terrain and decor, no fighters), drawn
+/// with the same art as the game. Call [`MapThumb::draw`] every frame it is
+/// shown: a render target drawn only once can come out blank.
+pub struct MapThumb {
+    art: MapArt,
+    target: RenderTarget,
+}
+
+impl MapThumb {
+    pub fn new(map: &MapDef, width: u32) -> Self {
+        let height = (width as f32 * map.height / map.width).round() as u32;
+        let target = render_target(width, height);
+        target.texture.set_filter(FilterMode::Linear);
+        Self {
+            art: MapArt::new(map),
+            target,
+        }
+    }
+
+    /// Redraw the picture and return it.
+    pub fn draw(&self, map: &MapDef) -> &Texture2D {
+        let tex = &self.target.texture;
+        let (w, h) = (tex.width(), tex.height());
+        let ppt = w / map.width;
+        set_camera(&Camera2D {
+            target: vec2(w, h) * 0.5,
+            zoom: vec2(2.0 / w, 2.0 / h),
+            render_target: Some(self.target.clone()),
+            ..Default::default()
+        });
+        clear_background(BLACK);
+        terrain::draw_sky_sized(map, w, h, map.width * 0.5, ppt, 0.0);
+        set_camera(&Camera2D {
+            target: vec2(map.width, map.height) * 0.5,
+            zoom: vec2(2.0 * ppt / w, 2.0 * ppt / h),
+            render_target: Some(self.target.clone()),
+            ..Default::default()
+        });
+        self.art.draw_back(
+            map,
+            Vec2::splat(-1.0),
+            vec2(map.width, map.height) + 1.0,
+            0.0,
+        );
+        self.art.draw_front(map, 0.0);
+        set_default_camera();
+        tex
     }
 }
 

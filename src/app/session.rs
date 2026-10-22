@@ -74,6 +74,12 @@ impl Session {
         })
     }
 
+    /// Debug screenshots: put the player's feet at `at` and look there.
+    pub fn debug_place_player(&mut self, at: Vec2) {
+        self.world.fighters[self.player].feet = at;
+        self.cam.snap(self.world.fighters[self.player].center());
+    }
+
     pub fn config(&self) -> &MatchConfig {
         &self.world.config
     }

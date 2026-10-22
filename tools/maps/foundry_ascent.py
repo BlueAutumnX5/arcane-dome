@@ -15,7 +15,7 @@ m = Map(
     "A steel mill built around a pit of molten slag. Climb the old smelter tower, or ride its thruster shaft straight to the roof.",
     (64, 36),
     {"sky_top": "#150f12", "sky_bottom": "#5c2f1c", "far": "#2c1d1a", "skyline": "girders",
-     "sun": [0.5, 0.95], "sun_color": "#ff8a3c"},
+     "sun": [0.78, 0.2], "sun_color": "#ff8a3c"},
     players=(4, 12),
 )
 
