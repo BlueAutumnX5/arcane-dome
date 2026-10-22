@@ -12,6 +12,10 @@ pub const ACCENT: Color = Color::new(0.36, 0.86, 0.86, 1.0);
 const TAB_FILL: Color = Color::new(0.06, 0.13, 0.15, 0.82);
 const TAB_HOVER: Color = Color::new(0.95, 0.97, 0.97, 0.95);
 const TEXT_DARK: Color = Color::new(0.07, 0.09, 0.11, 1.0);
+/// Easing rate for tab fill and slide (higher is snappier).
+const TAB_EASE: f32 = 14.0;
+/// Easing rate for tab text colour, fast so it flips before the fill.
+const TAB_TEXT_EASE: f32 = 45.0;
 const PANEL: Color = Color::new(0.04, 0.09, 0.11, 0.78);
 
 pub fn scale() -> f32 {
@@ -108,10 +112,10 @@ impl Ui {
         self.dt = dt;
     }
 
-    /// Ease an animation value toward `target` and return it smoothed.
-    fn animate(&mut self, id: &str, target: f32) -> f32 {
+    /// Ease an animation value toward `target` at `rate` and return it smoothed.
+    fn animate(&mut self, id: &str, target: f32, rate: f32) -> f32 {
         let t = self.hover.entry(id.to_owned()).or_insert(0.0);
-        *t += (target - *t) * (1.0 - (-22.0 * self.dt).exp());
+        *t += (target - *t) * (1.0 - (-rate * self.dt).exp());
         let x = t.clamp(0.0, 1.0);
         x * x * (3.0 - 2.0 * x)
     }
@@ -120,20 +124,25 @@ impl Ui {
     pub fn tab(&mut self, id: &str, label: &str, r: Rect, side: Side, focused: bool) -> bool {
         let s = scale();
         let hot = hovered(r);
-        let t = self.animate(id, if hot || focused { 1.0 } else { 0.0 });
+        let target = if hot || focused { 1.0 } else { 0.0 };
+        // Fill and slide ease together; the text flips colour much faster,
+        // so it changes before the fill has finished (both ways).
+        let t = self.animate(id, target, TAB_EASE);
+        let text_t = self.animate(&format!("{id}#text"), target, TAB_TEXT_EASE);
         let dir = if side == Side::Left { -1.0 } else { 1.0 };
         let x = r.x + dir * 13.0 * s * t;
         let (y, w, h) = (r.y, r.w, r.h);
         let cut = h * 0.42;
         let slant = h * 0.35;
 
-        // Shape for a left tab; mirrored for the right side.
+        // Shape for a left tab (diagonal cut at the outer bottom corner,
+        // slanted inner end); mirrored for the right side.
         let local = [
-            vec2(0.0, cut),
-            vec2(cut, 0.0),
+            vec2(0.0, 0.0),
             vec2(w, 0.0),
             vec2(w - slant, h),
-            vec2(0.0, h),
+            vec2(cut, h),
+            vec2(0.0, h - cut),
         ];
         let pts: Vec<Vec2> = local
             .iter()
@@ -148,6 +157,16 @@ impl Ui {
             1.5,
             Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.35 + 0.4 * (1.0 - t)),
         );
+        // Stripe along the outer edge of the body.
+        let stripe = 3.0 * s;
+        let inset = 5.0 * s;
+        let sx = match side {
+            Side::Left => x + inset,
+            Side::Right => x + w - inset - stripe,
+        };
+        let stripe_col = lerp_color(ACCENT, TEXT_DARK, text_t);
+        draw_rectangle(sx, y + 4.0 * s, stripe, h - cut - 2.0 * s, stripe_col);
+
         // Guide line running back toward the screen center.
         let (lx0, lx1) = match side {
             Side::Left => (x + w - slant, x + w + 40.0 * s),
@@ -163,11 +182,11 @@ impl Ui {
         );
 
         let size = h * 0.56;
-        let color = lerp_color(WHITE, TEXT_DARK, t);
+        let color = lerp_color(WHITE, TEXT_DARK, text_t);
         let ty = y + h * 0.7;
         match side {
-            Side::Left => text_left(label, x + cut + 6.0 * s, ty, size, color),
-            Side::Right => text_right(label, x + w - cut - 6.0 * s, ty, size, color),
+            Side::Left => text_left(label, x + inset + stripe + 12.0 * s, ty, size, color),
+            Side::Right => text_right(label, x + w - inset - stripe - 12.0 * s, ty, size, color),
         }
         hot && is_mouse_button_pressed(MouseButton::Left)
     }
@@ -184,7 +203,7 @@ impl Ui {
     ) -> i32 {
         let s = scale();
         let row_hot = hovered(r) && enabled;
-        let t = self.animate(id, if row_hot || focused { 1.0 } else { 0.0 });
+        let t = self.animate(id, if row_hot || focused { 1.0 } else { 0.0 }, TAB_EASE);
         draw_rectangle(
             r.x,
             r.y,
