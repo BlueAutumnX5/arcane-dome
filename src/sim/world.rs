@@ -29,6 +29,9 @@ impl Difficulty {
     }
 }
 
+/// How long "GO" stays up after the countdown.
+pub const GO_SHOWN_S: f32 = 1.0;
+
 /// Most teams a team match can have.
 pub const MAX_TEAMS: usize = 4;
 /// Team names, by team number.
@@ -63,6 +66,9 @@ pub struct MatchConfig {
     /// Magazines never empty.
     pub infinite_ammo: bool,
     pub seed: u64,
+    /// "5, 4, 3, 2, 1, GO" before the match and each elimination round, in
+    /// seconds. Everyone can aim but not move or shoot until it ends.
+    pub countdown_s: f32,
     /// False for bot-only matches (tests, attract mode).
     pub include_player: bool,
     pub player_name: String,
@@ -85,6 +91,7 @@ impl Default for MatchConfig {
             stations: true,
             infinite_ammo: false,
             seed: 1,
+            countdown_s: 5.0,
             include_player: true,
             player_name: "You".into(),
         }
@@ -189,6 +196,9 @@ pub struct World {
     pub scores: Vec<i32>,
     pub round: u32,
     pub round_wins: Vec<u32>,
+    /// Seconds left before the fight starts. It keeps counting below zero
+    /// for a moment (down to `-GO_SHOWN_S`) so the HUD can show "GO".
+    pub countdown: f32,
 }
 
 /// Enough for the biggest match (4 teams of 7); beyond that names get a number.
@@ -319,6 +329,7 @@ impl World {
             scores: vec![0; sides],
             round: 1,
             round_wins: vec![0; sides],
+            countdown: 0.0,
         };
         world.start_round();
         world.events.clear();
@@ -340,7 +351,19 @@ impl World {
                     return;
                 }
             }
-            Phase::Playing => self.time_left = (self.time_left - DT).max(0.0),
+            Phase::Playing if self.countdown > 0.0 => {
+                // Before the start: fighters settle and aim, nothing else runs.
+                self.countdown -= DT;
+                for i in 0..self.fighters.len() {
+                    let input = inputs.get(i).copied().unwrap_or_default();
+                    self.update_fighter(i, &input);
+                }
+                return;
+            }
+            Phase::Playing => {
+                self.countdown = (self.countdown - DT).max(-GO_SHOWN_S);
+                self.time_left = (self.time_left - DT).max(0.0);
+            }
         }
         for i in 0..self.fighters.len() {
             let input = inputs.get(i).copied().unwrap_or_default();
@@ -354,12 +377,15 @@ impl World {
     }
 
     fn update_fighter(&mut self, i: usize, input: &Input) {
+        let waiting = self.countdown > 0.0;
         let map = &self.map;
         let f = &mut self.fighters[i];
         if !f.alive {
             return;
         }
-        f.spawn_protect = (f.spawn_protect - DT).max(0.0);
+        if !waiting {
+            f.spawn_protect = (f.spawn_protect - DT).max(0.0);
+        }
         f.stun = (f.stun - DT).max(0.0);
         f.freeze = (f.freeze - DT).max(0.0);
         f.fire_cooldown = (f.fire_cooldown - DT).max(-DT);
@@ -367,7 +393,7 @@ impl World {
         f.drop_timer = (f.drop_timer - DT).max(0.0);
         f.beam_age += DT;
 
-        let input = if f.stun > 0.0 {
+        let input = if f.stun > 0.0 || waiting {
             Input {
                 aim: input.aim,
                 ..Default::default()

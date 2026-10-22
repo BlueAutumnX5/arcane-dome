@@ -27,10 +27,12 @@ the world) is planned for much later and is out of scope for now.
 
 ## Modes (Milestone 1)
 - Deathmatch (free for all)
-- Team Deathmatch
-- Team Elimination (no respawn, last team standing)
+- Team Deathmatch (2 to 4 teams: Blue, Red, Green, Gold)
+- Team Elimination (no respawn, last team standing, 2 to 4 teams)
 
-Custom match screen: map, mode, score or time limit, number of friendly and enemy bots, bot difficulty.
+Custom match screen: map, mode, score or time limit, number of teams, bots and difficulty per
+team (or bot count and difficulty in free-for-all). Every match and every elimination round
+starts with a 5 second countdown ("5, 4, 3, 2, 1, GO"); fighters can aim but not move or shoot.
 
 ## Later (NOT Milestone 1)
 - Credits earned per kill with bonuses (headshot, multikill, melee) used to unlock weapons and skins
@@ -178,10 +180,16 @@ position of whoever stands there.
   tank, fence, vines, cactus. `front: true` draws over the fighters.
 - Powerup spots: 0 to 4 per map (1 is the norm), each always spawning the same
   powerup. Shield stations: 1 to 4 small (50) and 0 to 2 big (100).
+- Spawn `team`: 0 Blue, 1 Red, 2 Green, 3 Gold, or null for free-for-all. Teams 0 and 1
+  need at least 2 spawns each; teams 2 and 3 are optional but need 2 if present.
+- `team_counts` (optional), for example `[2, 4]`: the team counts the map is fair for.
+  Default: 2 up to the number of teams with their own spawns. A four-corner map is fair
+  for 2 or 4 teams but not 3 (two teams would share a side), so it lists `[2, 4]`.
 
 Validation rules the loader enforces:
 - The map is at least 8 x 8 and every polygon has at least 3 points.
-- At least 2 spawns per team and 4 free-for-all spawns.
+- At least 2 spawns for teams 0 and 1 (and for teams 2 and 3 if they have any), and 4
+  free-for-all spawns. Every count in `team_counts` has spawns for all its teams.
 - Every `weapon_id` and `powerup` exists.
 - Every spawn, pickup and object has room for a body and a floor close below it.
 - Errors name the file and the field, for example
@@ -198,9 +206,12 @@ spawn, pickup and object. The old ASCII `grid` + `legend` format still loads
 ```json
 {
   "deathmatch":       { "teams": 1, "respawn": true,  "score_limit": 25, "time_limit_s": 600 },
-  "team_deathmatch":  { "teams": 2, "respawn": true,  "score_limit": 50, "time_limit_s": 600 },
-  "team_elimination": { "teams": 2, "respawn": false, "rounds": 5,       "time_limit_s": 180 }
+  "team_deathmatch":  { "teams": 4, "respawn": true,  "score_limit": 50, "time_limit_s": 600 },
+  "team_elimination": { "teams": 4, "respawn": false, "rounds": 5,       "time_limit_s": 180 }
 }
 ```
+
+`teams`: 1 means free-for-all; 2 to 4 is a team mode allowing up to that many teams. The
+match setup offers the team counts that both the mode and the map support.
 
 

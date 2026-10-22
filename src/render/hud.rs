@@ -1,6 +1,6 @@
 use super::{Effects, GameCamera, RED, TEAM_COLORS, category_color, fighter_color};
 use crate::data::ProjectileKind;
-use crate::sim::{MAX_HEALTH, MAX_SHIELD, Phase, World};
+use crate::sim::{GO_SHOWN_S, MAX_HEALTH, MAX_SHIELD, Phase, World};
 use macroquad::prelude::*;
 
 fn ui_scale() -> f32 {
@@ -358,6 +358,45 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
         for ((t, c), w) in l.parts.iter().zip(&widths) {
             text(t, x, y, size, Color::new(c.r, c.g, c.b, c.a * a));
             x += w + gap;
+        }
+    }
+
+    // Countdown before the fight: a big number that shrinks into place each
+    // second, then "GO!" fading out.
+    if world.phase == Phase::Playing && world.countdown > -GO_SHOWN_S {
+        let (msg, k, color) = if world.countdown > 0.0 {
+            let k = world.countdown.fract();
+            let n = world.countdown.ceil() as i32;
+            (n.to_string(), k, WHITE)
+        } else {
+            let k = 1.0 + world.countdown / GO_SHOWN_S;
+            ("GO!".to_owned(), k, Color::new(0.55, 1.0, 0.6, 1.0))
+        };
+        let size = (90.0 + 60.0 * k) * s;
+        let alpha = (0.35 + 0.65 * k).min(1.0);
+        let y = sh * 0.36;
+        let shadow = Color::new(0.0, 0.0, 0.0, 0.5 * alpha);
+        text_center(&msg, cx + 3.0 * s, y + 3.0 * s, size, shadow);
+        text_center(
+            &msg,
+            cx,
+            y,
+            size,
+            Color::new(color.r, color.g, color.b, alpha),
+        );
+        if world.countdown > 0.0 {
+            let sub = if world.round > 1 {
+                format!("Round {}", world.round)
+            } else {
+                "Get ready".to_owned()
+            };
+            text_center(
+                &sub,
+                cx,
+                y + 54.0 * s,
+                24.0 * s,
+                Color::new(1.0, 1.0, 1.0, 0.8),
+            );
         }
     }
 

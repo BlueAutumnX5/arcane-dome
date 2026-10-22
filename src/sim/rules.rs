@@ -125,6 +125,7 @@ impl World {
 
     /// Fresh round: everyone respawns with a new loadout, pickups reset.
     pub(crate) fn start_round(&mut self) {
+        self.countdown = self.config.countdown_s;
         self.projectiles.clear();
         for p in &mut self.pickups {
             p.active = true;

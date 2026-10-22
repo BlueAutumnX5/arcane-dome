@@ -1009,6 +1009,7 @@ mod tests {
             map_id: "foundry_ascent".into(),
             bots: 1,
             difficulty,
+            countdown_s: 0.0,
             ..Default::default()
         };
         let mut w = World::new(data, cfg).unwrap();

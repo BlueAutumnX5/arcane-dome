@@ -62,6 +62,9 @@ Objects are thrusters (`height_tiles`), weapon stations, shield stations
 Purely visual `decor` (walls, windows, girders, chains, lamps, trees...) and a
 `theme` (sky colours, sun, skyline) set the mood.
 
+Spawns belong to a team (0 Blue, 1 Red, 2 Green, 3 Gold) or to free-for-all. A map
+lists which team counts it is fair for with `team_counts`, for example `[2, 4]`.
+
 Check that every spawn, pickup and object can be reached by bots:
 
 ```bash
@@ -74,6 +77,13 @@ cargo run --release --example map_check -- foundry_ascent nav.json
 
 The second form checks one map and also writes its navigation graph as JSON.
 Unfinished maps live in `drafts/maps/` and are not loaded by the game.
+
+To watch bots play a map and report anyone stuck or falling into hazards (add
+`MODE=team_elimination TEAMS=4` for team matches, `VERBOSE=1` for details):
+
+```bash
+cargo run --release --example bot_watch -- foundry_ascent 180 4
+```
 
 ## License
 

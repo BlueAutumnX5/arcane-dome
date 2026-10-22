@@ -22,6 +22,7 @@ fn run_match(data: &Arc<GameData>, map: &str, mode: &str, seconds: u32, seed: u6
         team_difficulty: [Difficulty::Hard; 4],
         include_player: false,
         seed,
+        countdown_s: 0.0,
         ..Default::default()
     };
     let mut world = World::new(Arc::clone(data), cfg).unwrap();
@@ -117,6 +118,7 @@ fn four_team_bot_matches_involve_every_team() {
                 team_difficulty: [Difficulty::Hard; 4],
                 include_player: false,
                 seed: 11,
+                countdown_s: 0.0,
                 ..Default::default()
             };
             let mut world = World::new(Arc::clone(&data), cfg).unwrap();

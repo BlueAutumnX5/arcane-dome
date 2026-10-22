@@ -91,6 +91,7 @@ fn world(mode: &str, enemies: u32, friends: u32) -> World {
         bots: enemies,
         teams: 2,
         team_bots: [friends, enemies, 0, 0],
+        countdown_s: 0.0,
         ..Default::default()
     };
     let mut w = World::new(data(), cfg).unwrap();
@@ -529,6 +530,7 @@ fn teams_world(mode: &str, bots: &[u32]) -> World {
         mode_id: mode.into(),
         teams: bots.len() as u8,
         team_bots,
+        countdown_s: 0.0,
         ..Default::default()
     };
     let mut w = World::new(data(), cfg).unwrap();
@@ -566,6 +568,7 @@ fn team_count_is_capped_by_the_mode_and_needs_two_manned_teams() {
         mode_id: "team_deathmatch".into(),
         teams: 9,
         team_bots: [1, 1, 1, 1],
+        countdown_s: 0.0,
         ..Default::default()
     };
     assert_eq!(World::new(data(), cfg).unwrap().num_sides(), 4);
@@ -575,6 +578,7 @@ fn team_count_is_capped_by_the_mode_and_needs_two_manned_teams() {
         mode_id: "deathmatch".into(),
         teams: 4,
         bots: 3,
+        countdown_s: 0.0,
         ..Default::default()
     };
     let w = World::new(data(), cfg).unwrap();
@@ -586,6 +590,7 @@ fn team_count_is_capped_by_the_mode_and_needs_two_manned_teams() {
         teams: 3,
         team_bots: [0, 3, 0, 0],
         include_player: false,
+        countdown_s: 0.0,
         ..Default::default()
     };
     assert!(World::new(data(), cfg).is_err());
@@ -643,6 +648,7 @@ fn teams_without_spawns_use_free_spawns_near_each_other() {
             teams: 4,
             team_bots: [1, 2, 2, 2],
             seed,
+            countdown_s: 0.0,
             ..Default::default()
         };
         let w = World::new(data(), cfg).unwrap();
@@ -666,4 +672,74 @@ fn teams_without_spawns_use_free_spawns_near_each_other() {
             );
         }
     }
+}
+
+/// A world with the real pre-match countdown.
+fn counted_world(mode: &str) -> World {
+    let cfg = MatchConfig {
+        map_id: "arena".into(),
+        mode_id: mode.into(),
+        bots: 1,
+        teams: 2,
+        team_bots: [0, 1, 0, 0],
+        ..Default::default()
+    };
+    World::new(data(), cfg).unwrap()
+}
+
+#[test]
+fn countdown_holds_everyone_until_go() {
+    let mut w = counted_world("deathmatch");
+    assert_eq!(w.countdown, 5.0);
+    let clock = w.time_left;
+    let protect = w.fighters[0].spawn_protect;
+    run(&mut w, 30);
+    let start = w.fighters[0].feet;
+    // Trying to run and shoot during the countdown does nothing.
+    let mut go = idle(2);
+    go[0].move_x = 1.0;
+    go[0].fire = true;
+    for _ in 0..(4.0 / DT) as usize {
+        w.step(&go);
+    }
+    assert!(w.countdown > 0.0);
+    assert!(
+        (w.fighters[0].feet.x - start.x).abs() < 1e-3,
+        "moved during countdown"
+    );
+    assert!(w.projectiles.is_empty());
+    assert_eq!(w.time_left, clock, "the clock ran during the countdown");
+    assert_eq!(
+        w.fighters[0].spawn_protect, protect,
+        "spawn protection wore off"
+    );
+    // After GO the same input moves the fighter and the clock runs.
+    for _ in 0..(1.5 / DT) as usize {
+        w.step(&go);
+    }
+    assert!(w.countdown <= 0.0);
+    assert!(
+        w.fighters[0].feet.x > start.x + 1.0,
+        "still frozen after GO"
+    );
+    assert!(w.time_left < clock);
+}
+
+#[test]
+fn every_elimination_round_starts_with_a_countdown() {
+    let mut w = counted_world("team_elimination");
+    run(&mut w, (5.5 / DT) as usize);
+    assert!(w.countdown <= 0.0);
+    let red = w.fighters.iter().position(|f| f.team == Some(1)).unwrap();
+    w.fighters[red].spawn_protect = 0.0;
+    w.damage(red, Some(0), None, 500.0, false, false);
+    run(&mut w, 1);
+    assert!(matches!(w.phase, Phase::RoundOver { .. }));
+    run(&mut w, (3.0 / DT) as usize + 2);
+    assert_eq!(w.round, 2);
+    assert!(
+        w.countdown > 4.5,
+        "round 2 did not count down: {}",
+        w.countdown
+    );
 }
