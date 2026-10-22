@@ -9,6 +9,8 @@ use std::f32::consts::PI;
 const SIGHT_RANGE: f32 = 36.0;
 /// Below this health a bot goes for health or backs off.
 const LOW_HEALTH: f32 = 40.0;
+/// A drop deeper than this (or into a hazard) counts as a cliff to avoid.
+const DEADLY_DROP: f32 = 12.0;
 /// How long a bot keeps chasing a target it lost sight of.
 const MEMORY_S: f32 = 2.5;
 
@@ -614,7 +616,18 @@ impl Brain {
         }
         // Would the body hurt one step ahead?
         let ahead = vec2(me.feet.x + dir * 0.9, me.feet.y);
-        hazard_dps(&world.map, ahead, me.size()) > 0.0
+        if hazard_dps(&world.map, ahead, me.size()) > 0.0 {
+            return true;
+        }
+        // Or is there a deadly drop there: no floor within reach, or a floor
+        // that lies in a hazard (lava, a bottomless void)?
+        if !me.on_ground {
+            return false;
+        }
+        match world.map.ground_below(ahead, 0.3, DEADLY_DROP) {
+            None => true,
+            Some(y) => hazard_dps(&world.map, vec2(ahead.x, y), me.size()) > 0.0,
+        }
     }
 
     fn combat_move(
@@ -808,15 +821,15 @@ mod tests {
         let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
         let data = Arc::new(GameData::load(&assets).unwrap());
         let cfg = MatchConfig {
-            map_id: "skyforge_yard".into(),
+            map_id: "foundry_ascent".into(),
             enemy_bots: 1,
             difficulty,
             ..Default::default()
         };
         let mut w = World::new(data, cfg).unwrap();
-        // Bot and player on the same open floor, ten tiles apart.
-        w.fighters[1].feet = vec2(30.5, 23.0);
-        w.fighters[0].feet = vec2(20.5, 23.0);
+        // Bot and player on the same open floor, eight tiles apart.
+        w.fighters[1].feet = vec2(22.0, 32.0);
+        w.fighters[0].feet = vec2(14.0, 32.0);
         let nav = NavGraph::build(&w.map);
         (w, nav)
     }

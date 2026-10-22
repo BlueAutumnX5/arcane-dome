@@ -95,8 +95,8 @@ fn every_spawn_can_reach_every_spawn_pickup_and_object() {
 #[test]
 fn same_seed_same_match() {
     let data = shipped();
-    let a = run_match(&data, "skyforge_yard", "deathmatch", 20, 42);
-    let b = run_match(&data, "skyforge_yard", "deathmatch", 20, 42);
+    let a = run_match(&data, "foundry_ascent", "deathmatch", 20, 42);
+    let b = run_match(&data, "foundry_ascent", "deathmatch", 20, 42);
     assert_eq!(a.tick, b.tick);
     assert_eq!(a.fighters, b.fighters);
     assert_eq!(a.scores, b.scores);
