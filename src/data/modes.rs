@@ -11,6 +11,9 @@ pub struct ModeDef {
     pub id: String,
     #[serde(default)]
     pub name: Option<String>,
+    /// One or two sentences for the match setup screen.
+    #[serde(default)]
+    pub description: String,
     /// 1 = everyone for themselves, 2 = two teams.
     pub teams: u8,
     /// false = elimination rounds.

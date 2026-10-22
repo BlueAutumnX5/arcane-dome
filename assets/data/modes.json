@@ -1,5 +1,14 @@
 {
-  "deathmatch":       { "teams": 1, "respawn": true,  "score_limit": 25, "time_limit_s": 600 },
-  "team_deathmatch":  { "teams": 2, "respawn": true,  "score_limit": 50, "time_limit_s": 600 },
-  "team_elimination": { "teams": 2, "respawn": false, "rounds": 5,       "time_limit_s": 180 }
+  "deathmatch": {
+    "teams": 1, "respawn": true, "score_limit": 25, "time_limit_s": 600,
+    "description": "Everyone for themselves. Most kills when the limit or the clock runs out wins."
+  },
+  "team_deathmatch": {
+    "teams": 2, "respawn": true, "score_limit": 50, "time_limit_s": 600,
+    "description": "Blue against Red. Every kill counts for the team, so stick together and trade well."
+  },
+  "team_elimination": {
+    "teams": 2, "respawn": false, "rounds": 5, "time_limit_s": 180,
+    "description": "No respawns. Wipe out the other team to take the round; win most rounds to win the match."
+  }
 }

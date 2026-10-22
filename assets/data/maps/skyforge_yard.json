@@ -1,6 +1,7 @@
 {
   "id": "skyforge_yard",
   "name": "Skyforge Yard",
+  "description": "An open-air foundry deck. Long sightlines up top, close fights in the tunnel below.",
   "tile_size": 32,
   "background": {"sky_color": "#1d2233", "parallax": []},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],

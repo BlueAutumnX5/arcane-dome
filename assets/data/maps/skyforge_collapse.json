@@ -1,6 +1,7 @@
 {
   "id": "skyforge_collapse",
   "name": "Skyforge Collapse",
+  "description": "Half the yard has caved in. Rubble everywhere and few straight lines left.",
   "tile_size": 32,
   "background": {"sky_color": "#1a2128", "parallax": []},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],

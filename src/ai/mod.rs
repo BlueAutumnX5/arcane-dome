@@ -20,8 +20,12 @@ impl BotSet {
             .fighters
             .iter()
             .map(|f| {
-                f.is_bot
-                    .then(|| Brain::new(f.id, world.config.seed, world.config.difficulty))
+                let skill = if world.mode.is_team() && f.team == Some(0) {
+                    world.config.friendly_difficulty
+                } else {
+                    world.config.difficulty
+                };
+                f.is_bot.then(|| Brain::new(f.id, world.config.seed, skill))
             })
             .collect();
         Self { nav, brains }

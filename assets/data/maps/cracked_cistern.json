@@ -1,6 +1,7 @@
 {
   "id": "cracked_cistern",
   "name": "Cracked Cistern",
+  "description": "The cistern walls have split. Shifted platforms and new gaps to jump.",
   "tile_size": 32,
   "background": {"sky_color": "#132420", "parallax": []},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],

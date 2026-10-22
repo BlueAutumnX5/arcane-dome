@@ -75,6 +75,7 @@ impl World {
     fn try_fire(&mut self, i: usize) {
         let data = Arc::clone(&self.data);
         let rate_mult = self.fire_rate_mult(i);
+        let infinite = self.config.infinite_ammo;
         let f = &mut self.fighters[i];
         let w = f.current;
         let def = &data.weapons[w];
@@ -90,7 +91,9 @@ impl World {
                 }
                 return;
             }
-            f.inventory[w].mag -= 1;
+            if !infinite {
+                f.inventory[w].mag -= 1;
+            }
         }
         f.fire_cooldown += 1.0 / (def.fire_rate_rps * rate_mult);
 

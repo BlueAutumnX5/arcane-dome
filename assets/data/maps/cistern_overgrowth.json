@@ -1,6 +1,7 @@
 {
   "id": "cistern_overgrowth",
   "name": "Cistern Overgrowth",
+  "description": "Roots and rock have taken over the cistern. Cramped, uneven and noisy.",
   "tile_size": 32,
   "background": {"sky_color": "#18281a", "parallax": []},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],

@@ -141,6 +141,8 @@ impl MapObject {
 struct MapFile {
     id: String,
     name: String,
+    #[serde(default)]
+    description: String,
     #[serde(default = "default_tile_size")]
     tile_size: u32,
     #[serde(default)]
@@ -198,6 +200,7 @@ fn default_sky() -> String {
 pub struct MapDef {
     pub id: String,
     pub name: String,
+    pub description: String,
     pub tile_size: u32,
     pub sky_color: [u8; 3],
     pub modes: Vec<String>,
@@ -243,6 +246,7 @@ impl MapDef {
         Self {
             id: "test".into(),
             name: "Test".into(),
+            description: String::new(),
             tile_size: 32,
             sky_color: [27, 31, 42],
             modes: Vec::new(),
@@ -356,6 +360,7 @@ pub fn parse_map(
     let map = MapDef {
         id: file.id,
         name: file.name,
+        description: file.description,
         tile_size: file.tile_size,
         sky_color,
         modes: file.modes,

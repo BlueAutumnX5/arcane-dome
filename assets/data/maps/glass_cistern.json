@@ -1,6 +1,7 @@
 {
   "id": "glass_cistern",
   "name": "Glass Cistern",
+  "description": "A flooded water hall under glass. Fight across the pool or climb the ledges.",
   "tile_size": 32,
   "background": {"sky_color": "#15262b", "parallax": []},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],

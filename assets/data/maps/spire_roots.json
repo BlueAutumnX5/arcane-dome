@@ -1,6 +1,7 @@
 {
   "id": "spire_roots",
   "name": "Spire Roots",
+  "description": "Deep under the spire, where the ground is broken and the ledges are scattered.",
   "tile_size": 32,
   "background": {"sky_color": "#1e1a30", "parallax": []},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],

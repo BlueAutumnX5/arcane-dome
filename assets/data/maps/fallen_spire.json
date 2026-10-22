@@ -1,6 +1,7 @@
 {
   "id": "fallen_spire",
   "name": "Fallen Spire",
+  "description": "The spire has slumped and its ledges have drifted. Hard to keep high ground.",
   "tile_size": 32,
   "background": {"sky_color": "#2b1c26", "parallax": []},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],

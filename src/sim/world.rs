@@ -2,7 +2,8 @@ use super::fighter::*;
 use super::physics::{self, move_body, overlaps_kind, standing_on_one_way};
 use super::{DT, Input, ObjectState, Phase, Projectile, Rng};
 use crate::data::{
-    Category, GameData, MapDef, ModeDef, PickupDef, PickupKind, ProjectileKind, SpawnDef, TileKind,
+    Category, GameData, MapDef, ModeDef, ObjectKind, PickupDef, PickupKind, ProjectileKind,
+    SpawnDef, TileKind,
 };
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
@@ -42,7 +43,16 @@ pub struct MatchConfig {
     pub friendly_bots: u32,
     /// Opposing bots (in free-for-all, simply the number of bots).
     pub enemy_bots: u32,
+    /// Skill of opposing bots (and of every bot in free-for-all).
     pub difficulty: Difficulty,
+    /// Skill of bots on the player's team.
+    pub friendly_difficulty: Difficulty,
+    /// Use the map's powerup spot.
+    pub powerups: bool,
+    /// Use the map's weapon and shield stations.
+    pub stations: bool,
+    /// Magazines never empty.
+    pub infinite_ammo: bool,
     pub seed: u64,
     /// False for bot-only matches (tests, attract mode).
     pub include_player: bool,
@@ -60,6 +70,10 @@ impl Default for MatchConfig {
             friendly_bots: 0,
             enemy_bots: 5,
             difficulty: Difficulty::Normal,
+            friendly_difficulty: Difficulty::Normal,
+            powerups: true,
+            stations: true,
+            infinite_ammo: false,
             seed: 1,
             include_player: true,
             player_name: "You".into(),
@@ -242,6 +256,11 @@ impl World {
         let objects = map
             .objects
             .iter()
+            .filter(|o| match o.kind {
+                ObjectKind::PowerupSpot => config.powerups,
+                ObjectKind::WeaponStation | ObjectKind::ShieldStation => config.stations,
+                ObjectKind::Thruster => true,
+            })
             .map(|o| ObjectState::new(o, first_powerup))
             .collect();
         let stand_cells = super::gadgets::stand_cells(&map);

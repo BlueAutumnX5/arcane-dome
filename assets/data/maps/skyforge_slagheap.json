@@ -1,6 +1,7 @@
 {
   "id": "skyforge_slagheap",
   "name": "Skyforge Slagheap",
+  "description": "The foundry after years of slag build-up. Lumpy floors and broken catwalks.",
   "tile_size": 32,
   "background": {"sky_color": "#2a1f1d", "parallax": []},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],

@@ -1,7 +1,7 @@
 //! One running match: reads the keyboard and mouse, steps the sim at a fixed
 //! 60 Hz, and draws it.
 
-use super::ui;
+use super::ui::{self, Side, Ui};
 use crate::ai::BotSet;
 use crate::data::GameData;
 use crate::render::{self, Effects, GameCamera};
@@ -82,7 +82,7 @@ impl Session {
         keys.iter().any(|k| is_key_pressed(*k))
     }
 
-    pub fn frame(&mut self, dt: f32) -> Outcome {
+    pub fn frame(&mut self, dt: f32, ui: &mut Ui) -> Outcome {
         let over = matches!(self.world.phase, Phase::MatchOver { .. });
         if !over && Self::pressed(&[KeyCode::P, KeyCode::Escape]) {
             self.paused = !self.paused;
@@ -112,10 +112,10 @@ impl Session {
 
         if over {
             self.over_for += dt;
-            return self.end_buttons();
+            return self.end_buttons(ui);
         }
         if self.paused {
-            return self.pause_menu();
+            return self.pause_menu(ui);
         }
         Outcome::Continue
     }
@@ -186,24 +186,39 @@ impl Session {
             .map_or(me.center(), |f| f.center())
     }
 
-    fn pause_menu(&mut self) -> Outcome {
+    fn pause_menu(&mut self, ui: &mut Ui) -> Outcome {
         let s = ui::scale();
         let sw = screen_width();
         let sh = screen_height();
-        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.55));
-        ui::text_center("PAUSED", sw / 2.0, sh * 0.3, 56.0 * s, WHITE);
-        let bw = 260.0 * s;
-        let bh = 48.0 * s;
-        let x = (sw - bw) / 2.0;
-        if ui::button("Resume", Rect::new(x, sh * 0.4, bw, bh), false) {
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.6));
+        ui::text_center("PAUSED", sw / 2.0, sh * 0.26, 56.0 * s, WHITE);
+        let bw = 280.0 * s;
+        let bh = 42.0 * s;
+        let x = 70.0 * s;
+        let y0 = sh * 0.36;
+        if ui.tab(
+            "pause_resume",
+            "Resume",
+            Rect::new(x, y0, bw, bh),
+            Side::Left,
+            false,
+        ) {
             self.paused = false;
         }
-        if ui::button("Restart", Rect::new(x, sh * 0.4 + 60.0 * s, bw, bh), false) {
+        if ui.tab(
+            "pause_restart",
+            "Restart",
+            Rect::new(x, y0 + 54.0 * s, bw, bh),
+            Side::Left,
+            false,
+        ) {
             return Outcome::Rematch;
         }
-        if ui::button(
+        if ui.tab(
+            "pause_menu",
             "Main Menu",
-            Rect::new(x, sh * 0.4 + 120.0 * s, bw, bh),
+            Rect::new(x, y0 + 108.0 * s, bw, bh),
+            Side::Left,
             false,
         ) {
             return Outcome::Menu;
@@ -218,31 +233,35 @@ impl Session {
         Outcome::Continue
     }
 
-    fn end_buttons(&mut self) -> Outcome {
+    fn end_buttons(&mut self, ui: &mut Ui) -> Outcome {
         if self.over_for < 1.0 {
             return Outcome::Continue;
         }
         let s = ui::scale();
         let sw = screen_width();
         let sh = screen_height();
-        let bw = 200.0 * s;
-        let bh = 46.0 * s;
-        let y = sh - 90.0 * s;
-        if ui::button(
-            "Rematch",
-            Rect::new(sw / 2.0 - bw - 10.0 * s, y, bw, bh),
-            false,
-        ) || is_key_pressed(KeyCode::Enter)
-        {
-            return Outcome::Rematch;
-        }
-        if ui::button(
+        let bw = 240.0 * s;
+        let bh = 42.0 * s;
+        let y = sh - 80.0 * s;
+        if ui.tab(
+            "end_menu",
             "Main Menu",
-            Rect::new(sw / 2.0 + 10.0 * s, y, bw, bh),
+            Rect::new(50.0 * s, y, bw, bh),
+            Side::Left,
             false,
         ) || is_key_pressed(KeyCode::Escape)
         {
             return Outcome::Menu;
+        }
+        if ui.tab(
+            "end_rematch",
+            "Rematch",
+            Rect::new(sw - 50.0 * s - bw, y, bw, bh),
+            Side::Right,
+            false,
+        ) || is_key_pressed(KeyCode::Enter)
+        {
+            return Outcome::Rematch;
         }
         Outcome::Continue
     }

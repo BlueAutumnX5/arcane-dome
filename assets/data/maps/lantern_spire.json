@@ -1,6 +1,7 @@
 {
   "id": "lantern_spire",
   "name": "Lantern Spire",
+  "description": "A tall tower with a solid spire in the middle. Fights go up as much as across.",
   "tile_size": 32,
   "background": {"sky_color": "#221a2e", "parallax": []},
   "modes": ["deathmatch", "team_deathmatch", "team_elimination"],
