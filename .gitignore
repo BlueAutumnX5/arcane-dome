@@ -1,0 +1,18 @@
+# Rust build output
+/target
+
+# Never commit original Flash games or anything extracted from them
+*.swf
+*.fla
+/extracted/
+/ripped/
+
+# Local tool settings
+.claude/settings.local.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
