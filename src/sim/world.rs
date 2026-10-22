@@ -1,9 +1,10 @@
 use super::fighter::*;
-use super::physics::{self, move_body, overlaps_kind, overlaps_solid, standing_on_one_way};
+use super::gadgets::thruster_under;
+use super::physics::{self, hazard_dps, in_water, move_body, overlaps_solid, standing_on_hatch};
 use super::{DT, Input, ObjectState, Phase, Projectile, Rng};
 use crate::data::{
     Category, GameData, MapDef, ModeDef, ObjectKind, PickupDef, PickupKind, ProjectileKind,
-    SpawnDef, TileKind,
+    SpawnDef,
 };
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
@@ -28,6 +29,15 @@ impl Difficulty {
     }
 }
 
+/// How long "GO" stays up after the countdown.
+pub const GO_SHOWN_S: f32 = 1.0;
+
+/// Most teams a team match can have.
+pub const MAX_TEAMS: usize = 4;
+/// Team names, by team number.
+/// Team colour names, by palette index (the colour a team picked).
+pub const TEAM_NAMES: [&str; MAX_TEAMS] = ["Blue", "Red", "Green", "Yellow"];
+
 /// Everything chosen on the custom match screen.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchConfig {
@@ -39,14 +49,21 @@ pub struct MatchConfig {
     pub rounds: Option<u32>,
     /// Overrides the mode's time limit.
     pub time_limit_s: Option<f32>,
-    /// Bots on the player's team (team modes only).
-    pub friendly_bots: u32,
-    /// Opposing bots (in free-for-all, simply the number of bots).
-    pub enemy_bots: u32,
-    /// Skill of opposing bots (and of every bot in free-for-all).
+    /// Free-for-all: how many bots.
+    pub bots: u32,
+    /// Free-for-all: how good the bots are.
     pub difficulty: Difficulty,
-    /// Skill of bots on the player's team.
-    pub friendly_difficulty: Difficulty,
+    /// How many teams: 0 (or 1) plays free-for-all, 2 to [`MAX_TEAMS`]
+    /// plays in teams, if the mode allows it.
+    pub teams: u8,
+    /// Team modes: bots on each team. Team 0 is the player's; the player is
+    /// not counted here.
+    pub team_bots: [u32; MAX_TEAMS],
+    /// Team modes: how good each team's bots are.
+    pub team_difficulty: [Difficulty; MAX_TEAMS],
+    /// Team modes: each team's colour, as an index into the palette
+    /// ([`TEAM_NAMES`]). Must be all different; otherwise the defaults are used.
+    pub team_colors: [u8; MAX_TEAMS],
     /// Use the map's powerup spot.
     pub powerups: bool,
     /// Use the map's weapon and shield stations.
@@ -54,6 +71,9 @@ pub struct MatchConfig {
     /// Magazines never empty.
     pub infinite_ammo: bool,
     pub seed: u64,
+    /// "5, 4, 3, 2, 1, GO" before the match and each elimination round, in
+    /// seconds. Everyone can aim but not move or shoot until it ends.
+    pub countdown_s: f32,
     /// False for bot-only matches (tests, attract mode).
     pub include_player: bool,
     pub player_name: String,
@@ -67,14 +87,17 @@ impl Default for MatchConfig {
             score_limit: None,
             rounds: None,
             time_limit_s: None,
-            friendly_bots: 0,
-            enemy_bots: 5,
+            bots: 5,
             difficulty: Difficulty::Normal,
-            friendly_difficulty: Difficulty::Normal,
+            teams: 0,
+            team_bots: [2, 3, 2, 2],
+            team_difficulty: [Difficulty::Normal; MAX_TEAMS],
+            team_colors: [0, 1, 2, 3],
             powerups: true,
             stations: true,
             infinite_ammo: false,
             seed: 1,
+            countdown_s: 5.0,
             include_player: true,
             player_name: "You".into(),
         }
@@ -179,15 +202,20 @@ pub struct World {
     pub scores: Vec<i32>,
     pub round: u32,
     pub round_wins: Vec<u32>,
+    /// Seconds left before the fight starts. It keeps counting below zero
+    /// for a moment (down to `-GO_SHOWN_S`) so the HUD can show "GO".
+    pub countdown: f32,
 }
 
-const BOT_NAMES: [&str; 16] = [
+/// Enough for the biggest match (4 teams of 7); beyond that names get a number.
+const BOT_NAMES: [&str; 32] = [
     "Vex", "Orrin", "Talla", "Brisk", "Moth", "Kestrel", "Juno", "Pike", "Sable", "Wren", "Dax",
-    "Ember", "Quill", "Rook", "Ivo", "Nyx",
+    "Ember", "Quill", "Rook", "Ivo", "Nyx", "Lark", "Fenn", "Bram", "Hollis", "Mira", "Zeke",
+    "Tamsin", "Odo", "Rhea", "Sorrel", "Vale", "Flint", "Gale", "Indra", "Bex", "Corin",
 ];
 
 impl World {
-    pub fn new(data: Arc<GameData>, config: MatchConfig) -> Result<Self, String> {
+    pub fn new(data: Arc<GameData>, mut config: MatchConfig) -> Result<Self, String> {
         let map = data
             .map(&config.map_id)
             .ok_or_else(|| format!("unknown map \"{}\"", config.map_id))?
@@ -201,6 +229,18 @@ impl World {
                 "map \"{}\" does not support mode \"{}\"",
                 map.id, mode.id
             ));
+        }
+        // Teams are a setting, not a mode: stamp the actual count into this
+        // match's copy of the mode (1 = free-for-all), so `mode.is_team()`
+        // answers for this match.
+        let num_teams = if mode.teams >= 2 && config.teams >= 2 {
+            (config.teams as usize).clamp(2, (mode.teams as usize).min(MAX_TEAMS))
+        } else {
+            0
+        };
+        mode.teams = num_teams.max(1) as u8;
+        if num_teams > 0 && mode.team_score_limit.is_some() {
+            mode.score_limit = mode.team_score_limit;
         }
         if let Some(s) = config.score_limit {
             mode.score_limit = Some(s.max(1));
@@ -224,20 +264,47 @@ impl World {
                 n_weapons,
             ));
         }
-        let friendly = if mode.is_team() {
-            config.friendly_bots
+        let bot_teams: Vec<u8> = if mode.is_team() {
+            (0..num_teams)
+                .flat_map(|t| std::iter::repeat_n(t as u8, config.team_bots[t] as usize))
+                .collect()
         } else {
-            0
+            vec![0; config.bots as usize]
         };
-        let teams = std::iter::repeat_n(0u8, friendly as usize)
-            .chain(std::iter::repeat_n(1u8, config.enemy_bots as usize));
-        for (k, t) in teams.enumerate() {
+        for (k, t) in bot_teams.into_iter().enumerate() {
             let id = fighters.len();
-            let name = BOT_NAMES[k % BOT_NAMES.len()].to_owned();
+            let lap = k / BOT_NAMES.len();
+            let base = BOT_NAMES[k % BOT_NAMES.len()];
+            let name = if lap == 0 {
+                base.to_owned()
+            } else {
+                format!("{base} {}", lap + 1)
+            };
             fighters.push(Fighter::new(id, name, team(t), true, n_weapons));
         }
         if fighters.len() < 2 {
             return Err("a match needs at least two fighters".into());
+        }
+        // Team colours: a palette index each, all different.
+        let mut colors = config.team_colors;
+        let mut seen = [false; MAX_TEAMS];
+        let distinct = colors
+            .iter()
+            .all(|&c| (c as usize) < MAX_TEAMS && !std::mem::replace(&mut seen[c as usize], true));
+        if !distinct {
+            colors = [0, 1, 2, 3];
+        }
+        config.team_colors = colors;
+        for f in &mut fighters {
+            f.tint = f.team.map(|t| colors[t as usize]);
+        }
+        if mode.is_team() {
+            let manned = (0..num_teams as u8)
+                .filter(|&t| fighters.iter().any(|f| f.team == Some(t)))
+                .count();
+            if manned < 2 {
+                return Err("a team match needs at least two teams with fighters".into());
+            }
         }
 
         let pickups = map
@@ -245,7 +312,7 @@ impl World {
             .iter()
             .map(|p| PickupState {
                 def: p.clone(),
-                pos: vec2(p.x as f32 + 0.5, p.y as f32 + 0.6),
+                pos: p.feet() - vec2(0.0, 0.4),
                 weapon: p.weapon_id.as_deref().and_then(|id| data.weapon_index(id)),
                 active: true,
                 timer: 0.0,
@@ -264,7 +331,11 @@ impl World {
             .collect();
         let stand_cells = super::gadgets::stand_cells(&map);
 
-        let sides = if mode.is_team() { 2 } else { fighters.len() };
+        let sides = if mode.is_team() {
+            num_teams
+        } else {
+            fighters.len()
+        };
         let mut world = Self {
             rng: Rng::new(config.seed),
             data,
@@ -284,6 +355,7 @@ impl World {
             scores: vec![0; sides],
             round: 1,
             round_wins: vec![0; sides],
+            countdown: 0.0,
         };
         world.start_round();
         world.events.clear();
@@ -305,7 +377,19 @@ impl World {
                     return;
                 }
             }
-            Phase::Playing => self.time_left = (self.time_left - DT).max(0.0),
+            Phase::Playing if self.countdown > 0.0 => {
+                // Before the start: fighters settle and aim, nothing else runs.
+                self.countdown -= DT;
+                for i in 0..self.fighters.len() {
+                    let input = inputs.get(i).copied().unwrap_or_default();
+                    self.update_fighter(i, &input);
+                }
+                return;
+            }
+            Phase::Playing => {
+                self.countdown = (self.countdown - DT).max(-GO_SHOWN_S);
+                self.time_left = (self.time_left - DT).max(0.0);
+            }
         }
         for i in 0..self.fighters.len() {
             let input = inputs.get(i).copied().unwrap_or_default();
@@ -319,12 +403,15 @@ impl World {
     }
 
     fn update_fighter(&mut self, i: usize, input: &Input) {
+        let waiting = self.countdown > 0.0;
         let map = &self.map;
         let f = &mut self.fighters[i];
         if !f.alive {
             return;
         }
-        f.spawn_protect = (f.spawn_protect - DT).max(0.0);
+        if !waiting {
+            f.spawn_protect = (f.spawn_protect - DT).max(0.0);
+        }
         f.stun = (f.stun - DT).max(0.0);
         f.freeze = (f.freeze - DT).max(0.0);
         f.fire_cooldown = (f.fire_cooldown - DT).max(-DT);
@@ -332,7 +419,7 @@ impl World {
         f.drop_timer = (f.drop_timer - DT).max(0.0);
         f.beam_age += DT;
 
-        let input = if f.stun > 0.0 {
+        let input = if f.stun > 0.0 || waiting {
             Input {
                 aim: input.aim,
                 ..Default::default()
@@ -355,7 +442,7 @@ impl World {
         } else if f.crouching && !overlaps_solid(map, f.feet, STAND_SIZE) {
             f.crouching = false;
         }
-        f.in_water = overlaps_kind(map, f.feet, f.size(), TileKind::Water);
+        f.in_water = in_water(map, f.feet, f.size());
 
         let slow = if f.freeze > 0.0 { f.freeze_slow } else { 1.0 };
         let water = if f.in_water { WATER_SPEED } else { 1.0 };
@@ -364,12 +451,32 @@ impl World {
         let accel = if f.on_ground { GROUND_ACCEL } else { AIR_ACCEL };
         f.vel.x = approach(f.vel.x, target, accel * DT);
 
-        if input.jump {
-            if f.crouching && f.on_ground && standing_on_one_way(map, f.feet, f.size()) {
+        let on_hatch = f.on_ground && standing_on_hatch(map, f.feet, f.size());
+        if input.drop && on_hatch {
+            // Pressing down on a hatch drops through it.
+            f.drop_timer = DROP_THROUGH_TIME;
+            f.on_ground = false;
+            f.crouching = false;
+        } else if input.jump {
+            if f.crouching && on_hatch {
                 f.drop_timer = DROP_THROUGH_TIME;
                 f.on_ground = false;
             } else if f.in_water {
                 f.vel.y = -SWIM_VEL;
+            } else if let Some((pad, speed)) = (f.on_ground || f.coyote > 0.0)
+                .then(|| thruster_under(&self.objects, f.aabb()))
+                .flatten()
+            {
+                f.vel.y = -speed;
+                f.on_ground = false;
+                f.crouching = false;
+                f.coyote = 0.0;
+                f.air_jumps = 1;
+                f.jump_rising = false;
+                self.events.push(Event::Thrust {
+                    fighter: i,
+                    pos: pad,
+                });
             } else if f.on_ground || f.coyote > 0.0 {
                 f.vel.y = -JUMP_VEL;
                 f.coyote = 0.0;
@@ -412,13 +519,11 @@ impl World {
         if f.vel.y >= 0.0 {
             f.jump_rising = false;
         }
-        f.thrust_cooldown = (f.thrust_cooldown - DT).max(0.0);
-        let spiked = overlaps_kind(map, f.feet, size, TileKind::Spikes);
+        let hazard = hazard_dps(map, f.feet, size);
         let burn = f.burn;
 
         self.handle_weapons(i, &input);
         self.update_buffs(i);
-        self.check_thrusters(i);
         if input.ability {
             self.use_ability(i);
         }
@@ -428,8 +533,8 @@ impl World {
             self.fighters[i].burn = (b.time_left > 0.0).then_some(b);
             self.damage(i, Some(b.source), Some(b.weapon), b.dps * DT, false, false);
         }
-        if spiked {
-            self.damage(i, None, None, SPIKE_DPS * DT, false, false);
+        if hazard > 0.0 {
+            self.damage(i, None, None, hazard * DT, false, false);
         }
     }
 
@@ -511,8 +616,11 @@ impl World {
 
     pub(crate) fn spawn_fighter(&mut self, i: usize) {
         let spawn = self.choose_spawn(i);
+        // Stand on the floor, not half sunk into it on a slope.
+        let feet = spawn.feet();
+        let rest = self.map.rest_height(feet, STAND_SIZE.x * 0.5);
         let f = &mut self.fighters[i];
-        f.feet = vec2(spawn.x as f32 + 0.5, spawn.y as f32 + 1.0);
+        f.feet = vec2(feet.x, rest.unwrap_or(feet.y));
         f.vel = Vec2::ZERO;
         f.health = MAX_HEALTH;
         f.alive = true;
@@ -535,28 +643,36 @@ impl World {
         f.buffs.clear();
         f.teleport_charges = 0;
         f.teleport_powerup = None;
-        f.thrust_cooldown = 0.0;
         self.give_loadout(i);
         self.events.push(Event::Spawn { fighter: i });
     }
 
-    /// Pick the allowed spawn point farthest from living enemies (with a bit of randomness).
+    /// Pick the allowed spawn point farthest from living enemies (with a bit of
+    /// randomness). A team the map has no spawns for uses the free-for-all
+    /// spawns, and then also tries to stay close to its living teammates.
     fn choose_spawn(&mut self, i: usize) -> SpawnDef {
         let team_mode = self.mode.is_team();
         let team = self.fighters[i].team;
-        let mut candidates: Vec<SpawnDef> = self
-            .map
-            .spawns
-            .iter()
-            .filter(|s| {
-                if team_mode {
-                    s.team == team
-                } else {
-                    s.team.is_none()
-                }
-            })
-            .copied()
-            .collect();
+        // Spawns can change hands with the number of teams (see `by_teams`).
+        let n = if team_mode { self.num_sides() } else { 0 };
+        let own = |s: &&SpawnDef| {
+            if team_mode {
+                s.team_for(n) == team
+            } else {
+                s.team.is_none()
+            }
+        };
+        let mut candidates: Vec<SpawnDef> = self.map.spawns.iter().filter(own).copied().collect();
+        let borrowed = candidates.is_empty();
+        if borrowed {
+            candidates = self
+                .map
+                .spawns
+                .iter()
+                .filter(|s| s.team.is_none() && s.team_for(n).is_none())
+                .copied()
+                .collect();
+        }
         if candidates.is_empty() {
             candidates = self.map.spawns.clone();
         }
@@ -566,15 +682,25 @@ impl World {
             .filter(|o| o.alive && o.id != i && !self.allies(i, o.id))
             .map(|o| o.feet)
             .collect();
+        let friends: Vec<Vec2> = self
+            .fighters
+            .iter()
+            .filter(|o| team_mode && borrowed && o.alive && o.id != i && self.allies(i, o.id))
+            .map(|o| o.feet)
+            .collect();
         let mut best = candidates[0];
         let mut best_score = f32::MIN;
         for s in candidates {
-            let p = vec2(s.x as f32 + 0.5, s.y as f32 + 1.0);
+            let p = s.feet();
             let nearest = enemies
                 .iter()
                 .map(|e| e.distance(p))
                 .fold(50.0f32, f32::min);
-            let score = nearest + self.rng.range(0.0, 4.0);
+            let buddy = friends
+                .iter()
+                .map(|f| f.distance(p))
+                .fold(None, |m: Option<f32>, d| Some(m.map_or(d, |m| m.min(d))));
+            let score = nearest - buddy.map_or(0.0, |d| d * 0.6) + self.rng.range(0.0, 4.0);
             if score > best_score {
                 best_score = score;
                 best = s;

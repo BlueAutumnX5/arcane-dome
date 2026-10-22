@@ -4,7 +4,7 @@
 use super::ui::{self, Side, Ui};
 use crate::ai::BotSet;
 use crate::data::GameData;
-use crate::render::{self, Effects, GameCamera};
+use crate::render::{self, Effects, GameCamera, MapArt};
 use crate::sim::{DT, Input, MatchConfig, Phase, World};
 use macroquad::prelude::*;
 use std::sync::Arc;
@@ -20,6 +20,7 @@ pub enum Outcome {
 #[derive(Default)]
 struct Edges {
     jump: bool,
+    drop: bool,
     reload: bool,
     select: Option<usize>,
     cycle: i32,
@@ -32,6 +33,8 @@ pub struct Session {
     player: usize,
     effects: Effects,
     cam: GameCamera,
+    /// Terrain drawing data, prepared once for this map.
+    art: MapArt,
     acc: f32,
     paused: bool,
     edges: Edges,
@@ -57,17 +60,25 @@ impl Session {
         let bots = BotSet::new(&world);
         let mut cam = GameCamera::new(world.fighters[0].center());
         cam.snap(world.fighters[0].center());
+        let art = MapArt::new(&world.map);
         Ok(Self {
             world,
             bots,
             player: 0,
             effects: Effects::default(),
             cam,
+            art,
             acc: 0.0,
             paused: false,
             edges: Edges::default(),
             over_for: 0.0,
         })
+    }
+
+    /// Debug screenshots: put the player's feet at `at` and look there.
+    pub fn debug_place_player(&mut self, at: Vec2) {
+        self.world.fighters[self.player].feet = at;
+        self.cam.snap(self.world.fighters[self.player].center());
     }
 
     pub fn config(&self) -> &MatchConfig {
@@ -101,12 +112,19 @@ impl Session {
         let focus = self.focus_point();
         self.cam.update(&self.world, focus, mouse, dt);
 
-        render::draw_world(&self.world, &self.cam, &self.effects, Some(self.player));
+        render::draw_world(
+            &self.world,
+            &self.cam,
+            &self.effects,
+            Some(self.player),
+            &self.art,
+        );
         render::draw_hud(&self.world, &self.effects, self.player);
         if !self.paused && !over {
             render::draw_crosshair(&self.world, &self.cam, &self.effects, self.player, mouse);
         }
-        if over || is_key_down(KeyCode::Tab) {
+        let debug_tab = std::env::var_os("ARCANE_SHOT_TAB").is_some();
+        if over || is_key_down(KeyCode::Tab) || debug_tab {
             render::draw_scoreboard(&self.world, Some(self.player));
         }
 
@@ -123,6 +141,9 @@ impl Session {
     fn collect_edges(&mut self) {
         if Self::pressed(&[KeyCode::W, KeyCode::Up, KeyCode::Space]) {
             self.edges.jump = true;
+        }
+        if Self::pressed(&[KeyCode::S, KeyCode::Down]) {
+            self.edges.drop = true;
         }
         if is_key_pressed(KeyCode::R) {
             self.edges.reload = true;
@@ -158,6 +179,7 @@ impl Session {
             jump: edges.jump,
             jump_held: Self::held(&[KeyCode::W, KeyCode::Up, KeyCode::Space]),
             crouch: Self::held(&[KeyCode::S, KeyCode::Down]),
+            drop: edges.drop,
             aim: self.cam.screen_to_world(mouse),
             fire: is_mouse_button_down(MouseButton::Left),
             reload: edges.reload,

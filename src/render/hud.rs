@@ -1,6 +1,6 @@
-use super::{BLUE, Effects, GameCamera, RED, category_color, fighter_color};
+use super::{Effects, GameCamera, RED, TEAM_COLORS, category_color, fighter_color};
 use crate::data::ProjectileKind;
-use crate::sim::{MAX_HEALTH, MAX_SHIELD, Phase, World};
+use crate::sim::{GO_SHOWN_S, MAX_HEALTH, MAX_SHIELD, Phase, World};
 use macroquad::prelude::*;
 
 fn ui_scale() -> f32 {
@@ -15,6 +15,20 @@ fn text(t: &str, x: f32, y: f32, size: f32, color: Color) {
 fn text_center(t: &str, cx: f32, y: f32, size: f32, color: Color) {
     let d = measure_text(t, None, size as u16, 1.0);
     text(t, cx - d.width / 2.0, y, size, color);
+}
+
+/// Coloured pieces of text side by side, `gap` apart, centred on `cx`.
+fn segments_center(parts: &[(String, Color)], cx: f32, y: f32, size: f32, gap: f32) {
+    let widths: Vec<f32> = parts
+        .iter()
+        .map(|(t, _)| measure_text(t, None, size as u16, 1.0).width)
+        .collect();
+    let total = widths.iter().sum::<f32>() + gap * (parts.len().saturating_sub(1)) as f32;
+    let mut x = cx - total / 2.0;
+    for ((t, c), w) in parts.iter().zip(&widths) {
+        text(t, x, y, size, *c);
+        x += w + gap;
+    }
 }
 
 fn text_right(t: &str, rx: f32, y: f32, size: f32, color: Color) {
@@ -259,34 +273,43 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
         clock(world.time_left)
     };
     text_center(&time, cx, 34.0 * s, 30.0 * s, WHITE);
-    let line = if !mode.respawn {
-        let alive = |t: u8| {
+    if mode.is_team() {
+        // One coloured segment per team: score (or round wins and how many
+        // are still standing), then the target.
+        let alive = |t: usize| {
             world
                 .fighters
                 .iter()
-                .filter(|f| f.alive && f.team == Some(t))
+                .filter(|f| f.alive && f.team == Some(t as u8))
                 .count()
         };
-        if mode.is_team() {
-            format!(
-                "Round {}/{}   Blue {} - {} Red   (alive {} v {})",
-                world.round,
-                mode.rounds.unwrap_or(1),
-                world.round_wins[0],
-                world.round_wins[1],
-                alive(0),
-                alive(1)
-            )
+        let mut parts: Vec<(String, Color)> = (0..world.num_sides())
+            .map(|t| {
+                let label = if mode.respawn {
+                    format!("{} {}", world.side_name(t), world.scores[t])
+                } else {
+                    format!(
+                        "{} {} ({} up)",
+                        world.side_name(t),
+                        world.round_wins[t],
+                        alive(t)
+                    )
+                };
+                (label, TEAM_COLORS[world.team_color(t)])
+            })
+            .collect();
+        let goal = if mode.respawn {
+            format!("to {}", mode.score_limit.unwrap_or(0))
         } else {
             format!("Round {}/{}", world.round, mode.rounds.unwrap_or(1))
-        }
-    } else if mode.is_team() {
-        format!(
-            "Blue {}  -  {} Red     to {}",
-            world.scores[0],
-            world.scores[1],
-            mode.score_limit.unwrap_or(0)
-        )
+        };
+        parts.push((goal, Color::new(1.0, 1.0, 1.0, 0.75)));
+        segments_center(&parts, cx, 58.0 * s, 20.0 * s, 22.0 * s);
+    }
+    let line = if mode.is_team() {
+        String::new()
+    } else if !mode.respawn {
+        format!("Round {}/{}", world.round, mode.rounds.unwrap_or(1))
     } else {
         let mine = world.scores[world.side_of(player)];
         let (leader, best) = (0..world.num_sides())
@@ -308,26 +331,73 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
         20.0 * s,
         Color::new(1.0, 1.0, 1.0, 0.9),
     );
-    if mode.is_team() {
-        draw_rectangle(cx - 150.0 * s, 64.0 * s, 8.0 * s, 4.0 * s, BLUE);
-        draw_rectangle(cx + 142.0 * s, 64.0 * s, 8.0 * s, 4.0 * s, RED);
-    }
 
     // Kill feed, top right.
     for (i, l) in effects.feed.iter().enumerate() {
         let a = (1.0 - (l.age - 5.0).max(0.0)).clamp(0.0, 1.0);
-        let col = if l.mine {
-            Color::new(1.0, 0.9, 0.5, a)
+        let size = 18.0 * s;
+        let gap = 7.0 * s;
+        let y = 28.0 * s + i as f32 * 22.0 * s;
+        let widths: Vec<f32> = l
+            .parts
+            .iter()
+            .map(|(t, _)| measure_text(t, None, size as u16, 1.0).width)
+            .collect();
+        let total = widths.iter().sum::<f32>() + gap * (widths.len().saturating_sub(1)) as f32;
+        let mut x = sw - 16.0 * s - total;
+        if l.mine {
+            // Your own kills and deaths stand out with a bar behind them.
+            draw_rectangle(
+                x - 6.0 * s,
+                y - size * 0.8,
+                total + 12.0 * s,
+                size * 1.05,
+                Color::new(1.0, 0.9, 0.5, 0.18 * a),
+            );
+        }
+        for ((t, c), w) in l.parts.iter().zip(&widths) {
+            text(t, x, y, size, Color::new(c.r, c.g, c.b, c.a * a));
+            x += w + gap;
+        }
+    }
+
+    // Countdown before the fight: a big number that shrinks into place each
+    // second, then "GO!" fading out.
+    if world.phase == Phase::Playing && world.countdown > -GO_SHOWN_S {
+        let (msg, k, color) = if world.countdown > 0.0 {
+            let k = world.countdown.fract();
+            let n = world.countdown.ceil() as i32;
+            (n.to_string(), k, WHITE)
         } else {
-            Color::new(1.0, 1.0, 1.0, a * 0.85)
+            let k = 1.0 + world.countdown / GO_SHOWN_S;
+            ("GO!".to_owned(), k, Color::new(0.55, 1.0, 0.6, 1.0))
         };
-        text_right(
-            &l.text,
-            sw - 16.0 * s,
-            28.0 * s + i as f32 * 22.0 * s,
-            18.0 * s,
-            col,
+        let size = (90.0 + 60.0 * k) * s;
+        let alpha = (0.35 + 0.65 * k).min(1.0);
+        let y = sh * 0.36;
+        let shadow = Color::new(0.0, 0.0, 0.0, 0.5 * alpha);
+        text_center(&msg, cx + 3.0 * s, y + 3.0 * s, size, shadow);
+        text_center(
+            &msg,
+            cx,
+            y,
+            size,
+            Color::new(color.r, color.g, color.b, alpha),
         );
+        if world.countdown > 0.0 {
+            let sub = if world.round > 1 {
+                format!("Round {}", world.round)
+            } else {
+                "Get ready".to_owned()
+            };
+            text_center(
+                &sub,
+                cx,
+                y + 54.0 * s,
+                24.0 * s,
+                Color::new(1.0, 1.0, 1.0, 0.8),
+            );
+        }
     }
 
     // Status messages, center.
@@ -338,14 +408,14 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
                 Some(w) => format!("{} WINS", world.side_name(w).to_uppercase()),
                 None => "DRAW".to_owned(),
             };
-            text_center(&msg, cx, sh * 0.22, 56.0 * s, WHITE);
+            text_center(&msg, cx, sh * 0.22, 56.0 * s, side_color(world, winner));
         }
         Phase::RoundOver { winner, .. } => {
             let msg = match winner {
                 Some(w) => format!("{} takes the round", world.side_name(w)),
                 None => "Round drawn".to_owned(),
             };
-            text_center(&msg, cx, sh * 0.3, 40.0 * s, WHITE);
+            text_center(&msg, cx, sh * 0.3, 40.0 * s, side_color(world, winner));
         }
         Phase::Playing if !f.alive => {
             let msg = if mode.respawn {
@@ -363,63 +433,160 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
     }
 }
 
+/// The colour of a side's banner: its team colour in team modes.
+fn side_color(world: &World, side: Option<usize>) -> Color {
+    match side {
+        Some(t) if world.mode.is_team() => TEAM_COLORS[world.team_color(t)],
+        _ => WHITE,
+    }
+}
+
 pub fn draw_scoreboard(world: &World, player: Option<usize>) {
-    let s = ui_scale();
-    let sw = screen_width();
-    let sh = screen_height();
-    let w = 620.0 * s;
-    let rows = world.fighters.len();
-    let h = (110.0 + rows as f32 * 28.0) * s;
-    let x = (sw - w) / 2.0;
-    let y = (sh - h) / 2.0;
-    draw_rectangle(x, y, w, h, Color::new(0.05, 0.06, 0.09, 0.88));
-    draw_rectangle_lines(x, y, w, h, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.2));
-    let title = format!("{}  -  {}", world.mode.display_name(), world.map.name);
-    text_center(&title, sw / 2.0, y + 36.0 * s, 26.0 * s, WHITE);
+    if world.mode.is_team() {
+        draw_team_scoreboard(world, player);
+    } else {
+        draw_ffa_scoreboard(world, player);
+    }
+}
 
-    let col_name = x + 30.0 * s;
-    let col_k = x + w - 230.0 * s;
-    let col_d = x + w - 150.0 * s;
-    let col_s = x + w - 70.0 * s;
-    let hy = y + 70.0 * s;
-    let head = Color::new(1.0, 1.0, 1.0, 0.55);
-    text("NAME", col_name, hy, 16.0 * s, head);
-    text("KILLS", col_k, hy, 16.0 * s, head);
-    text("DEATHS", col_d, hy, 16.0 * s, head);
-    text("SCORE", col_s, hy, 16.0 * s, head);
-
-    let mut order: Vec<usize> = (0..rows).collect();
+/// Fighters sorted best first: most kills, then fewest deaths.
+fn ranked(world: &World, keep: impl Fn(usize) -> bool) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..world.fighters.len()).filter(|&i| keep(i)).collect();
     order.sort_by_key(|&i| {
         let f = &world.fighters[i];
-        (f.team, std::cmp::Reverse(f.kills), f.deaths, i)
+        (std::cmp::Reverse(f.kills), f.deaths, i)
     });
+    order
+}
+
+/// One fighter's line: colour tag, name, kills, deaths and score.
+#[allow(clippy::too_many_arguments)]
+fn score_row(
+    world: &World,
+    i: usize,
+    player: Option<usize>,
+    x: f32,
+    w: f32,
+    ry: f32,
+    cols: [f32; 3],
+    score: i32,
+) {
+    let s = ui_scale();
+    let f = &world.fighters[i];
+    if Some(i) == player {
+        draw_rectangle(
+            x + 6.0 * s,
+            ry - 19.0 * s,
+            w - 12.0 * s,
+            26.0 * s,
+            Color::new(1.0, 1.0, 1.0, 0.08),
+        );
+    }
+    draw_rectangle(
+        x + 14.0 * s,
+        ry - 13.0 * s,
+        8.0 * s,
+        14.0 * s,
+        fighter_color(f),
+    );
+    let name_col = if f.alive {
+        WHITE
+    } else {
+        Color::new(1.0, 1.0, 1.0, 0.5)
+    };
+    text(&f.name, x + 30.0 * s, ry, 20.0 * s, name_col);
+    text(&f.kills.to_string(), cols[0], ry, 20.0 * s, WHITE);
+    text(&f.deaths.to_string(), cols[1], ry, 20.0 * s, WHITE);
+    text(&score.to_string(), cols[2], ry, 20.0 * s, WHITE);
+}
+
+fn draw_ffa_scoreboard(world: &World, player: Option<usize>) {
+    let s = ui_scale();
+    let (sw, sh) = (screen_width(), screen_height());
+    let order = ranked(world, |_| true);
+    let w = 620.0 * s;
+    let h = (110.0 + order.len() as f32 * 28.0) * s;
+    let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
+    draw_rectangle(x, y, w, h, Color::new(0.05, 0.06, 0.09, 0.88));
+    draw_rectangle_lines(x, y, w, h, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.2));
+    let title = format!("{}  -  {}", world.mode.match_name(), world.map.name);
+    text_center(&title, sw / 2.0, y + 36.0 * s, 26.0 * s, WHITE);
+    let cols = [x + w - 230.0 * s, x + w - 150.0 * s, x + w - 70.0 * s];
+    let hy = y + 70.0 * s;
+    let head = Color::new(1.0, 1.0, 1.0, 0.55);
+    text("NAME", x + 30.0 * s, hy, 16.0 * s, head);
+    for (label, cx) in ["KILLS", "DEATHS", "SCORE"].iter().zip(cols) {
+        text(label, cx, hy, 16.0 * s, head);
+    }
     for (row, &i) in order.iter().enumerate() {
-        let f = &world.fighters[i];
         let ry = hy + (row as f32 + 1.0) * 28.0 * s;
-        if Some(i) == player {
-            draw_rectangle(
-                x + 10.0 * s,
-                ry - 19.0 * s,
-                w - 20.0 * s,
-                26.0 * s,
-                Color::new(1.0, 1.0, 1.0, 0.08),
-            );
+        let score = world.scores[world.side_of(i)];
+        score_row(world, i, player, x, w, ry, cols, score);
+    }
+}
+
+/// Team modes: one panel per team, two panels to a row.
+fn draw_team_scoreboard(world: &World, player: Option<usize>) {
+    let s = ui_scale();
+    let (sw, sh) = (screen_width(), screen_height());
+    let teams = world.num_sides();
+    let members: Vec<Vec<usize>> = (0..teams)
+        .map(|t| ranked(world, |i| world.side_of(i) == t))
+        .collect();
+    let grid_rows = teams.div_ceil(2);
+    let most = members.iter().map(Vec::len).max().unwrap_or(0) as f32;
+    let (gap, row_h) = (14.0 * s, 26.0 * s);
+    let panel_w = 400.0 * s;
+    let panel_h = 76.0 * s + most * row_h;
+    let w = panel_w * 2.0 + gap * 3.0;
+    let h = 64.0 * s + grid_rows as f32 * (panel_h + gap);
+    let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
+    draw_rectangle(x, y, w, h, Color::new(0.05, 0.06, 0.09, 0.88));
+    draw_rectangle_lines(x, y, w, h, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.2));
+    let title = format!("{}  -  {}", world.mode.match_name(), world.map.name);
+    text_center(&title, sw / 2.0, y + 38.0 * s, 26.0 * s, WHITE);
+
+    let head = Color::new(1.0, 1.0, 1.0, 0.55);
+    for (t, list) in members.iter().enumerate() {
+        let px = x + gap + (t % 2) as f32 * (panel_w + gap);
+        let py = y + 56.0 * s + (t / 2) as f32 * (panel_h + gap);
+        let c = TEAM_COLORS[world.team_color(t)];
+        draw_rectangle(px, py, panel_w, panel_h, Color::new(c.r, c.g, c.b, 0.07));
+        draw_rectangle(px, py, panel_w, 34.0 * s, Color::new(c.r, c.g, c.b, 0.2));
+        draw_rectangle(px, py, 5.0 * s, panel_h, c);
+        let total = if world.mode.respawn {
+            world.scores[t]
+        } else {
+            world.round_wins[t] as i32
+        };
+        text(
+            &format!("{} Team", world.side_name(t)),
+            px + 16.0 * s,
+            py + 24.0 * s,
+            22.0 * s,
+            c,
+        );
+        text_right(
+            &total.to_string(),
+            px + panel_w - 14.0 * s,
+            py + 24.0 * s,
+            24.0 * s,
+            c,
+        );
+        let cols = [
+            px + panel_w - 150.0 * s,
+            px + panel_w - 100.0 * s,
+            px + panel_w - 46.0 * s,
+        ];
+        let hy = py + 54.0 * s;
+        text("NAME", px + 30.0 * s, hy, 14.0 * s, head);
+        for (label, cx) in ["K", "D", "PTS"].iter().zip(cols) {
+            text(label, cx, hy, 14.0 * s, head);
         }
-        let c = fighter_color(f);
-        draw_rectangle(col_name - 16.0 * s, ry - 13.0 * s, 8.0 * s, 14.0 * s, c);
-        let name_col = if f.alive {
-            WHITE
-        } else {
-            Color::new(1.0, 1.0, 1.0, 0.5)
-        };
-        text(&f.name, col_name, ry, 20.0 * s, name_col);
-        text(&f.kills.to_string(), col_k, ry, 20.0 * s, WHITE);
-        text(&f.deaths.to_string(), col_d, ry, 20.0 * s, WHITE);
-        let score = if world.mode.is_team() {
-            f.kills as i32
-        } else {
-            world.scores[world.side_of(i)]
-        };
-        text(&score.to_string(), col_s, ry, 20.0 * s, WHITE);
+        for (row, &i) in list.iter().enumerate() {
+            let ry = hy + (row as f32 + 1.0) * row_h;
+            let pts = world.fighters[i].kills as i32;
+            score_row(world, i, player, px, panel_w, ry, cols, pts);
+        }
     }
 }

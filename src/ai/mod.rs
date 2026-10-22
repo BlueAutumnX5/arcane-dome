@@ -20,10 +20,9 @@ impl BotSet {
             .fighters
             .iter()
             .map(|f| {
-                let skill = if world.mode.is_team() && f.team == Some(0) {
-                    world.config.friendly_difficulty
-                } else {
-                    world.config.difficulty
+                let skill = match f.team {
+                    Some(t) if world.mode.is_team() => world.config.team_difficulty[t as usize],
+                    _ => world.config.difficulty,
                 };
                 f.is_bot.then(|| Brain::new(f.id, world.config.seed, skill))
             })
@@ -37,6 +36,19 @@ impl BotSet {
             if let (Some(b), Some(slot)) = (brain, inputs.get_mut(i)) {
                 *slot = b.think(world, &self.nav);
             }
+        }
+    }
+
+    /// Where bot `i` is trying to land, while in the air (debugging tools).
+    pub fn landing_target(&self, i: usize) -> Option<macroquad::math::Vec2> {
+        self.brains.get(i)?.as_ref()?.landing_target()
+    }
+
+    /// One line about what bot `i` is up to, for debugging tools.
+    pub fn describe(&self, world: &World, i: usize) -> String {
+        match self.brains.get(i) {
+            Some(Some(b)) => b.describe(world, &self.nav),
+            _ => String::from("not a bot"),
         }
     }
 

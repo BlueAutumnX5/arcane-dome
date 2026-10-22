@@ -17,7 +17,9 @@ pub use gadgets::{ObjectState, absorb};
 pub use input::Input;
 pub use rng::Rng;
 pub use rules::Phase;
-pub use world::{Difficulty, Event, MatchConfig, PickupState, World};
+pub use world::{
+    Difficulty, Event, GO_SHOWN_S, MAX_TEAMS, MatchConfig, PickupState, TEAM_NAMES, World,
+};
 
 /// Simulation ticks per second.
 pub const TICK_RATE: u32 = 60;

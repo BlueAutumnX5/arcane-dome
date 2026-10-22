@@ -4,7 +4,8 @@ mod session;
 mod ui;
 
 use crate::data::{GameData, ProjectileKind, find_assets_dir};
-use crate::sim::{Difficulty, MatchConfig};
+use crate::render::TEAM_COLORS;
+use crate::sim::{Difficulty, MAX_TEAMS, MatchConfig, TEAM_NAMES};
 use macroquad::prelude::*;
 use session::Session;
 use std::sync::Arc;
@@ -12,6 +13,8 @@ use ui::{ACCENT, Side, Ui};
 
 const SCORE_LIMITS: [u32; 10] = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
 const ROUND_COUNTS: [u32; 5] = [1, 3, 5, 7, 9];
+/// Most bots one team can have.
+const MAX_TEAM_BOTS: i32 = 7;
 const TIME_LIMITS: [f32; 8] = [60.0, 120.0, 180.0, 300.0, 480.0, 600.0, 900.0, 1200.0];
 const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 
@@ -30,6 +33,24 @@ enum Screen {
     Error(String),
 }
 
+/// Team settings offered for this map in this mode: 0 (teams off, every
+/// mode has it), then the team counts both the map and the mode support.
+fn allowed_team_counts(map: &crate::data::MapDef, mode: &crate::data::ModeDef) -> Vec<usize> {
+    let most = (mode.teams as usize).min(MAX_TEAMS);
+    std::iter::once(0)
+        .chain(
+            map.team_counts
+                .iter()
+                .map(|&n| n as usize)
+                .filter(|&n| n >= 2 && n <= most),
+        )
+        .collect()
+}
+
+fn teams_label(n: usize) -> String {
+    if n >= 2 { n.to_string() } else { "Off".into() }
+}
+
 /// Choices on the match setup screen.
 struct Setup {
     map: usize,
@@ -37,10 +58,15 @@ struct Setup {
     score: usize,
     rounds: usize,
     time: usize,
-    friendly: u32,
-    enemy: u32,
-    friendly_skill: usize,
-    enemy_skill: usize,
+    /// Free-for-all bots and their skill.
+    ffa_bots: u32,
+    ffa_skill: usize,
+    /// Team modes: how many teams, and bots and skill per team.
+    teams: usize,
+    team_bots: [u32; MAX_TEAMS],
+    team_skill: [usize; MAX_TEAMS],
+    /// Each team's colour (palette index); always all different.
+    team_colors: [u8; MAX_TEAMS],
     powerups: bool,
     stations: bool,
     infinite_ammo: bool,
@@ -54,6 +80,8 @@ struct App {
     seed: u64,
     time: f32,
     quit: bool,
+    /// Rendered map pictures for the setup screen, by map id.
+    thumbs: std::collections::HashMap<String, crate::render::MapThumb>,
 }
 
 pub async fn run() {
@@ -76,10 +104,12 @@ pub async fn run() {
             score: 4,
             rounds: 2,
             time: 5,
-            friendly: 2,
-            enemy: 3,
-            friendly_skill: 1,
-            enemy_skill: 1,
+            ffa_bots: 3,
+            ffa_skill: 1,
+            teams: 0,
+            team_bots: [2, 3, 3, 3],
+            team_skill: [1; MAX_TEAMS],
+            team_colors: [0, 1, 2, 3],
             powerups: true,
             stations: true,
             infinite_ammo: false,
@@ -88,6 +118,7 @@ pub async fn run() {
         seed: macroquad::miniquad::date::now() as u64,
         time: 0.0,
         quit: false,
+        thumbs: Default::default(),
     };
     app.reset_mode_defaults();
 
@@ -177,7 +208,7 @@ impl App {
         let cfg = MatchConfig {
             map_id: map,
             mode_id: "deathmatch".into(),
-            enemy_bots: 5,
+            bots: 5,
             seed: self.next_seed(),
             ..Default::default()
         };
@@ -340,7 +371,12 @@ impl App {
                 .min_by(|&a, &b| (list[a] - v).abs().total_cmp(&(list[b] - v).abs()))
                 .unwrap_or(0)
         };
-        if let Some(s) = mode.score_limit {
+        let score = if self.setup.teams >= 2 {
+            mode.team_score_limit.or(mode.score_limit)
+        } else {
+            mode.score_limit
+        };
+        if let Some(s) = score {
             let l: Vec<f32> = SCORE_LIMITS.iter().map(|&v| v as f32).collect();
             self.setup.score = nearest(&l, s as f32);
         }
@@ -362,10 +398,12 @@ impl App {
             score_limit: Some(SCORE_LIMITS[c.score]),
             rounds: Some(ROUND_COUNTS[c.rounds]),
             time_limit_s: Some(TIME_LIMITS[c.time]),
-            friendly_bots: c.friendly,
-            enemy_bots: c.enemy,
-            difficulty: Difficulty::ALL[c.enemy_skill],
-            friendly_difficulty: Difficulty::ALL[c.friendly_skill],
+            bots: c.ffa_bots,
+            difficulty: Difficulty::ALL[c.ffa_skill],
+            teams: c.teams as u8,
+            team_bots: c.team_bots,
+            team_difficulty: c.team_skill.map(|k| Difficulty::ALL[k]),
+            team_colors: c.team_colors,
             powerups: c.powerups,
             stations: c.stations,
             infinite_ammo: c.infinite_ammo,
@@ -397,7 +435,11 @@ impl App {
         ui::panel(Rect::new(lx, top, lw, sh - top - 100.0 * s), None);
         let pad = 12.0 * s;
         let pv = Rect::new(lx + pad, top + pad, lw - 2.0 * pad, 170.0 * s);
-        ui::map_preview(map, pv, map.sky_color);
+        let thumb = self
+            .thumbs
+            .entry(map.id.clone())
+            .or_insert_with(|| crate::render::MapThumb::new(map, 768));
+        ui::map_preview(map, thumb.draw(map), pv);
         let ny = pv.y + pv.h + 26.0 * s;
         let mut map_delta = self.ui.stepper(
             "s_map",
@@ -405,7 +447,7 @@ impl App {
             &map.name,
             Rect::new(pv.x, ny - 20.0 * s, pv.w, 28.0 * s),
             false,
-            true,
+            data.maps.len() > 1,
         );
         if is_key_pressed(KeyCode::Left) {
             map_delta = -1;
@@ -494,21 +536,79 @@ impl App {
             true,
         );
 
-        // Right: teams.
+        // Right: teams (or the opponents in free-for-all).
         let rx = sw * 0.55 + 20.0 * s;
         let rw = sw - rx - 40.0 * s;
-        let box_h = 140.0 * s;
-        let team_box = |ui: &mut Ui,
-                        id: &str,
-                        title: &str,
-                        color: Color,
-                        y: f32,
-                        bots: u32,
-                        skill: usize,
-                        who: String| {
+        let half = (rw - 30.0 * s) / 2.0;
+        let mut d_bots = [0i32; MAX_TEAMS];
+        let mut d_skill = [0i32; MAX_TEAMS];
+        let mut recolor = None;
+        let (mut d_ffa_bots, mut d_ffa_skill) = (0, 0);
+        let total;
+        let choices = allowed_team_counts(map, &mode);
+        let d_teams = self.ui.stepper(
+            "s_teams",
+            "Teams",
+            &teams_label(self.setup.teams),
+            Rect::new(rx, top, rw, 34.0 * s),
+            false,
+            choices.len() > 1,
+        );
+        if self.setup.teams >= 2 {
+            let box_h = 86.0 * s;
+            for t in 0..self.setup.teams {
+                let y = top + 48.0 * s + t as f32 * (box_h + 10.0 * s);
+                let pick = self.setup.team_colors[t] as usize;
+                let color = TEAM_COLORS[pick];
+                let bots = self.setup.team_bots[t];
+                ui::panel(Rect::new(rx, y, rw, box_h), None);
+                draw_rectangle(rx, y, 6.0 * s, box_h, color);
+                // Click the swatch for the next colour.
+                let sw_r = Rect::new(rx + 18.0 * s, y + 10.0 * s, 20.0 * s, 20.0 * s);
+                if self.ui.swatch(&format!("s_t{t}_color"), sw_r, color) {
+                    recolor = Some(t);
+                }
+                let title = format!("{} Team", TEAM_NAMES[pick]);
+                ui::text_left(&title, rx + 48.0 * s, y + 26.0 * s, 22.0 * s, color);
+                let who = if t == 0 {
+                    format!("You + {bots} bots")
+                } else {
+                    format!("{bots} bots")
+                };
+                ui::text_right(
+                    &who,
+                    rx + rw - 14.0 * s,
+                    y + 26.0 * s,
+                    17.0 * s,
+                    Color::new(1.0, 1.0, 1.0, 0.75),
+                );
+                let ry = y + 42.0 * s;
+                d_bots[t] = self.ui.stepper(
+                    &format!("s_t{t}_bots"),
+                    "Bots",
+                    &bots.to_string(),
+                    Rect::new(rx + 10.0 * s, ry, half, 32.0 * s),
+                    false,
+                    true,
+                );
+                d_skill[t] = self.ui.stepper(
+                    &format!("s_t{t}_skill"),
+                    "Skill",
+                    Difficulty::ALL[self.setup.team_skill[t]].label(),
+                    Rect::new(rx + 20.0 * s + half, ry, half, 32.0 * s),
+                    false,
+                    true,
+                );
+            }
+            total = 1 + self.setup.team_bots[..self.setup.teams].iter().sum::<u32>();
+        } else {
+            let box_h = 140.0 * s;
+            let y = top + 48.0 * s;
+            let color = TEAM_COLORS[1];
             ui::panel(Rect::new(rx, y, rw, box_h), None);
             draw_rectangle(rx, y, 6.0 * s, box_h, color);
-            ui::text_left(title, rx + 18.0 * s, y + 26.0 * s, 22.0 * s, color);
+            ui::text_left("Opponents", rx + 18.0 * s, y + 26.0 * s, 22.0 * s, color);
+            let who = format!("You against {} bots", self.setup.ffa_bots);
             ui::text_left(
                 &who,
                 rx + 18.0 * s,
@@ -518,75 +618,24 @@ impl App {
             );
             let r1 = Rect::new(rx + 10.0 * s, y + 62.0 * s, rw - 20.0 * s, 32.0 * s);
             let r2 = Rect::new(rx + 10.0 * s, y + 100.0 * s, rw - 20.0 * s, 32.0 * s);
-            let db = ui.stepper(
-                &format!("{id}_bots"),
+            d_ffa_bots = self.ui.stepper(
+                "s_ffa_bots",
                 "Bots",
-                &bots.to_string(),
+                &self.setup.ffa_bots.to_string(),
                 r1,
                 false,
                 true,
             );
-            let ds = ui.stepper(
-                &format!("{id}_skill"),
+            d_ffa_skill = self.ui.stepper(
+                "s_ffa_skill",
                 "Difficulty",
-                Difficulty::ALL[skill].label(),
+                Difficulty::ALL[self.setup.ffa_skill].label(),
                 r2,
                 false,
                 true,
             );
-            (db, ds)
-        };
-        let blue = Color::new(0.33, 0.63, 1.0, 1.0);
-        let red = Color::new(1.0, 0.38, 0.32, 1.0);
-        let (mut d_fb, mut d_fs) = (0, 0);
-        let (d_eb, d_es);
-        if mode.is_team() {
-            let who = format!(
-                "You + {} bots  ({} players)",
-                self.setup.friendly,
-                self.setup.friendly + 1
-            );
-            (d_fb, d_fs) = team_box(
-                &mut self.ui,
-                "blue",
-                "Blue Team",
-                blue,
-                top,
-                self.setup.friendly,
-                self.setup.friendly_skill,
-                who,
-            );
-            let who = format!("{} bots", self.setup.enemy);
-            (d_eb, d_es) = team_box(
-                &mut self.ui,
-                "red",
-                "Red Team",
-                red,
-                top + box_h + 14.0 * s,
-                self.setup.enemy,
-                self.setup.enemy_skill,
-                who,
-            );
-        } else {
-            let who = format!("You against {} bots", self.setup.enemy);
-            (d_eb, d_es) = team_box(
-                &mut self.ui,
-                "ffa",
-                "Opponents",
-                red,
-                top,
-                self.setup.enemy,
-                self.setup.enemy_skill,
-                who,
-            );
+            total = 1 + self.setup.ffa_bots;
         }
-        let total = 1
-            + self.setup.enemy
-            + if mode.is_team() {
-                self.setup.friendly
-            } else {
-                0
-            };
         if let Some([lo, hi]) = map.recommended_players {
             let note = format!("{total} players  (map suits {lo}-{hi})");
             let warn = total < lo || total > hi;
@@ -628,12 +677,50 @@ impl App {
         if d_inf != 0 {
             c.infinite_ammo = !c.infinite_ammo;
         }
-        c.friendly = (c.friendly as i32 + d_fb).clamp(0, 7) as u32;
-        c.enemy = (c.enemy as i32 + d_eb).clamp(1, 11) as u32;
-        c.friendly_skill = step(c.friendly_skill, d_fs, Difficulty::ALL.len());
-        c.enemy_skill = step(c.enemy_skill, d_es, Difficulty::ALL.len());
+        // Step through the team counts this map and mode allow, and keep
+        // the choice on that list when the map or mode changes.
+        let allowed = allowed_team_counts(map, &mode);
+        let at = allowed
+            .iter()
+            .position(|&n| n >= c.teams)
+            .unwrap_or(allowed.len() - 1);
+        let at = (at as i32 + d_teams).clamp(0, allowed.len() as i32 - 1) as usize;
+        let was_team = c.teams >= 2;
+        c.teams = allowed[at];
+        let score_default_changed = was_team != (c.teams >= 2);
+        if let Some(t) = recolor {
+            // Next colour; the team that had it takes this team's old one.
+            let old = c.team_colors[t];
+            let new = (old + 1) % MAX_TEAMS as u8;
+            if let Some(other) = c.team_colors.iter().position(|&k| k == new) {
+                c.team_colors[other] = old;
+            }
+            c.team_colors[t] = new;
+        }
+        for t in 0..MAX_TEAMS {
+            // Your team may be just you; every other team needs a bot.
+            let min = if t == 0 { 0 } else { 1 };
+            c.team_bots[t] = (c.team_bots[t] as i32 + d_bots[t]).clamp(min, MAX_TEAM_BOTS) as u32;
+            c.team_skill[t] = step(c.team_skill[t], d_skill[t], Difficulty::ALL.len());
+        }
+        c.ffa_bots = (c.ffa_bots as i32 + d_ffa_bots).clamp(1, 11) as u32;
+        c.ffa_skill = step(c.ffa_skill, d_ffa_skill, Difficulty::ALL.len());
         if reset {
             self.reset_mode_defaults();
+        } else if score_default_changed {
+            // Teams on or off: the usual score limit differs (say 50 vs 25).
+            let mode = &data.modes[modes[self.setup.mode.min(modes.len() - 1)]];
+            let score = if self.setup.teams >= 2 {
+                mode.team_score_limit.or(mode.score_limit)
+            } else {
+                mode.score_limit
+            };
+            if let Some(v) = score {
+                self.setup.score = SCORE_LIMITS
+                    .iter()
+                    .position(|&l| l >= v)
+                    .unwrap_or(SCORE_LIMITS.len() - 1);
+            }
         }
 
         // Back (slides left) and Start (slides right).
@@ -802,6 +889,34 @@ impl App {
         if self.data.is_none() {
             return;
         }
+        // ARCANE_SHOT_MODE=elimination ARCANE_SHOT_TEAMS=4 preset the setup.
+        if let Ok(id) = std::env::var("ARCANE_SHOT_MODE") {
+            let modes = self.modes_for_map();
+            let data = self.data();
+            if let Some(k) = modes.iter().position(|&m| data.modes[m].id == id) {
+                self.setup.mode = k;
+                self.reset_mode_defaults();
+            }
+        }
+        if let Some(n) = std::env::var("ARCANE_SHOT_TEAMS")
+            .ok()
+            .and_then(|n| n.parse().ok())
+        {
+            self.setup.teams = n;
+        }
+        if let Some(n) = std::env::var("ARCANE_SHOT_BOTS")
+            .ok()
+            .and_then(|n| n.parse().ok())
+        {
+            self.setup.team_bots = [n; MAX_TEAMS];
+        }
+        // ARCANE_SHOT_COLORS=3,0,2,1 picks team colours (palette indices).
+        if let Ok(list) = std::env::var("ARCANE_SHOT_COLORS") {
+            let picks = list.split(',').filter_map(|c| c.parse().ok());
+            for (t, c) in picks.take(MAX_TEAMS).enumerate() {
+                self.setup.team_colors[t] = c;
+            }
+        }
         match scene {
             "custom" | "setup" => self.screen = Screen::Setup,
             "howto" => self.screen = Screen::Info(Info::HowTo),
@@ -810,10 +925,18 @@ impl App {
             s if s.starts_with("game") => {
                 let mut cfg = self.setup_config();
                 cfg.seed = 3;
+                // game:<map>@x,y also puts the player at x, y.
+                let (s, at) = s.split_once('@').unwrap_or((s, ""));
                 if let Some(map) = s.strip_prefix("game:") {
                     cfg.map_id = map.to_owned();
                 }
                 self.screen = self.start(cfg);
+                let at = at
+                    .split_once(',')
+                    .and_then(|(x, y)| Some(vec2(x.parse().ok()?, y.parse().ok()?)));
+                if let (Screen::Game(g), Some(at)) = (&mut self.screen, at) {
+                    g.debug_place_player(at);
+                }
             }
             _ => {}
         }
@@ -821,7 +944,9 @@ impl App {
 }
 
 /// Optional screenshot hook for checking visuals without a person at the keyboard:
-/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|game[:map_id] ARCANE_SHOT_AFTER=2`.
+/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|game[:map_id[@x,y]] ARCANE_SHOT_AFTER=2`,
+/// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_COLORS=3,0,2,1
+/// ARCANE_SHOT_TAB=1` (scoreboard).
 mod debug {
     pub struct Shot {
         pub path: String,

@@ -27,7 +27,6 @@ pub(crate) const SWIM_VEL: f32 = 9.0;
 pub(crate) const WATER_GRAVITY: f32 = 0.35;
 pub(crate) const WATER_SPEED: f32 = 0.6;
 pub(crate) const WATER_MAX_FALL: f32 = 5.0;
-pub(crate) const SPIKE_DPS: f32 = 45.0;
 pub(crate) const RESPAWN_DELAY: f32 = 3.0;
 pub(crate) const SPAWN_PROTECT: f32 = 1.5;
 pub(crate) const SWITCH_DELAY: f32 = 0.2;
@@ -48,6 +47,9 @@ pub struct Fighter {
     pub name: String,
     /// `None` in free-for-all modes.
     pub team: Option<u8>,
+    /// Team colour, as an index into the team palette (set from the match
+    /// setup; `None` in free-for-all).
+    pub tint: Option<u8>,
     pub is_bot: bool,
 
     /// Bottom-center of the body, in tiles.
@@ -93,7 +95,6 @@ pub struct Fighter {
     /// Shadowstep-style teleports waiting to be used, and which powerup gave them.
     pub teleport_charges: u32,
     pub teleport_powerup: Option<usize>,
-    pub thrust_cooldown: f32,
 
     pub kills: u32,
     pub deaths: u32,
@@ -120,6 +121,7 @@ impl Fighter {
             id,
             name,
             team,
+            tint: team,
             is_bot,
             feet: Vec2::ZERO,
             vel: Vec2::ZERO,
@@ -151,7 +153,6 @@ impl Fighter {
             buffs: Vec::new(),
             teleport_charges: 0,
             teleport_powerup: None,
-            thrust_cooldown: 0.0,
             kills: 0,
             deaths: 0,
         }

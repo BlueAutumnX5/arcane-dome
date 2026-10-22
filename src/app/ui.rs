@@ -4,7 +4,7 @@
 //! Hovering eases the tab to white and slides it outward (left tabs move
 //! left, right tabs mirror that and move right); leaving eases it back.
 
-use crate::data::{MapDef, ObjectKind, TileKind};
+use crate::data::{MapDef, ObjectKind};
 use macroquad::prelude::*;
 use std::collections::HashMap;
 
@@ -191,6 +191,31 @@ impl Ui {
         hot && is_mouse_button_pressed(MouseButton::Left)
     }
 
+    /// A clickable colour square with a frame that lights up on hover.
+    /// Returns true when clicked.
+    pub fn swatch(&mut self, id: &str, r: Rect, color: Color) -> bool {
+        let s = scale();
+        let hot = hovered(r);
+        let t = self.animate(id, if hot { 1.0 } else { 0.0 }, TAB_EASE);
+        let grow = 2.0 * s * t;
+        draw_rectangle(
+            r.x - grow,
+            r.y - grow,
+            r.w + grow * 2.0,
+            r.h + grow * 2.0,
+            color,
+        );
+        draw_rectangle_lines(
+            r.x - grow,
+            r.y - grow,
+            r.w + grow * 2.0,
+            r.h + grow * 2.0,
+            2.0 * s,
+            Color::new(1.0, 1.0, 1.0, 0.35 + 0.65 * t),
+        );
+        hot && is_mouse_button_pressed(MouseButton::Left)
+    }
+
     /// A `label   <  value  >` row. Returns -1 / +1 on arrow clicks.
     pub fn stepper(
         &mut self,
@@ -330,78 +355,34 @@ pub fn backdrop(time: f32) {
     }
 }
 
-/// Miniature of a map's tiles, spawns and objects fitted into `r`.
-pub fn map_preview(map: &MapDef, r: Rect, sky: [u8; 3]) {
-    draw_rectangle(
-        r.x,
-        r.y,
-        r.w,
-        r.h,
-        Color::from_rgba(sky[0], sky[1], sky[2], 255),
+/// Miniature of a map's terrain, water, hazards and objects fitted into `r`.
+pub fn map_preview(map: &MapDef, thumb: &Texture2D, r: Rect) {
+    draw_rectangle(r.x, r.y, r.w, r.h, Color::from_rgba(8, 10, 16, 255));
+    let k = (r.w / map.width).min(r.h / map.height);
+    let o = vec2(
+        r.x + (r.w - k * map.width) / 2.0,
+        r.y + (r.h - k * map.height) / 2.0,
     );
-    let k = (r.w / map.width as f32).min(r.h / map.height as f32);
-    let ox = r.x + (r.w - k * map.width as f32) / 2.0;
-    let oy = r.y + (r.h - k * map.height as f32) / 2.0;
-    for y in 0..map.height as i32 {
-        for x in 0..map.width as i32 {
-            let (px, py) = (ox + x as f32 * k, oy + y as f32 * k);
-            match map.tile(x, y) {
-                TileKind::Solid => {
-                    draw_rectangle(px, py, k + 0.5, k + 0.5, Color::from_rgba(70, 78, 104, 255))
-                }
-                TileKind::OneWay => draw_rectangle(
-                    px,
-                    py,
-                    k + 0.5,
-                    k * 0.35,
-                    Color::from_rgba(190, 155, 95, 255),
-                ),
-                TileKind::Spikes => draw_rectangle(
-                    px,
-                    py + k * 0.4,
-                    k + 0.5,
-                    k * 0.6,
-                    Color::from_rgba(220, 70, 70, 255),
-                ),
-                TileKind::Water => draw_rectangle(
-                    px,
-                    py,
-                    k + 0.5,
-                    k + 0.5,
-                    Color::from_rgba(60, 130, 220, 200),
-                ),
-                TileKind::Sludge => {
-                    draw_rectangle(px, py, k + 0.5, k + 0.5, Color::from_rgba(96, 110, 58, 255))
-                }
-                TileKind::SlopeUpRight => draw_triangle(
-                    vec2(px, py + k),
-                    vec2(px + k, py + k),
-                    vec2(px + k, py),
-                    Color::from_rgba(70, 78, 104, 255),
-                ),
-                TileKind::SlopeUpLeft => draw_triangle(
-                    vec2(px, py + k),
-                    vec2(px + k, py + k),
-                    vec2(px, py),
-                    Color::from_rgba(70, 78, 104, 255),
-                ),
-                TileKind::Air => {}
-            }
-        }
-    }
-    for o in &map.objects {
-        let c = match o.kind {
+    let to_screen = |p: Vec2| o + p * k;
+    draw_texture_ex(
+        thumb,
+        o.x,
+        o.y,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(vec2(map.width, map.height) * k),
+            ..Default::default()
+        },
+    );
+    for obj in &map.objects {
+        let c = match obj.kind {
             ObjectKind::Thruster => Color::new(0.3, 1.0, 0.75, 1.0),
             ObjectKind::WeaponStation => Color::new(1.0, 0.6, 0.25, 1.0),
             ObjectKind::ShieldStation => Color::new(0.35, 0.85, 1.0, 1.0),
             ObjectKind::PowerupSpot => Color::new(0.75, 0.45, 1.0, 1.0),
         };
-        draw_circle(
-            ox + (o.x as f32 + 0.5) * k,
-            oy + (o.y as f32 + 0.5) * k,
-            k * 0.7,
-            c,
-        );
+        let p = to_screen(obj.feet() - vec2(0.0, 0.5));
+        draw_circle(p.x, p.y, (k * 0.6).max(2.0), c);
     }
     draw_rectangle_lines(
         r.x,

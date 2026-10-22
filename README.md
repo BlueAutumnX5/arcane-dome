@@ -38,32 +38,53 @@ OpenGL driver (for example `alsa-lib libx11 libxi mesa` on Arch).
 
 - Weapons: one JSON file per weapon in `assets/data/weapons/`
 - Maps: one JSON file per map in `assets/data/maps/`
+- Powerups: `assets/data/powerups.json`
 
 No code changes are needed to add a weapon or a map. Schemas are in [SPEC.md](SPEC.md).
 
-### Map variations
+### Maps
 
-`examples/mapgen.rs` roughens a hand-made base map into seeded variants (uneven
-ground, ragged edges, shifted platforms, asymmetric halves). Every result is
-checked with the bot nav graph so all spawns and pickups stay reachable.
+Maps are hand-designed out of freeform polygons (`shapes`). Each shape has a
+`kind`:
+
+- `solid`: blocks bodies and bullets from every side
+- `hatch`: a thin floor you can stand on and drop through, and that thruster
+  riders fly up through from below
+- `water`: slows you down and lets you swim
+- `hazard`: hurts anything inside it (`dps`), for lava, spikes or a bottomless void
+
+A `material` (rock, metal, wood, sand, moss, sludge, lava...) picks the look.
+All positions are in tiles. Spawns, pickups and objects are given by their
+**feet** position (the point where a fighter would stand).
+
+Objects are thrusters (`height_tiles`), weapon stations, shield stations
+(`shield` 50 or 100) and powerup spots (`powerup`: always the same powerup).
+Purely visual `decor` (walls, windows, girders, chains, lamps, trees...) and a
+`theme` (sky colours, sun, skyline) set the mood.
+
+Spawns belong to a team (0 to 3; the player is on team 0) or to free-for-all, and can change
+owner with the number of teams (`by_teams`). A map
+lists which team counts it is fair for with `team_counts`, for example `[2, 4]`.
+
+Check that every spawn, pickup and object can be reached by bots:
 
 ```bash
-cargo run --release --example mapgen
+cargo run --release --example map_check
 ```
-
-Edit the `VARIANTS` list in that file to add variants or change seeds.
-
-### Map objects
-
-Maps have an `objects` list for thrusters, weapon stations, shield stations and
-the powerup spot. `examples/place_objects.rs` places them automatically using
-the bot nav graph (run it after `mapgen`):
 
 ```bash
-cargo run --release --example place_objects
+cargo run --release --example map_check -- foundry_ascent nav.json
 ```
 
-Powerups live in `assets/data/powerups.json`.
+The second form checks one map and also writes its navigation graph as JSON.
+Unfinished maps live in `drafts/maps/` and are not loaded by the game.
+
+To watch bots play a map and report anyone stuck or falling into hazards (add
+`MODE=elimination TEAMS=4` for team matches, `VERBOSE=1` for details):
+
+```bash
+cargo run --release --example bot_watch -- foundry_ascent 180 4
+```
 
 ## License
 

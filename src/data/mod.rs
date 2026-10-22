@@ -11,8 +11,8 @@ mod weapon;
 
 pub use error::{DataError, DataErrors};
 pub use map::{
-    Backdrop, BotHint, MapDef, MapObject, ObjectKind, PickupDef, PickupKind, SpawnDef, TileKind,
-    parse_map,
+    Backdrop, BotHint, Decor, DecorKind, MapDef, MapObject, ObjectKind, PickupDef, PickupKind,
+    Skyline, SpawnDef, Theme, TileKind, parse_map, shapes_from_tiles,
 };
 pub use modes::{ModeDef, parse_modes};
 pub use powerups::{PowerupConfig, PowerupDef, PowerupEffect, parse_powerups};
@@ -241,4 +241,9 @@ pub(crate) fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
     }
     let v = u32::from_str_radix(hex, 16).ok()?;
     Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
+}
+
+/// Public `#rrggbb` parser (used by the renderer for prop tints).
+pub fn parse_color(s: &str) -> Option<[u8; 3]> {
+    parse_hex_color(s)
 }

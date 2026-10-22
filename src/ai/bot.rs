@@ -1,6 +1,6 @@
 use super::nav::{EdgeKind, NavGraph};
-use crate::data::{Category, ObjectKind, PickupKind, TileKind, WeaponDef};
-use crate::sim::physics::line_of_sight;
+use crate::data::{Category, ObjectKind, PickupKind, WeaponDef};
+use crate::sim::physics::{hazard_dps, line_of_sight};
 use crate::sim::{DT, Difficulty, Fighter, Input, Rng, World};
 use macroquad::math::{Vec2, vec2};
 use std::f32::consts::PI;
@@ -9,6 +9,18 @@ use std::f32::consts::PI;
 const SIGHT_RANGE: f32 = 36.0;
 /// Below this health a bot goes for health or backs off.
 const LOW_HEALTH: f32 = 40.0;
+/// How hard an airborne bot corrects toward its landing spot (1/s).
+const AIR_STEER: f32 = 6.0;
+const RUN_SPEED: f32 = 9.0;
+const STAND_HEIGHT: f32 = 1.8;
+/// How far above the higher end of a jump the bot rises before letting go.
+const JUMP_APEX: f32 = 1.1;
+/// About how high a full jump rises.
+const FULL_JUMP_RISE: f32 = 3.2;
+/// Highest a hazard escape aims, above the feet.
+const ESCAPE_RISE: f32 = 2.6;
+/// A hunting bot turns toward its quarry once this close.
+const HUNT_LOOK: f32 = 6.0;
 /// How long a bot keeps chasing a target it lost sight of.
 const MEMORY_S: f32 = 2.5;
 
@@ -130,6 +142,17 @@ pub(crate) struct Brain {
     glance_left: f32,
     stuck: f32,
     last_x: f32,
+    /// Where a jump in progress should land; held until the bot touches down
+    /// so it never changes its mind mid-air and drops into a pit.
+    air_to: Option<Vec2>,
+    /// Feet height where the current jump took off.
+    jump_from_y: f32,
+    /// The current jump must stay low (terrain overhead).
+    low_jump: bool,
+    /// Where a hunted enemy was when the hunt was (re)decided.
+    hunt_spot: Vec2,
+    /// Last place the bot stood on solid, safe ground.
+    ground_x: f32,
     weapon_timer: f32,
     was_alive: bool,
 }
@@ -163,9 +186,42 @@ impl Brain {
             glance_left: 0.0,
             stuck: 0.0,
             last_x: 0.0,
+            air_to: None,
+            jump_from_y: 0.0,
+            low_jump: false,
+            hunt_spot: Vec2::ZERO,
+            ground_x: 0.0,
             weapon_timer: 0.0,
             was_alive: false,
         }
+    }
+
+    pub fn landing_target(&self) -> Option<Vec2> {
+        self.air_to
+    }
+
+    pub fn describe(&self, world: &World, nav: &NavGraph) -> String {
+        let dest = self.goal_dest(world, nav);
+        let path: Vec<String> = self
+            .path
+            .iter()
+            .take(3)
+            .map(|&(n, k)| {
+                let p = nav.pos(n);
+                format!("{k:?}({:.1},{:.1})", p.x, p.y)
+            })
+            .collect();
+        format!(
+            "goal {:?} dest ({:.1},{:.1}) target {:?} visible {} air_to {:?} stuck {:.2} path [{}]",
+            self.goal,
+            dest.x,
+            dest.y,
+            self.target,
+            self.target_visible,
+            self.air_to,
+            self.stuck,
+            path.join(" ")
+        )
     }
 
     pub fn think(&mut self, world: &World, nav: &NavGraph) -> Input {
@@ -186,9 +242,15 @@ impl Brain {
             self.noticing = None;
             self.memory = 0.0;
             self.idle_left = 0.0;
+            self.air_to = None;
+            self.ground_x = me.feet.x;
             self.aim_angle = if me.facing < 0.0 { PI } else { 0.0 };
         }
 
+        if me.on_ground {
+            // A new jump from here sets its own landing spot.
+            self.air_to = None;
+        }
         self.perceive(world, me);
         let target = self.target;
         let nearest = world
@@ -216,6 +278,12 @@ impl Brain {
             }
             self.goal = goal;
             self.goal_timer = self.rng.range(2.5, 4.0);
+            if let Goal::Hunt(j) = goal {
+                // Head for where the quarry is now, not wherever it moves
+                // next: following live positions through floors made two
+                // bots chase each other's reflections forever.
+                self.hunt_spot = world.fighters[j].feet;
+            }
         }
 
         let eye = me.eye();
@@ -246,7 +314,13 @@ impl Brain {
         let want = match (target, self.target_visible) {
             (Some(t), true) => Some(self.aim_point(world, me, t, def)),
             (Some(_), false) => Some(self.last_seen - vec2(0.0, 1.0)),
-            _ => None,
+            // Closing in on a hunted enemy: look where its footsteps are.
+            _ => match self.goal {
+                Goal::Hunt(j) if world.fighters[j].center().distance(eye) < HUNT_LOOK => {
+                    Some(world.fighters[j].center())
+                }
+                _ => None,
+            },
         };
         let desired = match want {
             Some(p) => {
@@ -276,6 +350,9 @@ impl Brain {
         if me.teleport_charges > 0 && me.health < 35.0 && self.target_visible {
             input.ability = true;
         }
+
+        self.escape_hazard(world, nav, me, &mut input);
+        self.air_control(world, me, &mut input);
 
         // Unstick: jump when pushing against something, then replan.
         if input.move_x != 0.0 && (me.feet.x - self.last_x).abs() < 0.01 {
@@ -347,10 +424,16 @@ impl Brain {
             }
         }
 
-        // Notice the nearest enemy in view, after the reaction delay.
-        let Some(c) = seen.first().map(|o| o.id) else {
+        // Notice the nearest enemy in view, after the reaction delay. Keep
+        // counting down on the one already being noticed while it stays in
+        // view, even if another walks closer (or the countdown never ends).
+        let Some(nearest) = seen.first().map(|o| o.id) else {
             self.noticing = None;
             return;
+        };
+        let c = match self.noticing {
+            Some((n, _)) if seen.iter().any(|o| o.id == n) => n,
+            _ => nearest,
         };
         match self.noticing {
             Some((n, left)) if n == c => {
@@ -463,7 +546,7 @@ impl Brain {
         match self.goal {
             Goal::Pickup(k) => world.pickups[k].pos + vec2(0.0, 0.4),
             Goal::Object(k) => world.objects[k].pos,
-            Goal::Hunt(j) => world.fighters[j].feet,
+            Goal::Hunt(_) => self.hunt_spot,
             Goal::Wander(n) | Goal::Retreat(n) => nav.pos(n),
         }
     }
@@ -552,6 +635,13 @@ impl Brain {
         self.replan -= DT;
         if (self.replan <= 0.0 || self.path.is_empty()) && me.on_ground {
             self.replan = 0.5;
+            // Plan to the floor under the destination: an enemy in mid-air
+            // (say, riding a thruster) is reached by standing below them.
+            let floor = world
+                .map
+                .rest_height(dest, 0.35)
+                .or_else(|| world.map.ground_below(dest, 0.3, world.map.height));
+            let dest = floor.map_or(dest, |y| vec2(dest.x, y));
             self.path = match (nav.nearest(me.feet), nav.nearest(dest)) {
                 (Some(a), Some(b)) => nav.find_path(a, b).unwrap_or_default(),
                 _ => Vec::new(),
@@ -559,7 +649,7 @@ impl Brain {
         }
         while let Some(&(n, _)) = self.path.first() {
             let p = nav.pos(n);
-            if me.on_ground && (me.feet.x - p.x).abs() < 0.3 && (me.feet.y - p.y).abs() < 0.3 {
+            if me.on_ground && (me.feet.x - p.x).abs() < 0.35 && (me.feet.y - p.y).abs() < 0.45 {
                 self.path.remove(0);
             } else {
                 break;
@@ -579,28 +669,94 @@ impl Brain {
         let higher = p.y < me.feet.y - 0.2;
         match kind {
             EdgeKind::Jump => {
-                input.jump_held = true;
-                let first_jump = me.on_ground && (higher || dx.abs() > 1.2);
+                // Rise only as high as the arc needs (the nav graph plans
+                // hops about a tile above the higher end): a full jump
+                // across a gap under a ledge would land on the ledge.
+                let apex = self.jump_from_y.min(p.y) - JUMP_APEX;
+                input.jump_held = me.on_ground || !self.low_jump || me.feet.y > apex;
+                // Over a pit, take off with a run-up or from the very edge.
+                let dir = dx.signum();
+                let over_pit = deadly_below(world, me, me.feet.x + dx * 0.5);
+                let ready = !over_pit
+                    || me.vel.x * dir > RUN_SPEED * 0.65
+                    || deadly_below(world, me, me.feet.x + dir * 0.45);
+                let first_jump = me.on_ground && (higher || dx.abs() > 1.2) && ready;
+                if first_jump && higher && !column_clear(world, me.feet.x, me.feet.y, p.y) {
+                    // Something overhead (the far end of the floor we are
+                    // climbing to): back out from under it before jumping.
+                    input.move_x = -dir;
+                } else if first_jump {
+                    input.jump = true;
+                    input.jump_held = true;
+                    self.air_to = Some(p);
+                    self.jump_from_y = me.feet.y;
+                    // A full jump gives the most air time (long gaps need
+                    // it); keep it low only if something overhead along the
+                    // way would catch a full one.
+                    let top = me.feet.y.min(p.y) - FULL_JUMP_RISE - STAND_HEIGHT;
+                    let low = me.feet.y.min(p.y) - JUMP_APEX - STAND_HEIGHT;
+                    let (x0, x1) = (me.feet.x.min(p.x) - 0.4, me.feet.x.max(p.x) + 0.4);
+                    self.low_jump = world.map.terrain.box_blocked(vec2(x0, top), vec2(x1, low));
+                }
                 // Double jump near the apex when the target is still above.
                 let double_jump =
-                    !me.on_ground && me.air_jumps > 0 && me.vel.y > -3.0 && p.y < me.feet.y - 0.8;
-                input.jump = first_jump || double_jump;
+                    !me.on_ground && me.air_jumps > 0 && me.vel.y > -3.0 && p.y < me.feet.y - 0.05;
+                input.jump |= double_jump;
             }
             EdgeKind::Thrust => {
-                // The pad does the launching; steer and add a double jump if short.
                 input.jump_held = true;
-                input.jump =
-                    !me.on_ground && me.air_jumps > 0 && me.vel.y > -3.0 && p.y < me.feet.y - 0.8;
+                if me.on_ground {
+                    // Line up on the pad, then press jump to launch.
+                    let pad = world
+                        .objects
+                        .iter()
+                        .filter(|o| o.def.kind == ObjectKind::Thruster)
+                        .map(|o| o.pos)
+                        .min_by(|a, b| a.distance(me.feet).total_cmp(&b.distance(me.feet)));
+                    if let Some(pad) = pad {
+                        // Stop on the pad first: the launch is so fast that any
+                        // sideways drift carries the body into the floors above.
+                        let dx = pad.x - me.feet.x;
+                        input.move_x = if dx.abs() > 0.15 { dx.signum() } else { 0.0 };
+                        input.jump = dx.abs() < 0.3 && me.vel.x.abs() < 1.0;
+                        if input.jump {
+                            self.air_to = Some(p);
+                        }
+                    }
+                } else {
+                    // Steer toward the landing, double jumping if short.
+                    input.jump = me.air_jumps > 0 && me.vel.y > -3.0 && p.y < me.feet.y - 0.05;
+                }
             }
             EdgeKind::Drop => {
                 if me.on_ground {
-                    input.crouch = true;
-                    input.jump = true;
+                    input.drop = true;
                     input.move_x = 0.0;
                 }
             }
+            EdgeKind::Fall if me.on_ground && dx.abs() < 0.6 => {
+                // The landing is nearly straight below: step off whichever
+                // side of the ledge is open.
+                let open = |d: f32| {
+                    world
+                        .map
+                        .ground_below(vec2(me.feet.x + d * 0.7, me.feet.y), 0.3, 0.6)
+                        .is_none()
+                };
+                let toward = if dx.abs() > 0.01 { dx.signum() } else { 1.0 };
+                input.move_x = if open(toward) {
+                    toward
+                } else if open(-toward) {
+                    -toward
+                } else {
+                    toward
+                };
+            }
             EdgeKind::Walk | EdgeKind::Fall => {
-                if self.hazard_ahead(world, me, input.move_x) {
+                // Only what lies before the next node counts: a node at the
+                // edge of a pit is somewhere to stop, not to hop from.
+                let reach = dx.abs().min(0.9);
+                if self.hazard_ahead(world, me, input.move_x, reach) {
                     input.jump = me.on_ground;
                     input.jump_held = true;
                 }
@@ -608,13 +764,79 @@ impl Brain {
         }
     }
 
-    fn hazard_ahead(&self, world: &World, me: &Fighter, dir: f32) -> bool {
-        if dir == 0.0 {
+    /// Standing in lava (say, with a shield powerup on): climb out toward
+    /// the nearest safe spot.
+    fn escape_hazard(&mut self, world: &World, nav: &NavGraph, me: &Fighter, input: &mut Input) {
+        if hazard_dps(&world.map, me.feet, me.size()) <= 0.0 {
+            return;
+        }
+        // The nearest safe node one jump can reach (a platform overhead is
+        // only bumped from below; the rim of the pit is the way out).
+        let Some(p) = nav
+            .nodes
+            .iter()
+            .copied()
+            .filter(|n| n.y >= me.feet.y - ESCAPE_RISE)
+            .min_by(|a, b| a.distance(me.feet).total_cmp(&b.distance(me.feet)))
+        else {
+            return;
+        };
+        input.move_x = (p.x - me.feet.x).signum();
+        input.jump_held = true;
+        input.jump = me.on_ground || (me.air_jumps > 0 && me.vel.y > -2.0);
+        self.air_to = Some(p);
+    }
+
+    /// Steer while airborne: toward the committed landing spot if there is
+    /// one, otherwise away from a landing in lava or a bottomless drop.
+    fn air_control(&mut self, world: &World, me: &Fighter, input: &mut Input) {
+        if me.on_ground {
+            if !deadly_below(world, me, me.feet.x) {
+                self.ground_x = me.feet.x;
+            }
+            return;
+        }
+        let steer = |x: f32| ((x - me.feet.x) * AIR_STEER / RUN_SPEED).clamp(-1.0, 1.0);
+        let doomed = deadly_below(world, me, me.feet.x + me.vel.x * 0.3);
+        if let Some(to) = self.air_to.filter(|to| !deadly_below(world, me, to.x)) {
+            input.move_x = steer(to.x);
+            // Climbing: rise through clear air first, then drift over, so the
+            // head does not catch the underside of the floor being climbed to.
+            // Probe where the bot will be once it could stop: its sideways
+            // speed carries it a while (air braking takes ~0.2 s).
+            let dir = input.move_x.signum();
+            let probe = me.feet.x + me.vel.x * 0.2 + dir * 0.2;
+            if me.feet.y > to.y - 0.05
+                && me.vel.y < 0.0
+                && !column_clear(world, probe, me.feet.y, to.y)
+            {
+                input.move_x = 0.0;
+            }
+        } else if doomed || self.air_to.is_some() {
+            // No plan, or the planned landing is deadly: back to safe ground.
+            input.move_x = steer(self.ground_x);
+        }
+        // Falling toward lava or a bottomless drop: spend the air jump.
+        if doomed && me.air_jumps > 0 && me.vel.y > 0.0 && !me.in_water {
+            input.jump = true;
+            input.jump_held = true;
+        }
+    }
+
+    /// Is there a hazard or a deadly drop within `reach` tiles in direction
+    /// `dir`?
+    fn hazard_ahead(&self, world: &World, me: &Fighter, dir: f32, reach: f32) -> bool {
+        if dir == 0.0 || reach < 0.15 {
             return false;
         }
-        let x = (me.feet.x + dir * 0.9).floor() as i32;
-        let y = (me.feet.y - 0.5).floor() as i32;
-        world.map.tile(x, y) == TileKind::Spikes
+        // Would the body hurt that far ahead?
+        let ahead = vec2(me.feet.x + dir * reach, me.feet.y);
+        if hazard_dps(&world.map, ahead, me.size()) > 0.0 {
+            return true;
+        }
+        // Or a deadly drop there: no floor at all, or a floor in a hazard
+        // (lava, a bottomless void)?
+        me.on_ground && deadly_below(world, me, ahead.x)
     }
 
     fn combat_move(
@@ -656,12 +878,16 @@ impl Brain {
                 }
             }
         };
-        if self.hazard_ahead(world, me, input.move_x) {
+        if self.hazard_ahead(world, me, input.move_x, 0.9) {
             input.move_x = -input.move_x;
             self.strafe = input.move_x;
         }
-        if me.on_ground && !input.crouch && self.rng.chance(self.p.jumpy * DT) {
+        let at_brink =
+            deadly_below(world, me, me.feet.x - 0.6) || deadly_below(world, me, me.feet.x + 0.6);
+        if me.on_ground && !input.crouch && !at_brink && self.rng.chance(self.p.jumpy * DT) {
+            // A combat hop lands about where it started.
             input.jump = true;
+            self.air_to = Some(vec2(me.feet.x + input.move_x * 0.5, me.feet.y));
         }
         input.jump_held = true;
     }
@@ -797,6 +1023,30 @@ fn weapon_score(def: &WeaponDef, dist: f32) -> f32 {
     s
 }
 
+/// Is the column a body would rise through, from feet height `from_y` up to
+/// standing at `to_y`, free of solid terrain at `x`?
+fn column_clear(world: &World, x: f32, from_y: f32, to_y: f32) -> bool {
+    let top = to_y - STAND_HEIGHT - 0.05;
+    let bottom = from_y - STAND_HEIGHT;
+    bottom <= top
+        || !world
+            .map
+            .terrain
+            .box_blocked(vec2(x - 0.37, top), vec2(x + 0.37, bottom))
+}
+
+/// Would falling from (`x`, the bot's height) end in a hazard or with no
+/// floor at all? There is no fall damage, so a long drop alone is fine.
+fn deadly_below(world: &World, me: &Fighter, x: f32) -> bool {
+    match world
+        .map
+        .ground_below(vec2(x, me.feet.y), 0.3, world.map.height)
+    {
+        None => true,
+        Some(y) => hazard_dps(&world.map, vec2(x, y), me.size()) > 0.0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -808,15 +1058,16 @@ mod tests {
         let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
         let data = Arc::new(GameData::load(&assets).unwrap());
         let cfg = MatchConfig {
-            map_id: "skyforge_yard".into(),
-            enemy_bots: 1,
+            map_id: "foundry_ascent".into(),
+            bots: 1,
             difficulty,
+            countdown_s: 0.0,
             ..Default::default()
         };
         let mut w = World::new(data, cfg).unwrap();
-        // Bot and player on the same open floor, ten tiles apart.
-        w.fighters[1].feet = vec2(30.5, 23.0);
-        w.fighters[0].feet = vec2(20.5, 23.0);
+        // Bot and player on the same open floor, eight tiles apart.
+        w.fighters[1].feet = vec2(22.0, 32.0);
+        w.fighters[0].feet = vec2(14.0, 32.0);
         let nav = NavGraph::build(&w.map);
         (w, nav)
     }
