@@ -5,7 +5,7 @@
 
 A 2D side-scrolling platform arena shooter written in Rust with
 [Macroquad](https://macroquad.rs). Fast arena matches against AI bots, lots of
-weapons, lots of maps, all data-driven through JSON.
+weapons, lots of maps, all data-driven through JSON, for now.
 
 > Status: early development. See [SPEC.md](SPEC.md) for the design and milestones.
 
