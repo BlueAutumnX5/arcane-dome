@@ -1,0 +1,42 @@
+//! Bot brains. They read the world and produce the same `Input` a player would,
+//! so the sim never needs to know who is a bot.
+
+mod bot;
+pub mod nav;
+
+use crate::sim::{Input, World};
+use bot::Brain;
+pub use nav::{EdgeKind, NavGraph};
+
+pub struct BotSet {
+    nav: NavGraph,
+    brains: Vec<Option<Brain>>,
+}
+
+impl BotSet {
+    pub fn new(world: &World) -> Self {
+        let nav = NavGraph::build(&world.map);
+        let brains = world
+            .fighters
+            .iter()
+            .map(|f| {
+                f.is_bot
+                    .then(|| Brain::new(f.id, world.config.seed, world.config.difficulty))
+            })
+            .collect();
+        Self { nav, brains }
+    }
+
+    /// Fill in inputs for every bot. Non-bot entries are left untouched.
+    pub fn think(&mut self, world: &World, inputs: &mut [Input]) {
+        for (i, brain) in self.brains.iter_mut().enumerate() {
+            if let (Some(b), Some(slot)) = (brain, inputs.get_mut(i)) {
+                *slot = b.think(world, &self.nav);
+            }
+        }
+    }
+
+    pub fn nav(&self) -> &NavGraph {
+        &self.nav
+    }
+}
