@@ -13,6 +13,12 @@ const LOW_HEALTH: f32 = 40.0;
 const AIR_STEER: f32 = 6.0;
 const RUN_SPEED: f32 = 9.0;
 const STAND_HEIGHT: f32 = 1.8;
+/// How far above the higher end of a jump the bot rises before letting go.
+const JUMP_APEX: f32 = 1.1;
+/// About how high a full jump rises.
+const FULL_JUMP_RISE: f32 = 3.2;
+/// Highest a hazard escape aims, above the feet.
+const ESCAPE_RISE: f32 = 2.6;
 /// A hunting bot turns toward its quarry once this close.
 const HUNT_LOOK: f32 = 6.0;
 /// How long a bot keeps chasing a target it lost sight of.
@@ -139,6 +145,12 @@ pub(crate) struct Brain {
     /// Where a jump in progress should land; held until the bot touches down
     /// so it never changes its mind mid-air and drops into a pit.
     air_to: Option<Vec2>,
+    /// Feet height where the current jump took off.
+    jump_from_y: f32,
+    /// The current jump must stay low (terrain overhead).
+    low_jump: bool,
+    /// Where a hunted enemy was when the hunt was (re)decided.
+    hunt_spot: Vec2,
     /// Last place the bot stood on solid, safe ground.
     ground_x: f32,
     weapon_timer: f32,
@@ -175,10 +187,17 @@ impl Brain {
             stuck: 0.0,
             last_x: 0.0,
             air_to: None,
+            jump_from_y: 0.0,
+            low_jump: false,
+            hunt_spot: Vec2::ZERO,
             ground_x: 0.0,
             weapon_timer: 0.0,
             was_alive: false,
         }
+    }
+
+    pub fn landing_target(&self) -> Option<Vec2> {
+        self.air_to
     }
 
     pub fn describe(&self, world: &World, nav: &NavGraph) -> String {
@@ -259,6 +278,12 @@ impl Brain {
             }
             self.goal = goal;
             self.goal_timer = self.rng.range(2.5, 4.0);
+            if let Goal::Hunt(j) = goal {
+                // Head for where the quarry is now, not wherever it moves
+                // next: following live positions through floors made two
+                // bots chase each other's reflections forever.
+                self.hunt_spot = world.fighters[j].feet;
+            }
         }
 
         let eye = me.eye();
@@ -521,7 +546,7 @@ impl Brain {
         match self.goal {
             Goal::Pickup(k) => world.pickups[k].pos + vec2(0.0, 0.4),
             Goal::Object(k) => world.objects[k].pos,
-            Goal::Hunt(j) => world.fighters[j].feet,
+            Goal::Hunt(_) => self.hunt_spot,
             Goal::Wander(n) | Goal::Retreat(n) => nav.pos(n),
         }
     }
@@ -644,7 +669,11 @@ impl Brain {
         let higher = p.y < me.feet.y - 0.2;
         match kind {
             EdgeKind::Jump => {
-                input.jump_held = true;
+                // Rise only as high as the arc needs (the nav graph plans
+                // hops about a tile above the higher end): a full jump
+                // across a gap under a ledge would land on the ledge.
+                let apex = self.jump_from_y.min(p.y) - JUMP_APEX;
+                input.jump_held = me.on_ground || !self.low_jump || me.feet.y > apex;
                 // Over a pit, take off with a run-up or from the very edge.
                 let dir = dx.signum();
                 let over_pit = deadly_below(world, me, me.feet.x + dx * 0.5);
@@ -658,7 +687,16 @@ impl Brain {
                     input.move_x = -dir;
                 } else if first_jump {
                     input.jump = true;
+                    input.jump_held = true;
                     self.air_to = Some(p);
+                    self.jump_from_y = me.feet.y;
+                    // A full jump gives the most air time (long gaps need
+                    // it); keep it low only if something overhead along the
+                    // way would catch a full one.
+                    let top = me.feet.y.min(p.y) - FULL_JUMP_RISE - STAND_HEIGHT;
+                    let low = me.feet.y.min(p.y) - JUMP_APEX - STAND_HEIGHT;
+                    let (x0, x1) = (me.feet.x.min(p.x) - 0.4, me.feet.x.max(p.x) + 0.4);
+                    self.low_jump = world.map.terrain.box_blocked(vec2(x0, top), vec2(x1, low));
                 }
                 // Double jump near the apex when the target is still above.
                 let double_jump =
@@ -692,8 +730,7 @@ impl Brain {
             }
             EdgeKind::Drop => {
                 if me.on_ground {
-                    input.crouch = true;
-                    input.jump = true;
+                    input.drop = true;
                     input.move_x = 0.0;
                 }
             }
@@ -716,7 +753,10 @@ impl Brain {
                 };
             }
             EdgeKind::Walk | EdgeKind::Fall => {
-                if self.hazard_ahead(world, me, input.move_x) {
+                // Only what lies before the next node counts: a node at the
+                // edge of a pit is somewhere to stop, not to hop from.
+                let reach = dx.abs().min(0.9);
+                if self.hazard_ahead(world, me, input.move_x, reach) {
                     input.jump = me.on_ground;
                     input.jump_held = true;
                 }
@@ -730,10 +770,17 @@ impl Brain {
         if hazard_dps(&world.map, me.feet, me.size()) <= 0.0 {
             return;
         }
-        let Some(n) = nav.nearest(me.feet) else {
+        // The nearest safe node one jump can reach (a platform overhead is
+        // only bumped from below; the rim of the pit is the way out).
+        let Some(p) = nav
+            .nodes
+            .iter()
+            .copied()
+            .filter(|n| n.y >= me.feet.y - ESCAPE_RISE)
+            .min_by(|a, b| a.distance(me.feet).total_cmp(&b.distance(me.feet)))
+        else {
             return;
         };
-        let p = nav.pos(n);
         input.move_x = (p.x - me.feet.x).signum();
         input.jump_held = true;
         input.jump = me.on_ground || (me.air_jumps > 0 && me.vel.y > -2.0);
@@ -755,10 +802,13 @@ impl Brain {
             input.move_x = steer(to.x);
             // Climbing: rise through clear air first, then drift over, so the
             // head does not catch the underside of the floor being climbed to.
+            // Probe where the bot will be once it could stop: its sideways
+            // speed carries it a while (air braking takes ~0.2 s).
             let dir = input.move_x.signum();
+            let probe = me.feet.x + me.vel.x * 0.2 + dir * 0.2;
             if me.feet.y > to.y - 0.05
                 && me.vel.y < 0.0
-                && !column_clear(world, me.feet.x + dir * 0.2, me.feet.y, to.y)
+                && !column_clear(world, probe, me.feet.y, to.y)
             {
                 input.move_x = 0.0;
             }
@@ -773,12 +823,14 @@ impl Brain {
         }
     }
 
-    fn hazard_ahead(&self, world: &World, me: &Fighter, dir: f32) -> bool {
-        if dir == 0.0 {
+    /// Is there a hazard or a deadly drop within `reach` tiles in direction
+    /// `dir`?
+    fn hazard_ahead(&self, world: &World, me: &Fighter, dir: f32, reach: f32) -> bool {
+        if dir == 0.0 || reach < 0.15 {
             return false;
         }
-        // Would the body hurt one step ahead?
-        let ahead = vec2(me.feet.x + dir * 0.9, me.feet.y);
+        // Would the body hurt that far ahead?
+        let ahead = vec2(me.feet.x + dir * reach, me.feet.y);
         if hazard_dps(&world.map, ahead, me.size()) > 0.0 {
             return true;
         }
@@ -826,7 +878,7 @@ impl Brain {
                 }
             }
         };
-        if self.hazard_ahead(world, me, input.move_x) {
+        if self.hazard_ahead(world, me, input.move_x, 0.9) {
             input.move_x = -input.move_x;
             self.strafe = input.move_x;
         }

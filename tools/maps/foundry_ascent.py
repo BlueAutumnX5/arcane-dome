@@ -36,15 +36,17 @@ m.slab(34, 36.5, 30.5)
 
 # --- Left tower: four floors with a hatch shaft at x 8.9..11.1 ----------------
 SHAFT = (8.9, 11.1)
-m.floor(3, 15, 26, hatch=SHAFT)      # F1
+m.floor(4, 15, 26, hatch=SHAFT)      # F1
 m.floor(5, 18, 20, hatch=SHAFT)      # F2
-m.floor(3, 17, 14, hatch=SHAFT)      # F3
+m.floor(4, 17, 14, hatch=SHAFT)      # F3
 m.floor(4, 14, 8, hatch=SHAFT)       # roof
 # Staggered side ledges: ground -> F1 -> F2 -> F3 -> roof, 3 tiles each.
-m.slab(16, 19.5, 29)                 # L1 (right side)
-m.slab(0, 4, 23)                     # L2 (left wall)
-m.slab(18, 21.5, 17)                 # L3 (right side)
-m.slab(0, 3, 11)                     # L4 (left wall)
+# Each climb has a 2 tile wide column of open air beside the floor above,
+# so nobody has to squeeze past a corner.
+m.slab(17, 20.5, 29)                 # L1 (right side)
+m.slab(0, 2, 23)                     # L2 (left wall)
+m.slab(20, 23, 17)                   # L3 (right side)
+m.slab(0, 2, 11)                     # L4 (left wall)
 
 # --- Centre: bridge and the climb to the perch ---------------------------------
 m.slab(24, 40, 18)                   # bridge over the pit
@@ -55,9 +57,11 @@ m.slab(34.5, 36, 11.5)
 m.slab(30.5, 33.5, 8.5)              # the perch
 
 # --- Right: catwalk stack, nest and the high walkway ---------------------------
-m.slab(47, 54, 24.5)                 # catwalk A (over the hill top)
+# The zigzag A -> B -> C leaves 2 tiles of open air beside B at each step,
+# so every climb rises clear of the catwalk above.
+m.slab(47, 53, 24.5)                 # catwalk A (over the hill top)
 m.floor(55, 62, 21)                  # catwalk B (thruster at x=60)
-m.slab(46, 54, 17.5)                 # catwalk C
+m.slab(46, 53, 17.5)                 # catwalk C
 m.slab(41, 44, 18)                   # link to the bridge
 m.floor(56, 63, 12, hatch=(58.9, 61.1))  # sniper nest
 m.slab(41, 53, 11.5)                 # high walkway back to the centre
@@ -76,7 +80,7 @@ for x, y in [(35.2, 11.5), (37.7, 14.5)]:   # Green with 3 teams: the right-hand
 for x, y in [(20, 32), (45, 31), (32, 18), (50, 24.5), (7, 20), (48, 17.5)]:
     m.spawn(x, y)
 
-m.pickup("health", 2, 23, respawn=25)
+m.pickup("health", 1, 23, respawn=25)
 m.pickup("health", 28.7, 30.5, respawn=25)
 m.pickup("ammo", 62.5, 30, respawn=15)
 m.pickup("ammo", 12, 8, respawn=15)
@@ -90,7 +94,7 @@ m.obj("thruster", 60, 21, height_tiles=9.8)
 m.obj("powerup_spot", 32, 8.5, powerup="critical_strike")
 m.obj("weapon_station", 14, 26)
 m.obj("weapon_station", 42, 32)
-m.obj("weapon_station", 20, 17)
+m.obj("weapon_station", 21.5, 17)
 m.obj("weapon_station", 50, 11.5)
 m.obj("shield_station", 6, 8)
 m.obj("shield_station", 42.5, 18)
@@ -112,7 +116,7 @@ m.decor("pipe", 41, 32, w=23, h=0.45, color="#5b5e66")
 m.decor("pipe", 63.3, 21, w=0.45, h=9)
 m.decor("banner", 31.2, 12.5, w=1.6, h=2.6, color="#9a3a2a")
 m.decor("girder", 46, 32, w=0.5, h=14.5)
-m.decor("girder", 54, 32, w=0.5, h=14.5)
+m.decor("girder", 52.6, 32, w=0.5, h=14.5)
 m.decor("lamp", 62.5, 12, h=1.8, flip=True)
 
 problems = m.headroom_report()

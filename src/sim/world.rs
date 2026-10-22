@@ -451,8 +451,14 @@ impl World {
         let accel = if f.on_ground { GROUND_ACCEL } else { AIR_ACCEL };
         f.vel.x = approach(f.vel.x, target, accel * DT);
 
-        if input.jump {
-            if f.crouching && f.on_ground && standing_on_hatch(map, f.feet, f.size()) {
+        let on_hatch = f.on_ground && standing_on_hatch(map, f.feet, f.size());
+        if input.drop && on_hatch {
+            // Pressing down on a hatch drops through it.
+            f.drop_timer = DROP_THROUGH_TIME;
+            f.on_ground = false;
+            f.crouching = false;
+        } else if input.jump {
+            if f.crouching && on_hatch {
                 f.drop_timer = DROP_THROUGH_TIME;
                 f.on_ground = false;
             } else if f.in_water {

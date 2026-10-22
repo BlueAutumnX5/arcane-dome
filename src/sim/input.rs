@@ -11,6 +11,8 @@ pub struct Input {
     /// Jump is held (releasing early cuts the jump short).
     pub jump_held: bool,
     pub crouch: bool,
+    /// Drop through the hatch underfoot (edge; S was just pressed).
+    pub drop: bool,
     /// Aim target in world tiles.
     pub aim: Vec2,
     pub fire: bool,

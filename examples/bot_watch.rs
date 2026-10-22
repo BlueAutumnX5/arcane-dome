@@ -12,6 +12,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
+/// A rounded tile position.
+type Spot = (i32, i32);
+
 /// Seconds without leaving a small area before a bot counts as stuck.
 const STUCK_S: f32 = 8.0;
 
@@ -26,6 +29,10 @@ fn main() {
     let mut hazards: BTreeMap<(i32, i32), u32> = BTreeMap::new();
     let mut stuck: BTreeMap<(i32, i32), u32> = BTreeMap::new();
     let mut origins: BTreeMap<(i32, i32, bool), u32> = BTreeMap::new();
+    // Repeated take-offs from the same spot: a bot going round in circles.
+    let mut loops: BTreeMap<(i32, i32), u32> = BTreeMap::new();
+    // Planned jumps: (take-off spot, landing spot) -> (made it, missed).
+    let mut jumps: BTreeMap<(Spot, Spot), (u32, u32)> = BTreeMap::new();
     let (mut kills, mut thrusts, mut hazard_deaths) = (0, 0, 0);
 
     for seed in 0..matches {
@@ -61,6 +68,9 @@ fn main() {
             let mut hit_ago = vec![99.0f32; w.fighters.len()];
             let mut air_t = vec![0.0f32; w.fighters.len()];
             let mut trail: Vec<Vec<String>> = vec![Vec::new(); w.fighters.len()];
+            let mut takeoffs: Vec<Vec<(f32, (i32, i32))>> = vec![Vec::new(); w.fighters.len()];
+            let mut was_ground = vec![true; w.fighters.len()];
+            let mut planned: Vec<Option<((i32, i32), Vec2)>> = vec![None; w.fighters.len()];
             let mut buried = vec![false; w.fighters.len()];
             let mut left_vel = vec![Vec2::ZERO; w.fighters.len()];
             for _ in 0..seconds * TICK_RATE {
@@ -81,6 +91,50 @@ fn main() {
                         continue;
                     }
                     let key = (f.feet.x.round() as i32, f.feet.y.round() as i32);
+                    if was_ground[i] && !f.on_ground && f.vel.y < -5.0 {
+                        let now = w.time;
+                        let list = &mut takeoffs[i];
+                        list.retain(|(t, _)| now - t < 25.0);
+                        let again = list.iter().filter(|(_, k)| *k == key).count();
+                        list.push((now, key));
+                        if again == 3 {
+                            *loops.entry(key).or_default() += 1;
+                            if std::env::var("VERBOSE").is_ok() {
+                                println!(
+                                    "  LOOP: #{i} took off from {key:?} 4 times in 25s | {}",
+                                    bots.describe(&w, i)
+                                );
+                                if std::env::var("LOOP_TRAIL")
+                                    .is_ok_and(|v| v == format!("{},{}", key.0, key.1))
+                                {
+                                    for l in trail[i]
+                                        .iter()
+                                        .skip(trail[i].len().saturating_sub(240))
+                                        .step_by(3)
+                                    {
+                                        println!("      {l}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Planned jumps: remember the target at take-off, judge on landing.
+                    if !f.on_ground
+                        && planned[i].is_none()
+                        && let Some(t) = bots.landing_target(i)
+                    {
+                        planned[i] = Some((key, t));
+                    }
+                    if f.on_ground
+                        && !was_ground[i]
+                        && let Some((from, t)) = planned[i].take()
+                    {
+                        let made = (f.feet.x - t.x).abs() < 1.5 && (f.feet.y - t.y).abs() < 0.4;
+                        let to = (t.x.round() as i32, t.y.round() as i32);
+                        let e = jumps.entry((from, to)).or_default();
+                        if made { e.0 += 1 } else { e.1 += 1 }
+                    }
+                    was_ground[i] = f.on_ground;
                     let inp = &inputs[i];
                     trail[i].push(format!(
                         "({:.2},{:.2}) v({:.1},{:.1}) g{} m{:.2} j{} c{} | {}",
@@ -94,7 +148,7 @@ fn main() {
                         inp.crouch as u8,
                         bots.describe(&w, i)
                     ));
-                    if trail[i].len() > 120 {
+                    if trail[i].len() > 600 {
                         trail[i].remove(0);
                     }
                     // Deeper than the feet inset: really inside terrain.
@@ -106,7 +160,7 @@ fn main() {
                     if inside && !buried[i] {
                         println!("  BURIED: #{i} at ({:.2},{:.2})", f.feet.x, f.feet.y);
                         if std::env::var("VERBOSE").is_ok() {
-                            for l in trail[i].iter().skip(105) {
+                            for l in trail[i].iter().skip(trail[i].len().saturating_sub(15)) {
                                 println!("      {l}");
                             }
                         }
@@ -132,7 +186,7 @@ fn main() {
                                 f.vel.y,
                                 difficulty
                             );
-                            for l in trail[i].iter().skip(100) {
+                            for l in trail[i].iter().skip(trail[i].len().saturating_sub(20)) {
                                 println!("        {l}");
                             }
                         }
@@ -190,7 +244,7 @@ fn main() {
                                         );
                                     }
                                 }
-                                for l in trail[i].iter().skip(95) {
+                                for l in trail[i].iter().skip(trail[i].len().saturating_sub(25)) {
                                     println!("      {l}");
                                 }
                             }
@@ -222,6 +276,21 @@ fn main() {
     }
     println!("hazard entered from last ground (x, y, hit within 1s): count");
     for (k, n) in &origins {
+        println!("  {k:?}: {n}");
+    }
+    println!("planned jumps that missed most (from -> to: made / missed):");
+    let mut worst: Vec<_> = jumps
+        .iter()
+        .filter(|(_, (m, x))| *x >= 3 && *x * 3 >= *m)
+        .collect();
+    worst.sort_by_key(|(_, (m, x))| std::cmp::Reverse(*x * 100 / (*m + *x)));
+    for ((from, to), (m, x)) in worst.iter().take(12) {
+        println!("  {from:?} -> {to:?}: {m} / {x}");
+    }
+    let (all_m, all_x) = jumps.values().fold((0, 0), |a, (m, x)| (a.0 + m, a.1 + x));
+    println!("  all planned jumps: {all_m} made, {all_x} missed");
+    println!("loops: 4+ take-offs from one spot in 25s (x, y): count");
+    for (k, n) in &loops {
         println!("  {k:?}: {n}");
     }
     println!("stuck > {STUCK_S}s (x, y): count");

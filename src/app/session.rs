@@ -20,6 +20,7 @@ pub enum Outcome {
 #[derive(Default)]
 struct Edges {
     jump: bool,
+    drop: bool,
     reload: bool,
     select: Option<usize>,
     cycle: i32,
@@ -141,6 +142,9 @@ impl Session {
         if Self::pressed(&[KeyCode::W, KeyCode::Up, KeyCode::Space]) {
             self.edges.jump = true;
         }
+        if Self::pressed(&[KeyCode::S, KeyCode::Down]) {
+            self.edges.drop = true;
+        }
         if is_key_pressed(KeyCode::R) {
             self.edges.reload = true;
         }
@@ -175,6 +179,7 @@ impl Session {
             jump: edges.jump,
             jump_held: Self::held(&[KeyCode::W, KeyCode::Up, KeyCode::Space]),
             crouch: Self::held(&[KeyCode::S, KeyCode::Down]),
+            drop: edges.drop,
             aim: self.cam.screen_to_world(mouse),
             fire: is_mouse_button_down(MouseButton::Left),
             reload: edges.reload,

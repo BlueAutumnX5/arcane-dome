@@ -19,6 +19,8 @@ const NODE_SPACING: f32 = 0.8;
 const MAX_RISE: f32 = 4.0;
 /// Peak height of a jump arc above the higher end.
 const ARC_HEADROOM: f32 = 1.0;
+/// Thruster landings must be within this far below the top of the flight.
+const TOP_BAND: f32 = 2.5;
 /// Widest gap a bot will jump.
 const MAX_JUMP_REACH: f32 = 5.5;
 /// Deepest drop a bot will jump down to.
@@ -261,11 +263,16 @@ impl NavGraph {
     fn thrust_edges(&self, map: &MapDef, n: usize, pad: Vec2, height: f32) -> Vec<Edge> {
         let p = self.nodes[n];
         let max_rise = height - 0.3;
+        // A launch flies straight up to the top of its flight: only floors
+        // near there are landings. (Swerving out early at a middle floor
+        // hits the floor above; those floors are reached by dropping back
+        // down the hatches or by the side ledges.)
+        let min_rise = (max_rise - TOP_BAND).max(1.0);
         let mut out = Vec::new();
         for m in self.near(p, max_rise + 3.0) {
             let q = self.nodes[m];
             let rise = p.y - q.y;
-            if m == n || rise < 1.0 || rise > max_rise || (q.x - pad.x).abs() > 3.0 {
+            if m == n || rise < min_rise || rise > max_rise || (q.x - pad.x).abs() > 3.0 {
                 continue;
             }
             // Straight up the shaft (hatches are open from below), then across.

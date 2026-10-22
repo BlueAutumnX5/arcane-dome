@@ -39,6 +39,11 @@ impl BotSet {
         }
     }
 
+    /// Where bot `i` is trying to land, while in the air (debugging tools).
+    pub fn landing_target(&self, i: usize) -> Option<macroquad::math::Vec2> {
+        self.brains.get(i)?.as_ref()?.landing_target()
+    }
+
     /// One line about what bot `i` is up to, for debugging tools.
     pub fn describe(&self, world: &World, i: usize) -> String {
         match self.brains.get(i) {
