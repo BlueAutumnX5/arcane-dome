@@ -62,7 +62,8 @@ Objects are thrusters (`height_tiles`), weapon stations, shield stations
 Purely visual `decor` (walls, windows, girders, chains, lamps, trees...) and a
 `theme` (sky colours, sun, skyline) set the mood.
 
-Spawns belong to a team (0 Blue, 1 Red, 2 Green, 3 Gold) or to free-for-all. A map
+Spawns belong to a team (0 to 3; the player is on team 0) or to free-for-all, and can change
+owner with the number of teams (`by_teams`). A map
 lists which team counts it is fair for with `team_counts`, for example `[2, 4]`.
 
 Check that every spawn, pickup and object can be reached by bots:

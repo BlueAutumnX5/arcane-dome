@@ -559,7 +559,7 @@ fn four_teams_are_built_with_their_own_sides_and_names() {
         .collect();
     assert_eq!(per_team, vec![2, 2, 2, 2]);
     let names: Vec<String> = (0..4).map(|t| w.side_name(t)).collect();
-    assert_eq!(names, vec!["Blue", "Red", "Green", "Gold"]);
+    assert_eq!(names, vec!["Blue", "Red", "Green", "Yellow"]);
     // Allies only within a team.
     let on = |t: u8| w.fighters.iter().position(|f| f.team == Some(t)).unwrap();
     let (blue, green, gold) = (on(0), on(2), on(3));
@@ -784,4 +784,35 @@ fn teams_switch_the_mode_name_and_score_limit() {
     let team = world("team_deathmatch", 1, 1);
     assert_eq!(team.mode.match_name(), "Team Deathmatch");
     assert_eq!(team.mode.score_limit, Some(5), "team_score_limit not used");
+}
+
+#[test]
+fn teams_wear_the_colours_picked_in_setup() {
+    let cfg = |colors| MatchConfig {
+        map_id: "arena".into(),
+        mode_id: "deathmatch".into(),
+        teams: 4,
+        team_bots: [1, 1, 1, 1],
+        team_colors: colors,
+        countdown_s: 0.0,
+        ..Default::default()
+    };
+    let w = World::new(data(), cfg([3, 0, 2, 1])).unwrap();
+    // Team 0 (the player's) picked Yellow, team 1 Blue.
+    assert_eq!(w.side_name(0), "Yellow");
+    assert_eq!(w.side_name(1), "Blue");
+    assert_eq!(w.team_color(0), 3);
+    assert_eq!(w.fighters[0].tint, Some(3));
+    let blue_bot = w.fighters.iter().find(|f| f.team == Some(1)).unwrap();
+    assert_eq!(blue_bot.tint, Some(0));
+    // Two teams with the same colour fall back to the default colours.
+    let w = World::new(data(), cfg([1, 1, 2, 3])).unwrap();
+    let names: Vec<String> = (0..4).map(|t| w.side_name(t)).collect();
+    assert_eq!(names, vec!["Blue", "Red", "Green", "Yellow"]);
+    // Free-for-all has no team colours.
+    let mut c = cfg([3, 0, 2, 1]);
+    c.teams = 0;
+    c.bots = 3;
+    let w = World::new(data(), c).unwrap();
+    assert!(w.fighters.iter().all(|f| f.tint.is_none()));
 }

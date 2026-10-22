@@ -28,7 +28,8 @@ the world) is planned for much later and is out of scope for now.
 ## Modes (Milestone 1)
 - Deathmatch: most kills wins
 - Elimination: no respawn, last one standing wins the round
-- Both play free-for-all or in 2 to 4 teams (Team Deathmatch, Team Elimination)
+- Both play free-for-all or in 2 to 4 teams (Team Deathmatch, Team Elimination). Each team
+  picks a colour: Blue, Red, Green or Yellow.
 
 Custom match screen: map, mode, score or time limit, number of teams, bots and difficulty per
 team (or bot count and difficulty in free-for-all). Every match and every elimination round
@@ -180,7 +181,8 @@ position of whoever stands there.
   tank, fence, vines, cactus. `front: true` draws over the fighters.
 - Powerup spots: 0 to 4 per map (1 is the norm), each always spawning the same
   powerup. Shield stations: 1 to 4 small (50) and 0 to 2 big (100).
-- Spawn `team`: 0 Blue, 1 Red, 2 Green, 3 Gold, or null for free-for-all. Teams 0 and 1
+- Spawn `team`: team 0 to 3 (the player is on team 0), or null for free-for-all. `by_teams`
+  gives a spawn another owner in matches with a given team count, e.g. `{"3": 2}` or `{"3": null}`. Teams 0 and 1
   need at least 2 spawns each; teams 2 and 3 are optional but need 2 if present.
 - `team_counts` (optional), for example `[2, 4]`: the team counts the map is fair for.
   Default: 2 up to the number of teams with their own spawns. A four-corner map is fair

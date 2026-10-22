@@ -35,7 +35,8 @@ pub const GO_SHOWN_S: f32 = 1.0;
 /// Most teams a team match can have.
 pub const MAX_TEAMS: usize = 4;
 /// Team names, by team number.
-pub const TEAM_NAMES: [&str; MAX_TEAMS] = ["Blue", "Red", "Green", "Gold"];
+/// Team colour names, by palette index (the colour a team picked).
+pub const TEAM_NAMES: [&str; MAX_TEAMS] = ["Blue", "Red", "Green", "Yellow"];
 
 /// Everything chosen on the custom match screen.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +61,9 @@ pub struct MatchConfig {
     pub team_bots: [u32; MAX_TEAMS],
     /// Team modes: how good each team's bots are.
     pub team_difficulty: [Difficulty; MAX_TEAMS],
+    /// Team modes: each team's colour, as an index into the palette
+    /// ([`TEAM_NAMES`]). Must be all different; otherwise the defaults are used.
+    pub team_colors: [u8; MAX_TEAMS],
     /// Use the map's powerup spot.
     pub powerups: bool,
     /// Use the map's weapon and shield stations.
@@ -88,6 +92,7 @@ impl Default for MatchConfig {
             teams: 0,
             team_bots: [2, 3, 2, 2],
             team_difficulty: [Difficulty::Normal; MAX_TEAMS],
+            team_colors: [0, 1, 2, 3],
             powerups: true,
             stations: true,
             infinite_ammo: false,
@@ -210,7 +215,7 @@ const BOT_NAMES: [&str; 32] = [
 ];
 
 impl World {
-    pub fn new(data: Arc<GameData>, config: MatchConfig) -> Result<Self, String> {
+    pub fn new(data: Arc<GameData>, mut config: MatchConfig) -> Result<Self, String> {
         let map = data
             .map(&config.map_id)
             .ok_or_else(|| format!("unknown map \"{}\"", config.map_id))?
@@ -279,6 +284,19 @@ impl World {
         }
         if fighters.len() < 2 {
             return Err("a match needs at least two fighters".into());
+        }
+        // Team colours: a palette index each, all different.
+        let mut colors = config.team_colors;
+        let mut seen = [false; MAX_TEAMS];
+        let distinct = colors
+            .iter()
+            .all(|&c| (c as usize) < MAX_TEAMS && !std::mem::replace(&mut seen[c as usize], true));
+        if !distinct {
+            colors = [0, 1, 2, 3];
+        }
+        config.team_colors = colors;
+        for f in &mut fighters {
+            f.tint = f.team.map(|t| colors[t as usize]);
         }
         if mode.is_team() {
             let manned = (0..num_teams as u8)

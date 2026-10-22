@@ -295,7 +295,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
                         alive(t)
                     )
                 };
-                (label, TEAM_COLORS[t % TEAM_COLORS.len()])
+                (label, TEAM_COLORS[world.team_color(t)])
             })
             .collect();
         let goal = if mode.respawn {
@@ -436,7 +436,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
 /// The colour of a side's banner: its team colour in team modes.
 fn side_color(world: &World, side: Option<usize>) -> Color {
     match side {
-        Some(t) if world.mode.is_team() => TEAM_COLORS[t % TEAM_COLORS.len()],
+        Some(t) if world.mode.is_team() => TEAM_COLORS[world.team_color(t)],
         _ => WHITE,
     }
 }
@@ -550,7 +550,7 @@ fn draw_team_scoreboard(world: &World, player: Option<usize>) {
     for (t, list) in members.iter().enumerate() {
         let px = x + gap + (t % 2) as f32 * (panel_w + gap);
         let py = y + 56.0 * s + (t / 2) as f32 * (panel_h + gap);
-        let c = TEAM_COLORS[t % TEAM_COLORS.len()];
+        let c = TEAM_COLORS[world.team_color(t)];
         draw_rectangle(px, py, panel_w, panel_h, Color::new(c.r, c.g, c.b, 0.07));
         draw_rectangle(px, py, panel_w, 34.0 * s, Color::new(c.r, c.g, c.b, 0.2));
         draw_rectangle(px, py, 5.0 * s, panel_h, c);

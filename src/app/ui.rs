@@ -191,6 +191,31 @@ impl Ui {
         hot && is_mouse_button_pressed(MouseButton::Left)
     }
 
+    /// A clickable colour square with a frame that lights up on hover.
+    /// Returns true when clicked.
+    pub fn swatch(&mut self, id: &str, r: Rect, color: Color) -> bool {
+        let s = scale();
+        let hot = hovered(r);
+        let t = self.animate(id, if hot { 1.0 } else { 0.0 }, TAB_EASE);
+        let grow = 2.0 * s * t;
+        draw_rectangle(
+            r.x - grow,
+            r.y - grow,
+            r.w + grow * 2.0,
+            r.h + grow * 2.0,
+            color,
+        );
+        draw_rectangle_lines(
+            r.x - grow,
+            r.y - grow,
+            r.w + grow * 2.0,
+            r.h + grow * 2.0,
+            2.0 * s,
+            Color::new(1.0, 1.0, 1.0, 0.35 + 0.65 * t),
+        );
+        hot && is_mouse_button_pressed(MouseButton::Left)
+    }
+
     /// A `label   <  value  >` row. Returns -1 / +1 on arrow clicks.
     pub fn stepper(
         &mut self,

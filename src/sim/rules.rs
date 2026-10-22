@@ -1,6 +1,6 @@
 //! Scoring, win conditions and rounds. Driven entirely by `ModeDef` fields.
 
-use super::world::{Event, TEAM_NAMES};
+use super::world::{Event, MAX_TEAMS, TEAM_NAMES};
 use super::{ObjectState, World};
 
 /// Seconds between elimination rounds.
@@ -39,10 +39,16 @@ impl World {
 
     pub fn side_name(&self, side: usize) -> String {
         if self.mode.is_team() {
-            TEAM_NAMES.get(side).copied().unwrap_or("Team").into()
+            TEAM_NAMES[self.team_color(side)].into()
         } else {
             self.fighters[side].name.clone()
         }
+    }
+
+    /// A team's colour, as an index into the team palette.
+    pub fn team_color(&self, team: usize) -> usize {
+        // Checked when the world was built: all different and in range.
+        self.config.team_colors[team % MAX_TEAMS] as usize
     }
 
     pub fn rounds_to_win(&self) -> u32 {

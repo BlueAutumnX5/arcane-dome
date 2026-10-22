@@ -47,6 +47,9 @@ pub struct Fighter {
     pub name: String,
     /// `None` in free-for-all modes.
     pub team: Option<u8>,
+    /// Team colour, as an index into the team palette (set from the match
+    /// setup; `None` in free-for-all).
+    pub tint: Option<u8>,
     pub is_bot: bool,
 
     /// Bottom-center of the body, in tiles.
@@ -118,6 +121,7 @@ impl Fighter {
             id,
             name,
             team,
+            tint: team,
             is_bot,
             feet: Vec2::ZERO,
             vel: Vec2::ZERO,

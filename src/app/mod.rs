@@ -65,6 +65,8 @@ struct Setup {
     teams: usize,
     team_bots: [u32; MAX_TEAMS],
     team_skill: [usize; MAX_TEAMS],
+    /// Each team's colour (palette index); always all different.
+    team_colors: [u8; MAX_TEAMS],
     powerups: bool,
     stations: bool,
     infinite_ammo: bool,
@@ -107,6 +109,7 @@ pub async fn run() {
             teams: 0,
             team_bots: [2, 3, 3, 3],
             team_skill: [1; MAX_TEAMS],
+            team_colors: [0, 1, 2, 3],
             powerups: true,
             stations: true,
             infinite_ammo: false,
@@ -400,6 +403,7 @@ impl App {
             teams: c.teams as u8,
             team_bots: c.team_bots,
             team_difficulty: c.team_skill.map(|k| Difficulty::ALL[k]),
+            team_colors: c.team_colors,
             powerups: c.powerups,
             stations: c.stations,
             infinite_ammo: c.infinite_ammo,
@@ -538,6 +542,7 @@ impl App {
         let half = (rw - 30.0 * s) / 2.0;
         let mut d_bots = [0i32; MAX_TEAMS];
         let mut d_skill = [0i32; MAX_TEAMS];
+        let mut recolor = None;
         let (mut d_ffa_bots, mut d_ffa_skill) = (0, 0);
         let total;
         let choices = allowed_team_counts(map, &mode);
@@ -553,12 +558,18 @@ impl App {
             let box_h = 86.0 * s;
             for t in 0..self.setup.teams {
                 let y = top + 48.0 * s + t as f32 * (box_h + 10.0 * s);
-                let color = TEAM_COLORS[t];
+                let pick = self.setup.team_colors[t] as usize;
+                let color = TEAM_COLORS[pick];
                 let bots = self.setup.team_bots[t];
                 ui::panel(Rect::new(rx, y, rw, box_h), None);
                 draw_rectangle(rx, y, 6.0 * s, box_h, color);
-                let title = format!("{} Team", TEAM_NAMES[t]);
-                ui::text_left(&title, rx + 18.0 * s, y + 26.0 * s, 22.0 * s, color);
+                // Click the swatch for the next colour.
+                let sw_r = Rect::new(rx + 18.0 * s, y + 10.0 * s, 20.0 * s, 20.0 * s);
+                if self.ui.swatch(&format!("s_t{t}_color"), sw_r, color) {
+                    recolor = Some(t);
+                }
+                let title = format!("{} Team", TEAM_NAMES[pick]);
+                ui::text_left(&title, rx + 48.0 * s, y + 26.0 * s, 22.0 * s, color);
                 let who = if t == 0 {
                     format!("You + {bots} bots")
                 } else {
@@ -677,6 +688,15 @@ impl App {
         let was_team = c.teams >= 2;
         c.teams = allowed[at];
         let score_default_changed = was_team != (c.teams >= 2);
+        if let Some(t) = recolor {
+            // Next colour; the team that had it takes this team's old one.
+            let old = c.team_colors[t];
+            let new = (old + 1) % MAX_TEAMS as u8;
+            if let Some(other) = c.team_colors.iter().position(|&k| k == new) {
+                c.team_colors[other] = old;
+            }
+            c.team_colors[t] = new;
+        }
         for t in 0..MAX_TEAMS {
             // Your team may be just you; every other team needs a bot.
             let min = if t == 0 { 0 } else { 1 };
@@ -890,6 +910,13 @@ impl App {
         {
             self.setup.team_bots = [n; MAX_TEAMS];
         }
+        // ARCANE_SHOT_COLORS=3,0,2,1 picks team colours (palette indices).
+        if let Ok(list) = std::env::var("ARCANE_SHOT_COLORS") {
+            let picks = list.split(',').filter_map(|c| c.parse().ok());
+            for (t, c) in picks.take(MAX_TEAMS).enumerate() {
+                self.setup.team_colors[t] = c;
+            }
+        }
         match scene {
             "custom" | "setup" => self.screen = Screen::Setup,
             "howto" => self.screen = Screen::Info(Info::HowTo),
@@ -918,7 +945,8 @@ impl App {
 
 /// Optional screenshot hook for checking visuals without a person at the keyboard:
 /// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|game[:map_id[@x,y]] ARCANE_SHOT_AFTER=2`,
-/// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_TAB=1` (scoreboard).
+/// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_COLORS=3,0,2,1
+/// ARCANE_SHOT_TAB=1` (scoreboard).
 mod debug {
     pub struct Shot {
         pub path: String,

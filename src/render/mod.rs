@@ -14,7 +14,8 @@ use crate::data::{Category, MapDef, PickupKind, ProjectileKind};
 use crate::sim::{Fighter, HEAD_HEIGHT, MAX_TEAMS, World};
 use macroquad::prelude::*;
 
-/// Team colours, by team number (Blue, Red, Green, Gold).
+/// The team palette (Blue, Red, Green, Yellow); a team's colour is picked in
+/// the match setup.
 pub const TEAM_COLORS: [Color; MAX_TEAMS] = [
     Color::new(0.33, 0.63, 1.0, 1.0),
     Color::new(1.0, 0.38, 0.32, 1.0),
@@ -36,7 +37,7 @@ const FFA_COLORS: [Color; 8] = [
 
 pub fn fighter_color(f: &Fighter) -> Color {
     match f.team {
-        Some(t) => TEAM_COLORS[t as usize % MAX_TEAMS],
+        Some(_) => TEAM_COLORS[f.tint.unwrap_or(0) as usize % MAX_TEAMS],
         None => FFA_COLORS[f.id % FFA_COLORS.len()],
     }
 }
