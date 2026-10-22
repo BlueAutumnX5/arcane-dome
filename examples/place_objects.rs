@@ -22,7 +22,13 @@ fn main() {
         let mut map = base.clone();
         map.objects.clear();
         let mut rng = Rng::new(idx as u64 * 7919 + 17);
-        let objects = place(&mut map, idx, &mut rng);
+        let powerups: Vec<String> = data
+            .powerups
+            .powerups
+            .iter()
+            .map(|p| p.id.clone())
+            .collect();
+        let objects = place(&mut map, idx, &mut rng, &powerups);
         let path = root
             .join("assets/data/maps")
             .join(format!("{}.json", map.id));
@@ -42,6 +48,7 @@ fn object(kind: ObjectKind, (x, y): (i32, i32)) -> MapObject {
         min_delay_s: None,
         max_delay_s: None,
         shield: None,
+        powerup: None,
     }
 }
 
@@ -54,7 +61,22 @@ fn placeable(map: &MapDef, (x, y): (i32, i32)) -> bool {
     map.tile(x, y) == TileKind::Air && map.tile(x, y - 1) == TileKind::Air
 }
 
-fn place(map: &mut MapDef, _idx: usize, rng: &mut Rng) -> Vec<MapObject> {
+/// How many powerup spots a map gets: 1 is common, 0 is rare, and 2-4
+/// get rarer as the number grows. Weights are out of 100.
+const POWERUP_SPOT_WEIGHTS: [(usize, usize); 5] = [(0, 10), (1, 45), (2, 25), (3, 13), (4, 7)];
+
+fn roll_spot_count(rng: &mut Rng) -> usize {
+    let mut roll = rng.below(100);
+    for (count, weight) in POWERUP_SPOT_WEIGHTS {
+        if roll < weight {
+            return count;
+        }
+        roll -= weight;
+    }
+    1
+}
+
+fn place(map: &mut MapDef, _idx: usize, rng: &mut Rng, powerups: &[String]) -> Vec<MapObject> {
     let mut taken: HashSet<(i32, i32)> = map.spawns.iter().map(|s| (s.x, s.y)).collect();
     taken.extend(map.pickups.iter().map(|p| (p.x, p.y)));
     let w = map.width as i32;
@@ -62,14 +84,13 @@ fn place(map: &mut MapDef, _idx: usize, rng: &mut Rng) -> Vec<MapObject> {
 
     // Thrusters: one per half, where a shaft leads up to a ledge 5+ tiles higher.
     let nav = NavGraph::build(map);
-    let clear =
-        |m: &MapDef, x: i32, y: i32| !matches!(m.tile(x, y), TileKind::Solid | TileKind::Spikes);
+    let clear = |m: &MapDef, x: i32, y: i32| {
+        let k = m.tile(x, y);
+        !k.is_solid() && !k.is_slope() && k != TileKind::Spikes
+    };
     let mut pads: Vec<((i32, i32), f32, f32)> = Vec::new();
     for &(x, y) in &nav.nodes {
-        if map.tile(x, y + 1) != TileKind::Solid
-            || !placeable(map, (x, y))
-            || taken.contains(&(x, y))
-        {
+        if !map.tile(x, y + 1).is_solid() || !placeable(map, (x, y)) || taken.contains(&(x, y)) {
             continue;
         }
         for rise in 5..=11 {
@@ -145,20 +166,30 @@ fn place(map: &mut MapDef, _idx: usize, rng: &mut Rng) -> Vec<MapObject> {
                 .iter()
                 .any(|k| matches!(k, EdgeKind::Jump | EdgeKind::Thrust))
     };
-    let spot = usable
-        .iter()
-        .copied()
-        .filter(ledge)
-        .max_by(|&a, &b| score(a).total_cmp(&score(b)))
-        .or_else(|| {
-            usable
-                .iter()
-                .copied()
-                .max_by(|&a, &b| score(a).total_cmp(&score(b)))
-        });
-    if let Some(n) = spot {
-        taken.insert(nav.nodes[n]);
-        objects.push(object(ObjectKind::PowerupSpot, nav.nodes[n]));
+    // Best ledges first; fall back to any reachable cell if a map has none.
+    let mut ranked: Vec<usize> = usable.iter().copied().filter(ledge).collect();
+    if ranked.is_empty() {
+        ranked = usable.clone();
+    }
+    ranked.sort_by(|&a, &b| score(b).total_cmp(&score(a)));
+    // Each spot always gives the same powerup, and no two spots share one.
+    let mut pool: Vec<&String> = powerups.iter().collect();
+    let want = roll_spot_count(rng).min(pool.len());
+    let mut spots: Vec<(i32, i32)> = Vec::new();
+    for n in ranked {
+        if spots.len() == want {
+            break;
+        }
+        let c = nav.nodes[n];
+        if spots.iter().all(|s| dist(*s, c) >= 12.0) {
+            spots.push(c);
+        }
+    }
+    for c in spots {
+        let mut o = object(ObjectKind::PowerupSpot, c);
+        o.powerup = Some(pool.remove(rng.below(pool.len())).clone());
+        taken.insert(c);
+        objects.push(o);
     }
 
     // Stations, spread far apart. Shield stations are rarer than weapon
@@ -215,6 +246,9 @@ fn object_json(o: &MapObject) -> String {
     }
     if let Some(v) = o.shield {
         write!(s, r#","shield":{v}"#).unwrap();
+    }
+    if let Some(p) = &o.powerup {
+        write!(s, r#","powerup":"{p}""#).unwrap();
     }
     s.push('}');
     s

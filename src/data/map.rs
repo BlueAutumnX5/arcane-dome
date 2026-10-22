@@ -159,6 +159,9 @@ pub struct MapObject {
     /// Shield station: shield points given (50 small, 100 big). Defaults to 50.
     #[serde(default)]
     pub shield: Option<f32>,
+    /// Powerup spot: the powerup id it always offers (random if left out).
+    #[serde(default)]
+    pub powerup: Option<String>,
 }
 
 impl MapObject {
@@ -546,6 +549,11 @@ pub fn parse_map(
         only(
             "shield",
             o.shield.is_none() || o.kind == ObjectKind::ShieldStation,
+            &mut errs,
+        );
+        only(
+            "powerup",
+            o.powerup.is_none() || o.kind == ObjectKind::PowerupSpot,
             &mut errs,
         );
         if o.kind == ObjectKind::Thruster {

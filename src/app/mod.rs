@@ -702,7 +702,7 @@ impl App {
                     "Thrusters launch you high into the air. Step on the glowing pad.",
                     "Weapon stations deploy a random weapon every 30-45 seconds.",
                     "Shield stations are rarer and give +50 or +100 shield. Shield soaks up part of each hit.",
-                    "A powerup appears at its spot 45 seconds in and every 2 minutes after it is taken:",
+                    "Powerup spots (0-4 per map) each hold one fixed powerup: first at 45 s, then 2 min after pickup:",
                 ] {
                     line(t, soft);
                 }

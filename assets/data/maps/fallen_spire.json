@@ -78,17 +78,11 @@
   "objects": [
     {"type":"thruster","x":8,"y":16,"height_tiles":7.5},
     {"type":"thruster","x":20,"y":22,"height_tiles":7.5},
-    {"type":"powerup_spot","x":21,"y":21},
+    {"type":"powerup_spot","x":21,"y":21,"powerup":"rapid_fire"},
+    {"type":"powerup_spot","x":7,"y":16,"powerup":"divine_shield"},
     {"type":"weapon_station","x":3,"y":34},
     {"type":"weapon_station","x":37,"y":34},
-    {"type":"weapon_station","x":38,"y":19},
-    {"type":"weapon_station","x":2,"y":13},
-    {"type":"weapon_station","x":13,"y":6},
-    {"type":"weapon_station","x":36,"y":13},
-    {"type":"shield_station","x":26,"y":6},
-    {"type":"shield_station","x":13,"y":25},
-    {"type":"shield_station","x":31,"y":22},
-    {"type":"shield_station","x":33,"y":34}
+    {"type":"shield_station","x":38,"y":19}
   ],
   "bot_hints": []
 }

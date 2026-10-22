@@ -252,7 +252,6 @@ impl World {
             })
             .collect();
 
-        let first_powerup = data.powerups.first_spawn_s;
         let objects = map
             .objects
             .iter()
@@ -261,7 +260,7 @@ impl World {
                 ObjectKind::WeaponStation | ObjectKind::ShieldStation => config.stations,
                 ObjectKind::Thruster => true,
             })
-            .map(|o| ObjectState::new(o, first_powerup))
+            .map(|o| ObjectState::new(o, &data))
             .collect();
         let stand_cells = super::gadgets::stand_cells(&map);
 

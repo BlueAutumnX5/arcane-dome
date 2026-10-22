@@ -69,11 +69,13 @@
   "objects": [
     {"type":"thruster","x":6,"y":25,"height_tiles":8.5},
     {"type":"thruster","x":36,"y":24,"height_tiles":7.5},
-    {"type":"powerup_spot","x":58,"y":8},
+    {"type":"powerup_spot","x":58,"y":8,"powerup":"shadowstep"},
     {"type":"weapon_station","x":21,"y":12},
     {"type":"weapon_station","x":21,"y":25},
     {"type":"weapon_station","x":56,"y":15},
-    {"type":"shield_station","x":43,"y":9}
+    {"type":"weapon_station","x":43,"y":9},
+    {"type":"shield_station","x":16,"y":21},
+    {"type":"shield_station","x":32,"y":12}
   ],
   "bot_hints": []
 }

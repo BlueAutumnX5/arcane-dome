@@ -127,13 +127,15 @@ fn draw_powerup_spot(world: &World, o: &ObjectState, t: f32) {
         Color::from_rgba(110, 95, 140, 255),
     );
     let Some(p) = o.powerup.filter(|_| o.ready) else {
-        draw_circle_lines(
-            x + 0.5,
-            y + 0.4,
-            0.22,
-            0.03,
-            Color::new(1.0, 1.0, 1.0, 0.12),
-        );
+        // Waiting: a faint ring, tinted if this spot always gives the same powerup.
+        let ring = match o.fixed_powerup {
+            Some(p) => {
+                let c = rgb(world.data.powerups.powerups[p].color);
+                Color::new(c.r, c.g, c.b, 0.3)
+            }
+            None => Color::new(1.0, 1.0, 1.0, 0.12),
+        };
+        draw_circle_lines(x + 0.5, y + 0.4, 0.22, 0.03, ring);
         return;
     };
     let col = rgb(world.data.powerups.powerups[p].color);
@@ -227,7 +229,14 @@ pub fn draw_object_labels(world: &World, cam: &GameCamera) {
             (ObjectKind::PowerupSpot, true) => o
                 .powerup
                 .map(|p| world.data.powerups.powerups[p].name.clone()),
-            (ObjectKind::PowerupSpot, false) => Some(format!("{:.0}", o.timer.ceil())),
+            (ObjectKind::PowerupSpot, false) => Some(match o.fixed_powerup {
+                Some(p) => format!(
+                    "{}  {:.0}",
+                    world.data.powerups.powerups[p].name,
+                    o.timer.ceil()
+                ),
+                None => format!("{:.0}", o.timer.ceil()),
+            }),
             _ => None,
         };
         let Some(label) = label else { continue };

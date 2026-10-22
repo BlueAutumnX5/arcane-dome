@@ -133,9 +133,9 @@ impl World {
             p.active = true;
             p.timer = 0.0;
         }
-        let first_powerup = self.data.powerups.first_spawn_s;
+        let data = std::sync::Arc::clone(&self.data);
         for o in &mut self.objects {
-            *o = ObjectState::new(&o.def, first_powerup);
+            *o = ObjectState::new(&o.def, &data);
         }
         for f in &mut self.fighters {
             f.alive = false;

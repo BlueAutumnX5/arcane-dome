@@ -78,14 +78,18 @@
   "objects": [
     {"type":"thruster","x":6,"y":35,"height_tiles":8.5},
     {"type":"thruster","x":34,"y":35,"height_tiles":8.5},
-    {"type":"powerup_spot","x":11,"y":15},
+    {"type":"powerup_spot","x":11,"y":15,"powerup":"critical_strike"},
+    {"type":"powerup_spot","x":15,"y":29,"powerup":"shadowstep"},
     {"type":"weapon_station","x":23,"y":13},
     {"type":"weapon_station","x":32,"y":16},
     {"type":"weapon_station","x":13,"y":7},
-    {"type":"weapon_station","x":13,"y":25},
-    {"type":"shield_station","x":38,"y":31},
-    {"type":"shield_station","x":24,"y":26},
-    {"type":"shield_station","x":9,"y":22}
+    {"type":"weapon_station","x":24,"y":26},
+    {"type":"weapon_station","x":38,"y":31},
+    {"type":"weapon_station","x":12,"y":25},
+    {"type":"shield_station","x":9,"y":22},
+    {"type":"shield_station","x":16,"y":23},
+    {"type":"shield_station","x":34,"y":25,"min_delay_s":90,"max_delay_s":120,"shield":100},
+    {"type":"shield_station","x":27,"y":9,"min_delay_s":90,"max_delay_s":120,"shield":100}
   ],
   "bot_hints": []
 }

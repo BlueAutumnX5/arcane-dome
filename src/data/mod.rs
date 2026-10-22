@@ -72,6 +72,20 @@ impl GameData {
             parse_map(label, stem, text, &weapon_ids, &mode_ids)
         });
 
+        // Powerup spots may name a fixed powerup; it must exist.
+        for m in &maps {
+            for (i, o) in m.objects.iter().enumerate() {
+                if let Some(id) = &o.powerup
+                    && !powerups.powerups.iter().any(|p| &p.id == id)
+                {
+                    errors.push(DataError::new(
+                        format!("maps/{}.json", m.id),
+                        format!("objects[{i}].powerup: \"{id}\" does not exist in powerups.json"),
+                    ));
+                }
+            }
+        }
+
         if errors.is_empty() {
             let mut data = Self::from_parts(weapons, maps, modes)?;
             data.powerups = powerups;

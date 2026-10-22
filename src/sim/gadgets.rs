@@ -4,7 +4,7 @@
 use super::fighter::*;
 use super::world::{Event, give_weapon};
 use super::{DT, World};
-use crate::data::{Category, MapDef, MapObject, ObjectKind, PowerupEffect, TileKind};
+use crate::data::{Category, GameData, MapDef, MapObject, ObjectKind, PowerupEffect, TileKind};
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
 
@@ -43,10 +43,17 @@ pub struct ObjectState {
     pub weapon: Option<usize>,
     /// Powerup spot: the powerup on offer.
     pub powerup: Option<usize>,
+    /// Powerup spot: the one powerup this spot always offers, if fixed.
+    pub fixed_powerup: Option<usize>,
 }
 
 impl ObjectState {
-    pub fn new(def: &MapObject, first_powerup_s: f32) -> Self {
+    pub fn new(def: &MapObject, data: &GameData) -> Self {
+        let first_powerup_s = data.powerups.first_spawn_s;
+        let fixed_powerup = def
+            .powerup
+            .as_deref()
+            .and_then(|id| data.powerups.powerups.iter().position(|p| p.id == id));
         let (ready, timer) = match def.kind {
             ObjectKind::Thruster | ObjectKind::WeaponStation => (true, 0.0),
             ObjectKind::ShieldStation => (false, def.delay_range().0 * 0.5),
@@ -60,6 +67,7 @@ impl ObjectState {
             delay: timer.max(0.01),
             weapon: None,
             powerup: None,
+            fixed_powerup,
         }
     }
 
@@ -253,7 +261,10 @@ impl World {
                     if n == 0 {
                         continue;
                     }
-                    let p = self.rng.below(n);
+                    let p = match self.objects[k].fixed_powerup {
+                        Some(p) => p,
+                        None => self.rng.below(n),
+                    };
                     self.objects[k].powerup = Some(p);
                 }
                 _ => {}
