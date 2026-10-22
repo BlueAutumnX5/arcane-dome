@@ -4,10 +4,43 @@
 # Arcane Dome
 
 A 2D side-scrolling platform arena shooter written in Rust with
-[Macroquad](https://macroquad.rs). Fast arena matches against AI bots, lots of
-weapons, lots of maps, all data-driven through JSON, for now.
+[Macroquad](https://macroquad.rs). Fast arena matches against AI bots, with
+weapons, maps and modes all defined in JSON.
 
 > Status: early development. See [SPEC.md](SPEC.md) for the design and milestones.
+
+## What is in it so far
+
+- **1 map**, Foundry Ascent: a steel mill around a lava pit, with a climbable
+  tower and a thruster shaft. More maps are on the way (two drafts are in
+  `drafts/maps/`).
+- **2 modes**, Deathmatch and Elimination, each played free-for-all or with
+  2 to 4 teams (Blue, Red, Green, Yellow; each team picks its colour). Every
+  match and round starts with a 5 second countdown.
+- **10 weapons**: Peacekeeper, Arc Rifle, Leechfang, Scattergun, Cinder
+  Spitter, Needle Gun, Rail Spike, Hellbarrel (rockets), Thumper (grenades) and
+  Sunbeam (a beam).
+- **Bots** with a view cone, reaction time and three difficulties (Easy,
+  Normal, Hard), set per team.
+- **Map gadgets**: thrusters (stand on the pad and press jump), weapon
+  stations, shield stations, and powerup spots (Divine Shield, Rapid Fire,
+  Critical Strike, Shadowstep).
+- Placeholder art: shapes and colours drawn in code. No sound yet.
+
+## Controls
+
+| Action | Keys |
+|---|---|
+| Move | A / D (or arrow keys) |
+| Jump, double jump | W, Space or Up (press again in the air) |
+| Crouch | Hold S |
+| Drop through a hatch | Press S while standing on it |
+| Aim and fire | Mouse, left button |
+| Reload | R |
+| Switch weapon | 1 to 0, Q / E, or the mouse wheel |
+| Use Shadowstep | F |
+| Scoreboard | Hold Tab |
+| Pause | P or Esc |
 
 ## Inspiration and credits
 
@@ -85,6 +118,13 @@ To watch bots play a map and report anyone stuck or falling into hazards (add
 ```bash
 cargo run --release --example bot_watch -- foundry_ascent 180 4
 ```
+
+## Roadmap
+
+1. Two more maps: one built for 3 and 4 teams, one for 2 teams
+2. Possibly Capture the Flag and King of the Hill
+3. A map editor, so anyone can build maps
+4. Animations and textures, then sound
 
 ## License
 
