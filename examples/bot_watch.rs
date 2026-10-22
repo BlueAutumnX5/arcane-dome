@@ -30,10 +30,19 @@ fn main() {
 
     for seed in 0..matches {
         for difficulty in [Difficulty::Easy, Difficulty::Hard] {
+            // MODE=team_deathmatch TEAMS=4 watches team matches (2 bots a team).
+            let mode = std::env::var("MODE").unwrap_or_else(|_| "deathmatch".into());
+            let teams: u8 = std::env::var("TEAMS")
+                .ok()
+                .and_then(|t| t.parse().ok())
+                .unwrap_or(2);
             let cfg = MatchConfig {
                 map_id: map.clone(),
-                mode_id: "deathmatch".into(),
-                enemy_bots: 7,
+                mode_id: mode,
+                teams,
+                team_bots: [2; 4],
+                team_difficulty: [difficulty; 4],
+                bots: 7,
                 difficulty,
                 include_player: false,
                 seed: seed * 31 + 5,
@@ -193,6 +202,17 @@ fn main() {
                 }
             }
             kills += w.fighters.iter().map(|f| f.kills).sum::<u32>();
+            if w.mode.is_team() {
+                let per: Vec<String> = (0..w.num_sides())
+                    .map(|t| format!("{} {}", w.side_name(t), w.scores[t]))
+                    .collect();
+                println!(
+                    "  {difficulty:?} seed {seed}: {} | round wins {:?} | {:?}",
+                    per.join(", "),
+                    w.round_wins,
+                    w.phase
+                );
+            }
         }
     }
     println!("{map}: {kills} kills, {thrusts} thruster launches, {hazard_deaths} hazard deaths");

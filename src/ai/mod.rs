@@ -20,10 +20,9 @@ impl BotSet {
             .fighters
             .iter()
             .map(|f| {
-                let skill = if world.mode.is_team() && f.team == Some(0) {
-                    world.config.friendly_difficulty
-                } else {
-                    world.config.difficulty
+                let skill = match f.team {
+                    Some(t) if world.mode.is_team() => world.config.team_difficulty[t as usize],
+                    _ => world.config.difficulty,
                 };
                 f.is_bot.then(|| Brain::new(f.id, world.config.seed, skill))
             })

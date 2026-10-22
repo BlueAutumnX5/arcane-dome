@@ -1,6 +1,6 @@
 //! Scoring, win conditions and rounds. Driven entirely by `ModeDef` fields.
 
-use super::world::Event;
+use super::world::{Event, TEAM_NAMES};
 use super::{ObjectState, World};
 
 /// Seconds between elimination rounds.
@@ -39,10 +39,7 @@ impl World {
 
     pub fn side_name(&self, side: usize) -> String {
         if self.mode.is_team() {
-            match side {
-                0 => "Blue".into(),
-                _ => "Red".into(),
-            }
+            TEAM_NAMES.get(side).copied().unwrap_or("Team").into()
         } else {
             self.fighters[side].name.clone()
         }

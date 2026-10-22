@@ -16,7 +16,8 @@ struct Blast {
 }
 
 pub struct FeedLine {
-    pub text: String,
+    /// Pieces of text with their colours (names in team colours).
+    pub parts: Vec<(String, Color)>,
     pub mine: bool,
     pub age: f32,
 }
@@ -88,20 +89,32 @@ impl Effects {
                     weapon,
                     headshot,
                 } => {
-                    let v = &world.fighters[*victim].name;
-                    let text = match killer {
+                    let name = |i: usize| {
+                        let f = &world.fighters[i];
+                        (f.name.clone(), super::fighter_color(f))
+                    };
+                    let plain = Color::new(1.0, 1.0, 1.0, 0.85);
+                    let mut parts = Vec::new();
+                    match killer {
                         Some(k) => {
                             let w = weapon
                                 .map(|w| world.data.weapons[w].name.as_str())
                                 .unwrap_or("hazard");
-                            let hs = if *headshot { " (headshot)" } else { "" };
-                            format!("{} [{}] {}{}", world.fighters[*k].name, w, v, hs)
+                            parts.push(name(*k));
+                            parts.push((format!("[{w}]"), plain));
+                            parts.push(name(*victim));
+                            if *headshot {
+                                parts.push(("(headshot)".into(), plain));
+                            }
                         }
-                        None => format!("{v} died"),
-                    };
+                        None => {
+                            parts.push(name(*victim));
+                            parts.push(("died".into(), plain));
+                        }
+                    }
                     let mine = player.is_some() && (*killer == player || Some(*victim) == player);
                     self.feed.push(FeedLine {
-                        text,
+                        parts,
                         mine,
                         age: 0.0,
                     });

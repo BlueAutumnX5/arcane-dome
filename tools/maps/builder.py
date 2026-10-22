@@ -76,6 +76,7 @@ class Map:
     def write(self, path):
         lines = ["{"]
         keys = ["id", "name", "description", "tile_size", "size", "theme", "modes", "recommended_players"]
+        keys += [k for k in ["team_counts"] if k in self.d]
         for k in keys:
             lines.append(f'  "{k}": {json.dumps(self.d[k])},')
         for k in ["shapes", "decor", "spawns", "pickups", "objects"]:

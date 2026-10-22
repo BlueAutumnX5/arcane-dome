@@ -122,7 +122,8 @@ impl Session {
         if !self.paused && !over {
             render::draw_crosshair(&self.world, &self.cam, &self.effects, self.player, mouse);
         }
-        if over || is_key_down(KeyCode::Tab) {
+        let debug_tab = std::env::var_os("ARCANE_SHOT_TAB").is_some();
+        if over || is_key_down(KeyCode::Tab) || debug_tab {
             render::draw_scoreboard(&self.world, Some(self.player));
         }
 

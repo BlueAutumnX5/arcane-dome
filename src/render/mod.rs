@@ -11,11 +11,18 @@ pub use effects::Effects;
 pub use hud::{draw_crosshair, draw_hud, draw_scoreboard};
 
 use crate::data::{Category, MapDef, PickupKind, ProjectileKind};
-use crate::sim::{Fighter, HEAD_HEIGHT, World};
+use crate::sim::{Fighter, HEAD_HEIGHT, MAX_TEAMS, World};
 use macroquad::prelude::*;
 
-pub const BLUE: Color = Color::new(0.33, 0.63, 1.0, 1.0);
-pub const RED: Color = Color::new(1.0, 0.38, 0.32, 1.0);
+/// Team colours, by team number (Blue, Red, Green, Gold).
+pub const TEAM_COLORS: [Color; MAX_TEAMS] = [
+    Color::new(0.33, 0.63, 1.0, 1.0),
+    Color::new(1.0, 0.38, 0.32, 1.0),
+    Color::new(0.42, 0.86, 0.42, 1.0),
+    Color::new(1.0, 0.8, 0.28, 1.0),
+];
+pub const BLUE: Color = TEAM_COLORS[0];
+pub const RED: Color = TEAM_COLORS[1];
 const FFA_COLORS: [Color; 8] = [
     Color::new(0.33, 0.63, 1.0, 1.0),
     Color::new(1.0, 0.38, 0.32, 1.0),
@@ -29,8 +36,7 @@ const FFA_COLORS: [Color; 8] = [
 
 pub fn fighter_color(f: &Fighter) -> Color {
     match f.team {
-        Some(0) => BLUE,
-        Some(_) => RED,
+        Some(t) => TEAM_COLORS[t as usize % MAX_TEAMS],
         None => FFA_COLORS[f.id % FFA_COLORS.len()],
     }
 }

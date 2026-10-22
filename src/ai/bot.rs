@@ -1007,7 +1007,7 @@ mod tests {
         let data = Arc::new(GameData::load(&assets).unwrap());
         let cfg = MatchConfig {
             map_id: "foundry_ascent".into(),
-            enemy_bots: 1,
+            bots: 1,
             difficulty,
             ..Default::default()
         };

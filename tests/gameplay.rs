@@ -30,8 +30,8 @@ const POWERUPS: &str = r##"{ "first_spawn_s": 1, "respawn_s": 120, "powerups": [
 
 const MODES: &str = r#"{
   "deathmatch":       { "teams": 1, "respawn": true,  "score_limit": 3, "time_limit_s": 600 },
-  "team_deathmatch":  { "teams": 2, "respawn": true,  "score_limit": 5, "time_limit_s": 600 },
-  "team_elimination": { "teams": 2, "respawn": false, "rounds": 3,      "time_limit_s": 60 }
+  "team_deathmatch":  { "teams": 4, "respawn": true,  "score_limit": 5, "time_limit_s": 600 },
+  "team_elimination": { "teams": 4, "respawn": false, "rounds": 3,      "time_limit_s": 60 }
 }"#;
 
 fn arena_json() -> String {
@@ -88,8 +88,9 @@ fn world(mode: &str, enemies: u32, friends: u32) -> World {
     let cfg = MatchConfig {
         map_id: "arena".into(),
         mode_id: mode.into(),
-        enemy_bots: enemies,
-        friendly_bots: friends,
+        bots: enemies,
+        teams: 2,
+        team_bots: [friends, enemies, 0, 0],
         ..Default::default()
     };
     let mut w = World::new(data(), cfg).unwrap();
@@ -517,4 +518,152 @@ fn powerup_spot_appears_after_the_first_delay() {
     assert!(!w.objects[k].ready);
     run(&mut w, (1.0 / DT) as usize + 2);
     assert!(w.objects[k].ready);
+}
+
+/// A team match with `bots[t]` bots on team `t` (the player is on team 0).
+fn teams_world(mode: &str, bots: &[u32]) -> World {
+    let mut team_bots = [0; 4];
+    team_bots[..bots.len()].copy_from_slice(bots);
+    let cfg = MatchConfig {
+        map_id: "arena".into(),
+        mode_id: mode.into(),
+        teams: bots.len() as u8,
+        team_bots,
+        ..Default::default()
+    };
+    let mut w = World::new(data(), cfg).unwrap();
+    for f in &mut w.fighters {
+        f.spawn_protect = 0.0;
+    }
+    w
+}
+
+#[test]
+fn four_teams_are_built_with_their_own_sides_and_names() {
+    let w = teams_world("team_deathmatch", &[1, 2, 2, 2]);
+    assert_eq!(w.fighters.len(), 8);
+    assert_eq!(w.num_sides(), 4);
+    let per_team: Vec<usize> = (0..4u8)
+        .map(|t| w.fighters.iter().filter(|f| f.team == Some(t)).count())
+        .collect();
+    assert_eq!(per_team, vec![2, 2, 2, 2]);
+    let names: Vec<String> = (0..4).map(|t| w.side_name(t)).collect();
+    assert_eq!(names, vec!["Blue", "Red", "Green", "Gold"]);
+    // Allies only within a team.
+    let on = |t: u8| w.fighters.iter().position(|f| f.team == Some(t)).unwrap();
+    let (blue, green, gold) = (on(0), on(2), on(3));
+    let green2 = w.fighters.iter().rposition(|f| f.team == Some(2)).unwrap();
+    assert!(w.allies(green, green2));
+    assert!(!w.allies(blue, green));
+    assert!(!w.allies(green, gold));
+}
+
+#[test]
+fn team_count_is_capped_by_the_mode_and_needs_two_manned_teams() {
+    // Asking for more teams than exist is capped at four.
+    let cfg = MatchConfig {
+        map_id: "arena".into(),
+        mode_id: "team_deathmatch".into(),
+        teams: 9,
+        team_bots: [1, 1, 1, 1],
+        ..Default::default()
+    };
+    assert_eq!(World::new(data(), cfg).unwrap().num_sides(), 4);
+    // Free-for-all ignores teams entirely.
+    let cfg = MatchConfig {
+        map_id: "arena".into(),
+        mode_id: "deathmatch".into(),
+        teams: 4,
+        bots: 3,
+        ..Default::default()
+    };
+    let w = World::new(data(), cfg).unwrap();
+    assert!(w.fighters.iter().all(|f| f.team.is_none()));
+    // Bots only on one team and no player: not a match.
+    let cfg = MatchConfig {
+        map_id: "arena".into(),
+        mode_id: "team_deathmatch".into(),
+        teams: 3,
+        team_bots: [0, 3, 0, 0],
+        include_player: false,
+        ..Default::default()
+    };
+    assert!(World::new(data(), cfg).is_err());
+}
+
+#[test]
+fn three_team_elimination_waits_for_the_last_team_standing() {
+    let mut w = teams_world("team_elimination", &[0, 1, 1]);
+    run(&mut w, 5);
+    let red = w.fighters.iter().position(|f| f.team == Some(1)).unwrap();
+    let green = w.fighters.iter().position(|f| f.team == Some(2)).unwrap();
+    w.damage(red, Some(0), None, 500.0, false, false);
+    run(&mut w, 1);
+    // Two teams still stand: the round goes on.
+    assert_eq!(w.phase, Phase::Playing);
+    w.damage(green, Some(0), None, 500.0, false, false);
+    run(&mut w, 1);
+    assert!(matches!(
+        w.phase,
+        Phase::RoundOver {
+            winner: Some(0),
+            ..
+        }
+    ));
+    assert_eq!(w.round_wins, vec![1, 0, 0]);
+}
+
+#[test]
+fn any_of_four_teams_can_win_on_score() {
+    let mut w = teams_world("team_deathmatch", &[0, 1, 1, 1]);
+    run(&mut w, 5);
+    let gold = w.fighters.iter().position(|f| f.team == Some(3)).unwrap();
+    let red = w.fighters.iter().position(|f| f.team == Some(1)).unwrap();
+    // Gold kills Red five times (the score limit in the test modes).
+    for _ in 0..5 {
+        w.fighters[red].spawn_protect = 0.0;
+        w.damage(red, Some(gold), None, 500.0, false, false);
+        run(&mut w, (5.0 / DT) as usize);
+        if matches!(w.phase, Phase::MatchOver { .. }) {
+            break;
+        }
+    }
+    assert_eq!(w.scores[3], 5);
+    assert_eq!(w.phase, Phase::MatchOver { winner: Some(3) });
+}
+
+#[test]
+fn teams_without_spawns_use_free_spawns_near_each_other() {
+    // The arena only has spawns for teams 0 and 1 (ends of the room) and
+    // free spawns at x 5, 10, 19 and 24.
+    for seed in 0..20 {
+        let cfg = MatchConfig {
+            map_id: "arena".into(),
+            mode_id: "team_elimination".into(),
+            teams: 4,
+            team_bots: [1, 2, 2, 2],
+            seed,
+            ..Default::default()
+        };
+        let w = World::new(data(), cfg).unwrap();
+        for t in 2..4u8 {
+            let xs: Vec<f32> = w
+                .fighters
+                .iter()
+                .filter(|f| f.team == Some(t))
+                .map(|f| f.feet.x)
+                .collect();
+            for &x in &xs {
+                // Never in the Blue or Red corners.
+                assert!(
+                    x > 4.0 && x < 25.0,
+                    "seed {seed}: team {t} spawned at x {x}"
+                );
+            }
+            assert!(
+                (xs[0] - xs[1]).abs() < 10.0,
+                "seed {seed}: team {t} split up: {xs:?}"
+            );
+        }
+    }
 }

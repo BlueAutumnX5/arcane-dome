@@ -282,6 +282,10 @@ struct MapFile {
     modes: Vec<String>,
     #[serde(default)]
     recommended_players: Option<[u32; 2]>,
+    /// Team counts this map is fair for, say [2, 4] for a four-corner map.
+    /// Default: 2 up to the number of teams that have their own spawns.
+    #[serde(default)]
+    team_counts: Option<Vec<u8>>,
     // Shape maps.
     #[serde(default)]
     size: Option<[f32; 2]>,
@@ -338,6 +342,8 @@ pub struct MapDef {
     pub theme: Theme,
     pub modes: Vec<String>,
     pub recommended_players: Option<[u32; 2]>,
+    /// Team counts this map supports in team modes (sorted, 2 to 4).
+    pub team_counts: Vec<u8>,
     pub width: f32,
     pub height: f32,
     pub terrain: Terrain,
@@ -406,6 +412,7 @@ impl MapDef {
             theme: legacy_theme([27, 31, 42]),
             modes: Vec::new(),
             recommended_players: None,
+            team_counts: vec![2],
             width,
             height,
             terrain: Terrain::new(shapes, width, height),
@@ -718,7 +725,8 @@ pub fn parse_map(
         }
     }
 
-    let map = MapDef {
+    let file_team_counts = file.team_counts.clone();
+    let mut map = MapDef {
         id: file.id,
         name: file.name,
         description: file.description,
@@ -726,6 +734,7 @@ pub fn parse_map(
         theme,
         modes: file.modes,
         recommended_players: file.recommended_players,
+        team_counts: Vec::new(),
         width,
         height,
         terrain: Terrain::new(shapes, width, height),
@@ -739,19 +748,21 @@ pub fn parse_map(
     };
 
     // Spawns.
-    let mut counts = [0usize; 2];
+    // Teams 0 and 1 need their own spawns. Teams 2 and 3 may have some; if
+    // not, they borrow the free-for-all spawns in 3 and 4 team matches.
+    let mut counts = [0usize; 4];
     let mut ffa = 0usize;
     for (i, s) in map.spawns.iter().enumerate() {
         let what = format!("spawns[{i}]");
         check_placement(&map, &what, s.feet(), 3.0, &mut errs);
         match s.team {
             None => ffa += 1,
-            Some(t @ 0..=1) => counts[t as usize] += 1,
-            Some(t) => errs.push(format!("{what}.team: must be 0, 1 or null (got {t})")),
+            Some(t @ 0..=3) => counts[t as usize] += 1,
+            Some(t) => errs.push(format!("{what}.team: must be 0 to 3 or null (got {t})")),
         }
     }
     for (team, n) in counts.iter().enumerate() {
-        if *n < 2 {
+        if *n < 2 && (team < 2 || *n > 0) {
             errs.push(format!(
                 "spawns: needs at least 2 spawns for team {team}, found {n}"
             ));
@@ -762,6 +773,30 @@ pub fn parse_map(
             "spawns: needs at least 4 free-for-all spawns (team null), found {ffa}"
         ));
     }
+    // Team counts: every team in a supported count needs its own spawns.
+    let with_spawns = counts.iter().take_while(|&&n| n >= 2).count() as u8;
+    map.team_counts = match &file_team_counts {
+        Some(list) => {
+            let mut list = list.clone();
+            list.sort_unstable();
+            list.dedup();
+            for &n in &list {
+                if !(2..=4).contains(&n) {
+                    errs.push(format!("team_counts: {n} is not 2, 3 or 4"));
+                } else if n > with_spawns {
+                    errs.push(format!(
+                        "team_counts: {n} teams needs spawns for teams 0 to {}",
+                        n - 1
+                    ));
+                }
+            }
+            if list.is_empty() {
+                errs.push("team_counts: list at least one team count".into());
+            }
+            list
+        }
+        None => (2..=with_spawns.max(2)).collect(),
+    };
 
     // Pickups.
     for (i, p) in map.pickups.iter().enumerate() {
@@ -1061,6 +1096,67 @@ mod tests {
             all.contains("pickups[0].weapon_id: \"nope\" does not exist"),
             "{all}"
         );
+    }
+
+    #[test]
+    fn extra_team_spawns_are_checked() {
+        // Team 2 with a single spawn, and a team number that does not exist.
+        let spawns = r#"[{"x":1,"y":5,"team":0},{"x":2,"y":5,"team":0},
+            {"x":7,"y":5,"team":1},{"x":8,"y":5,"team":1},
+            {"x":3,"y":5,"team":2},{"x":4,"y":5,"team":4},
+            {"x":3,"y":5},{"x":4,"y":5},{"x":5,"y":5},{"x":6,"y":5}]"#;
+        let err = parse(&grid_json(GRID, spawns, "[]")).unwrap_err();
+        let all = err
+            .iter()
+            .map(|e| e.message.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            all.contains("needs at least 2 spawns for team 2, found 1"),
+            "{all}"
+        );
+        assert!(
+            all.contains("spawns[5].team: must be 0 to 3 or null (got 4)"),
+            "{all}"
+        );
+        assert!(
+            !all.contains("team 3"),
+            "team 3 has no spawns, which is fine: {all}"
+        );
+    }
+
+    #[test]
+    fn team_counts_default_and_explicit() {
+        let four = r#"[{"x":1,"y":5,"team":0},{"x":2,"y":5,"team":0},
+            {"x":7,"y":5,"team":1},{"x":8,"y":5,"team":1},
+            {"x":3,"y":5,"team":2},{"x":4,"y":5,"team":2},
+            {"x":5,"y":5,"team":3},{"x":6,"y":5,"team":3},
+            {"x":3,"y":5},{"x":4,"y":5},{"x":5,"y":5},{"x":6,"y":5}]"#;
+        // Default: 2 up to the teams that have spawns.
+        assert_eq!(
+            parse(&grid_json(GRID, SPAWNS, "[]")).unwrap().team_counts,
+            vec![2]
+        );
+        assert_eq!(
+            parse(&grid_json(GRID, four, "[]")).unwrap().team_counts,
+            vec![2, 3, 4]
+        );
+        // Explicit list, sorted.
+        let text = grid_json(GRID, four, "[]").replacen('{', r#"{ "team_counts": [4, 2],"#, 1);
+        assert_eq!(parse(&text).unwrap().team_counts, vec![2, 4]);
+        // Asking for more teams than have spawns, or a silly count.
+        let text = grid_json(GRID, SPAWNS, "[]").replacen('{', r#"{ "team_counts": [2, 3, 5],"#, 1);
+        let all = parse(&text)
+            .unwrap_err()
+            .iter()
+            .map(|e| e.message.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            all.contains("team_counts: 3 teams needs spawns for teams 0 to 2"),
+            "{all}"
+        );
+        assert!(all.contains("team_counts: 5 is not 2, 3 or 4"), "{all}");
     }
 
     #[test]

@@ -29,6 +29,11 @@ impl Difficulty {
     }
 }
 
+/// Most teams a team match can have.
+pub const MAX_TEAMS: usize = 4;
+/// Team names, by team number.
+pub const TEAM_NAMES: [&str; MAX_TEAMS] = ["Blue", "Red", "Green", "Gold"];
+
 /// Everything chosen on the custom match screen.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchConfig {
@@ -40,14 +45,17 @@ pub struct MatchConfig {
     pub rounds: Option<u32>,
     /// Overrides the mode's time limit.
     pub time_limit_s: Option<f32>,
-    /// Bots on the player's team (team modes only).
-    pub friendly_bots: u32,
-    /// Opposing bots (in free-for-all, simply the number of bots).
-    pub enemy_bots: u32,
-    /// Skill of opposing bots (and of every bot in free-for-all).
+    /// Free-for-all: how many bots.
+    pub bots: u32,
+    /// Free-for-all: how good the bots are.
     pub difficulty: Difficulty,
-    /// Skill of bots on the player's team.
-    pub friendly_difficulty: Difficulty,
+    /// Team modes: how many teams (2 to [`MAX_TEAMS`]).
+    pub teams: u8,
+    /// Team modes: bots on each team. Team 0 is the player's; the player is
+    /// not counted here.
+    pub team_bots: [u32; MAX_TEAMS],
+    /// Team modes: how good each team's bots are.
+    pub team_difficulty: [Difficulty; MAX_TEAMS],
     /// Use the map's powerup spot.
     pub powerups: bool,
     /// Use the map's weapon and shield stations.
@@ -68,10 +76,11 @@ impl Default for MatchConfig {
             score_limit: None,
             rounds: None,
             time_limit_s: None,
-            friendly_bots: 0,
-            enemy_bots: 5,
+            bots: 5,
             difficulty: Difficulty::Normal,
-            friendly_difficulty: Difficulty::Normal,
+            teams: 2,
+            team_bots: [2, 3, 2, 2],
+            team_difficulty: [Difficulty::Normal; MAX_TEAMS],
             powerups: true,
             stations: true,
             infinite_ammo: false,
@@ -182,9 +191,11 @@ pub struct World {
     pub round_wins: Vec<u32>,
 }
 
-const BOT_NAMES: [&str; 16] = [
+/// Enough for the biggest match (4 teams of 7); beyond that names get a number.
+const BOT_NAMES: [&str; 32] = [
     "Vex", "Orrin", "Talla", "Brisk", "Moth", "Kestrel", "Juno", "Pike", "Sable", "Wren", "Dax",
-    "Ember", "Quill", "Rook", "Ivo", "Nyx",
+    "Ember", "Quill", "Rook", "Ivo", "Nyx", "Lark", "Fenn", "Bram", "Hollis", "Mira", "Zeke",
+    "Tamsin", "Odo", "Rhea", "Sorrel", "Vale", "Flint", "Gale", "Indra", "Bex", "Corin",
 ];
 
 impl World {
@@ -225,20 +236,39 @@ impl World {
                 n_weapons,
             ));
         }
-        let friendly = if mode.is_team() {
-            config.friendly_bots
+        let num_teams = if mode.is_team() {
+            (config.teams as usize).clamp(2, (mode.teams as usize).clamp(2, MAX_TEAMS))
         } else {
             0
         };
-        let teams = std::iter::repeat_n(0u8, friendly as usize)
-            .chain(std::iter::repeat_n(1u8, config.enemy_bots as usize));
-        for (k, t) in teams.enumerate() {
+        let bot_teams: Vec<u8> = if mode.is_team() {
+            (0..num_teams)
+                .flat_map(|t| std::iter::repeat_n(t as u8, config.team_bots[t] as usize))
+                .collect()
+        } else {
+            vec![0; config.bots as usize]
+        };
+        for (k, t) in bot_teams.into_iter().enumerate() {
             let id = fighters.len();
-            let name = BOT_NAMES[k % BOT_NAMES.len()].to_owned();
+            let lap = k / BOT_NAMES.len();
+            let base = BOT_NAMES[k % BOT_NAMES.len()];
+            let name = if lap == 0 {
+                base.to_owned()
+            } else {
+                format!("{base} {}", lap + 1)
+            };
             fighters.push(Fighter::new(id, name, team(t), true, n_weapons));
         }
         if fighters.len() < 2 {
             return Err("a match needs at least two fighters".into());
+        }
+        if mode.is_team() {
+            let manned = (0..num_teams as u8)
+                .filter(|&t| fighters.iter().any(|f| f.team == Some(t)))
+                .count();
+            if manned < 2 {
+                return Err("a team match needs at least two teams with fighters".into());
+            }
         }
 
         let pickups = map
@@ -265,7 +295,11 @@ impl World {
             .collect();
         let stand_cells = super::gadgets::stand_cells(&map);
 
-        let sides = if mode.is_team() { 2 } else { fighters.len() };
+        let sides = if mode.is_team() {
+            num_teams
+        } else {
+            fighters.len()
+        };
         let mut world = Self {
             rng: Rng::new(config.seed),
             data,
@@ -555,23 +589,30 @@ impl World {
         self.events.push(Event::Spawn { fighter: i });
     }
 
-    /// Pick the allowed spawn point farthest from living enemies (with a bit of randomness).
+    /// Pick the allowed spawn point farthest from living enemies (with a bit of
+    /// randomness). A team the map has no spawns for uses the free-for-all
+    /// spawns, and then also tries to stay close to its living teammates.
     fn choose_spawn(&mut self, i: usize) -> SpawnDef {
         let team_mode = self.mode.is_team();
         let team = self.fighters[i].team;
-        let mut candidates: Vec<SpawnDef> = self
-            .map
-            .spawns
-            .iter()
-            .filter(|s| {
-                if team_mode {
-                    s.team == team
-                } else {
-                    s.team.is_none()
-                }
-            })
-            .copied()
-            .collect();
+        let own = |s: &&SpawnDef| {
+            if team_mode {
+                s.team == team
+            } else {
+                s.team.is_none()
+            }
+        };
+        let mut candidates: Vec<SpawnDef> = self.map.spawns.iter().filter(own).copied().collect();
+        let borrowed = candidates.is_empty();
+        if borrowed {
+            candidates = self
+                .map
+                .spawns
+                .iter()
+                .filter(|s| s.team.is_none())
+                .copied()
+                .collect();
+        }
         if candidates.is_empty() {
             candidates = self.map.spawns.clone();
         }
@@ -579,6 +620,12 @@ impl World {
             .fighters
             .iter()
             .filter(|o| o.alive && o.id != i && !self.allies(i, o.id))
+            .map(|o| o.feet)
+            .collect();
+        let friends: Vec<Vec2> = self
+            .fighters
+            .iter()
+            .filter(|o| team_mode && borrowed && o.alive && o.id != i && self.allies(i, o.id))
             .map(|o| o.feet)
             .collect();
         let mut best = candidates[0];
@@ -589,7 +636,11 @@ impl World {
                 .iter()
                 .map(|e| e.distance(p))
                 .fold(50.0f32, f32::min);
-            let score = nearest + self.rng.range(0.0, 4.0);
+            let buddy = friends
+                .iter()
+                .map(|f| f.distance(p))
+                .fold(None, |m: Option<f32>, d| Some(m.map_or(d, |m| m.min(d))));
+            let score = nearest - buddy.map_or(0.0, |d| d * 0.6) + self.rng.range(0.0, 4.0);
             if score > best_score {
                 best_score = score;
                 best = s;

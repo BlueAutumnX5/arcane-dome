@@ -14,7 +14,8 @@ pub struct ModeDef {
     /// One or two sentences for the match setup screen.
     #[serde(default)]
     pub description: String,
-    /// 1 = everyone for themselves, 2 = two teams.
+    /// 1 = everyone for themselves; 2 to 4 = a team mode allowing up to
+    /// that many teams (the match setup picks how many).
     pub teams: u8,
     /// false = elimination rounds.
     pub respawn: bool,
@@ -45,7 +46,7 @@ impl ModeDef {
     }
 
     pub fn is_team(&self) -> bool {
-        self.teams == 2
+        self.teams >= 2
     }
 }
 
@@ -58,8 +59,8 @@ pub fn parse_modes(label: &str, text: &str) -> Result<Vec<ModeDef>, Vec<DataErro
         if !is_snake_case(&id) {
             bad("id must be snake_case".into());
         }
-        if !(1..=2).contains(&mode.teams) {
-            bad(format!("teams: must be 1 or 2 (got {})", mode.teams));
+        if !(1..=4).contains(&mode.teams) {
+            bad(format!("teams: must be 1 to 4 (got {})", mode.teams));
         }
         if mode.respawn && mode.score_limit.is_none_or(|s| s == 0) {
             bad("score_limit: required and greater than 0 when respawn is true".into());
