@@ -40,6 +40,9 @@ pub struct NavGraph {
     pub nodes: Vec<(i32, i32)>,
     pub edges: Vec<Vec<Edge>>,
     index: HashMap<(i32, i32), usize>,
+    /// Feet height when standing on each node (mid-ramp for ramp cells).
+    feet_y: Vec<f32>,
+    slope: Vec<bool>,
 }
 
 /// Cells a body can occupy.
@@ -52,10 +55,15 @@ fn clear(k: TileKind) -> bool {
     matches!(k, TileKind::Air | TileKind::Water | TileKind::OneWay)
 }
 
+/// A cell a fighter can stand in: open with headroom and a floor below, or a
+/// ramp cell itself (a fighter on a ramp stands inside the ramp's tile).
 fn standable(map: &MapDef, x: i32, y: i32) -> bool {
-    open(map.tile(x, y))
-        && open(map.tile(x, y - 1))
-        && matches!(map.tile(x, y + 1), TileKind::Solid | TileKind::OneWay)
+    let k = map.tile(x, y);
+    if k.is_slope() {
+        return open(map.tile(x, y - 1));
+    }
+    let below = map.tile(x, y + 1);
+    open(k) && open(map.tile(x, y - 1)) && below.is_floor() && !below.is_slope()
 }
 
 impl NavGraph {
@@ -70,10 +78,21 @@ impl NavGraph {
                 }
             }
         }
+        let slope: Vec<bool> = nodes
+            .iter()
+            .map(|&(x, y)| map.tile(x, y).is_slope())
+            .collect();
+        let feet_y = nodes
+            .iter()
+            .zip(&slope)
+            .map(|(&(_, y), &s)| y as f32 + if s { 0.5 } else { 1.0 })
+            .collect();
         let mut graph = Self {
             edges: vec![Vec::new(); nodes.len()],
             nodes,
             index,
+            feet_y,
+            slope,
         };
         for n in 0..graph.nodes.len() {
             let edges = graph.edges_from(map, n);
@@ -104,6 +123,14 @@ impl NavGraph {
 
         for dx in [-1, 1] {
             let nx = x + dx;
+            // Ramps join cells one row up or down diagonally.
+            for dy in [-1, 1] {
+                if let Some(&to) = self.index.get(&(nx, y + dy))
+                    && (self.slope[n] || self.slope[to])
+                {
+                    add(to, EdgeKind::Walk, 1.4);
+                }
+            }
             if let Some(&to) = self.index.get(&(nx, y)) {
                 add(to, EdgeKind::Walk, 1.0);
             } else if open(map.tile(nx, y)) && open(map.tile(nx, y - 1)) {
@@ -210,8 +237,8 @@ impl NavGraph {
 
     /// Where a fighter's feet stand on node `n`.
     pub fn pos(&self, n: usize) -> Vec2 {
-        let (x, y) = self.nodes[n];
-        vec2(x as f32 + 0.5, y as f32 + 1.0)
+        let (x, _) = self.nodes[n];
+        vec2(x as f32 + 0.5, self.feet_y[n])
     }
 
     /// The node under (or closest to) a feet position.
@@ -368,6 +395,29 @@ mod tests {
             g.edges[plat]
                 .iter()
                 .any(|e| e.kind == EdgeKind::Drop && g.nodes[e.to] == (3, 8))
+        );
+    }
+
+    #[test]
+    fn ramps_connect_floor_and_ledge_by_walking() {
+        let map = MapDef::from_rows(&[
+            "##########",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#..../####",
+            "##########",
+        ]);
+        let g = NavGraph::build(&map);
+        let floor = g.index[&(2, 4)];
+        let ramp = g.index[&(5, 4)];
+        let ledge = g.index[&(7, 3)];
+        assert_eq!(g.pos(ramp).y, 4.5, "bots stand mid-ramp");
+        let path = g.find_path(floor, ledge).expect("path up the ramp");
+        assert!(path.iter().all(|(_, k)| *k == EdgeKind::Walk), "{path:?}");
+        assert!(
+            !g.index.contains_key(&(5, 3)),
+            "cell above a ramp is not a separate stand spot"
         );
     }
 }

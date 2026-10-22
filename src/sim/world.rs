@@ -1,5 +1,5 @@
 use super::fighter::*;
-use super::physics::{self, move_body, overlaps_kind, standing_on_one_way};
+use super::physics::{self, move_body, overlaps_kind, overlaps_solid, standing_on_one_way};
 use super::{DT, Input, ObjectState, Phase, Projectile, Rng};
 use crate::data::{
     Category, GameData, MapDef, ModeDef, ObjectKind, PickupDef, PickupKind, ProjectileKind,
@@ -353,7 +353,7 @@ impl World {
         // Crouch only on the ground; stay crouched while something is overhead.
         if input.crouch && f.on_ground {
             f.crouching = true;
-        } else if f.crouching && !overlaps_kind(map, f.feet, STAND_SIZE, TileKind::Solid) {
+        } else if f.crouching && !overlaps_solid(map, f.feet, STAND_SIZE) {
             f.crouching = false;
         }
         f.in_water = overlaps_kind(map, f.feet, f.size(), TileKind::Water);
@@ -393,7 +393,15 @@ impl World {
         };
         f.vel.y = (f.vel.y + gravity * DT).min(max_fall.max(f.vel.y));
         let size = f.size();
-        let res = move_body(map, &mut f.feet, size, &mut f.vel, DT, f.drop_timer > 0.0);
+        let res = move_body(
+            map,
+            &mut f.feet,
+            size,
+            &mut f.vel,
+            DT,
+            f.drop_timer > 0.0,
+            f.on_ground,
+        );
         if res.landed {
             f.on_ground = true;
             f.air_jumps = 1;

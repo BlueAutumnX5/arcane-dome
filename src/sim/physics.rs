@@ -84,6 +84,10 @@ pub struct MoveResult {
 /// Move a body by `vel * dt`, stopping at solid tiles. One-way tiles only
 /// block downward movement, and only when the body started above them and
 /// is not dropping through. Blocked velocity components are zeroed.
+///
+/// Ramps: bodies stand on a ramp at the floor height under their center.
+/// `stick` (pass "was on the ground") keeps a body glued to a ramp while
+/// walking down it instead of hopping off.
 pub fn move_body(
     map: &MapDef,
     feet: &mut Vec2,
@@ -91,6 +95,7 @@ pub fn move_body(
     vel: &mut Vec2,
     dt: f32,
     drop_through: bool,
+    stick: bool,
 ) -> MoveResult {
     let delta = *vel * dt;
     let steps = ((delta.x.abs().max(delta.y.abs()) / MAX_STEP).ceil() as i32).max(1);
@@ -114,8 +119,51 @@ pub fn move_body(
                 None => {}
             }
         }
+        if vel.y >= 0.0
+            && let Some(surface) = slope_floor(map, *feet)
+        {
+            let gap = surface - feet.y;
+            // Below the ramp surface: push up onto it. Slightly above while
+            // walking down it: snap down so we don't bounce.
+            if gap <= SKIN || (stick && gap < STICK_DIST) {
+                feet.y = surface;
+                vel.y = 0.0;
+                res.landed = true;
+            }
+        }
     }
     res
+}
+
+/// How far below a ramp's surface a walking body may be snapped down.
+const STICK_DIST: f32 = 0.45;
+/// Height a body may step up when walking off the top of a ramp.
+const STEP_UP: f32 = 0.55;
+
+/// Floor height of a ramp under the body's center, if it stands on one.
+pub fn slope_floor(map: &MapDef, feet: Vec2) -> Option<f32> {
+    let cx = feet.x.floor() as i32;
+    let row = (feet.y - SKIN).floor() as i32;
+    let u = feet.x - cx as f32;
+    (row..=row + 1).find_map(|r| map.tile(cx, r).slope_surface(r, u))
+}
+
+/// Is this point inside something bullets and grenades can't pass?
+pub fn point_blocked(map: &MapDef, p: Vec2) -> bool {
+    let (cx, cy) = (p.x.floor() as i32, p.y.floor() as i32);
+    let k = map.tile(cx, cy);
+    if k.is_solid() {
+        return true;
+    }
+    k.slope_surface(cy, p.x - cx as f32)
+        .is_some_and(|s| p.y >= s)
+}
+
+/// Does the body overlap any fully solid tile (rock or sludge)?
+pub fn overlaps_solid(map: &MapDef, feet: Vec2, size: Vec2) -> bool {
+    let (row0, row1) = rows_of(feet, size);
+    let (col0, col1) = cols_of(feet, size);
+    (row0..=row1).any(|r| (col0..=col1).any(|c| map.tile(c, r).is_solid()))
 }
 
 fn rows_of(feet: Vec2, size: Vec2) -> (i32, i32) {
@@ -137,13 +185,29 @@ fn cols_of(feet: Vec2, size: Vec2) -> (i32, i32) {
 fn sweep_x(map: &MapDef, feet: &mut Vec2, size: Vec2, dx: f32) -> bool {
     let half = size.x * 0.5;
     let (row0, row1) = rows_of(*feet, size);
-    let solid_col = |c: i32| (row0..=row1).any(|r| map.tile(c, r) == TileKind::Solid);
+    let solid_col = |c: i32| (row0..=row1).any(|r| map.tile(c, r).is_solid());
+    // Off the top of a ramp, the next tile's edge can be a little above the
+    // feet. If only the bottom row blocks and it is low enough, step up.
+    let bottom = row1;
+    let step_up = |c: i32, feet: &Vec2| {
+        let rise = feet.y - bottom as f32;
+        // Rows the body would cover after stepping up onto row `bottom`.
+        let raised_top = (bottom as f32 - size.y + SKIN).floor() as i32;
+        rise > 0.0
+            && rise <= STEP_UP
+            && !(raised_top..bottom).any(|r| map.tile(c, r).is_solid())
+            && !overlaps_solid(map, vec2(feet.x, bottom as f32), size)
+    };
     if dx > 0.0 {
         let old = feet.x + half;
         let new = old + dx;
         // Columns whose left edge lies in [old, new).
         for c in (old - SKIN).ceil() as i32..=(new.ceil() as i32 - 1) {
             if solid_col(c) {
+                if step_up(c, feet) {
+                    feet.y = bottom as f32;
+                    continue;
+                }
                 feet.x = c as f32 - half;
                 return true;
             }
@@ -155,6 +219,11 @@ fn sweep_x(map: &MapDef, feet: &mut Vec2, size: Vec2, dx: f32) -> bool {
         let mut c = (old + SKIN).floor() as i32 - 1;
         while c >= new.floor() as i32 {
             if solid_col(c) {
+                if step_up(c, feet) {
+                    feet.y = bottom as f32;
+                    c -= 1;
+                    continue;
+                }
                 feet.x = (c + 1) as f32 + half;
                 return true;
             }
@@ -173,9 +242,8 @@ fn sweep_y(map: &MapDef, feet: &mut Vec2, size: Vec2, dy: f32, drop_through: boo
         let new = old + dy;
         for r in (old - SKIN).ceil() as i32..=(new.ceil() as i32 - 1) {
             let blocks = (col0..=col1).any(|c| match map.tile(c, r) {
-                TileKind::Solid => true,
                 TileKind::OneWay => !drop_through,
-                _ => false,
+                k => k.is_solid(),
             });
             if blocks {
                 feet.y = r as f32;
@@ -187,7 +255,11 @@ fn sweep_y(map: &MapDef, feet: &mut Vec2, size: Vec2, dy: f32, drop_through: boo
         let new = old + dy;
         let mut r = (old + SKIN).floor() as i32 - 1;
         while r >= new.floor() as i32 {
-            if (col0..=col1).any(|c| map.tile(c, r) == TileKind::Solid) {
+            // The underside of a ramp is solid too.
+            if (col0..=col1).any(|c| {
+                let k = map.tile(c, r);
+                k.is_solid() || k.is_slope()
+            }) {
                 feet.y = (r + 1) as f32 + size.y;
                 return Some(false);
             }
@@ -213,14 +285,14 @@ pub fn standing_on_one_way(map: &MapDef, feet: Vec2, size: Vec2) -> bool {
     }
     let (col0, col1) = cols_of(feet, size);
     let kinds: Vec<TileKind> = (col0..=col1).map(|c| map.tile(c, r)).collect();
-    kinds.contains(&TileKind::OneWay) && !kinds.contains(&TileKind::Solid)
+    kinds.contains(&TileKind::OneWay) && !kinds.iter().any(|k| k.is_solid())
 }
 
 /// Distance along `dir` (normalized) to the first solid tile, capped at `max_dist`.
 /// One-way platforms do not stop shots.
 pub fn raycast(map: &MapDef, origin: Vec2, dir: Vec2, max_dist: f32) -> f32 {
     let mut cell = (origin.x.floor() as i32, origin.y.floor() as i32);
-    if map.tile(cell.0, cell.1) == TileKind::Solid {
+    if point_blocked(map, origin) {
         return 0.0;
     }
     let step_x = if dir.x > 0.0 { 1 } else { -1 };
@@ -260,7 +332,15 @@ pub fn raycast(map: &MapDef, origin: Vec2, dir: Vec2, max_dist: f32) -> f32 {
         if t >= max_dist {
             return max_dist;
         }
-        if map.tile(cell.0, cell.1) == TileKind::Solid {
+        let k = map.tile(cell.0, cell.1);
+        if k.is_solid() {
+            return t;
+        }
+        // Ramps only stop a shot that enters below their surface.
+        let p = origin + dir * t;
+        if k.slope_surface(cell.1, p.x - cell.0 as f32)
+            .is_some_and(|s| p.y >= s - 1e-4)
+        {
             return t;
         }
     }
@@ -299,7 +379,7 @@ mod tests {
         let mut last = MoveResult::default();
         for _ in 0..frames {
             vel.y += 48.0 * DT;
-            last = move_body(map, feet, SIZE, vel, DT, false);
+            last = move_body(map, feet, SIZE, vel, DT, false, false);
         }
         last
     }
@@ -321,7 +401,7 @@ mod tests {
         let mut feet = vec2(2.0, 7.0);
         let mut vel = vec2(-20.0, 0.0);
         for _ in 0..30 {
-            move_body(&map, &mut feet, SIZE, &mut vel, DT, false);
+            move_body(&map, &mut feet, SIZE, &mut vel, DT, false, false);
             vel.x = -20.0;
         }
         assert!((feet.x - (1.0 + SIZE.x * 0.5)).abs() < 1e-5, "{feet}");
@@ -333,7 +413,7 @@ mod tests {
         let map = room();
         let mut feet = vec2(3.0, 7.0);
         let mut vel = vec2(10.0, 0.0);
-        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.5, false);
+        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.5, false, false);
         assert!(res.hit_wall);
         assert!((feet.x - (5.0 - SIZE.x * 0.5)).abs() < 1e-5);
     }
@@ -343,7 +423,7 @@ mod tests {
         let map = room();
         let mut feet = vec2(8.0, 6.0);
         let mut vel = vec2(30.0, 30.0);
-        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.2, false);
+        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.2, false, false);
         assert!(res.hit_wall && res.landed);
         assert!((feet.x - (9.0 - SIZE.x * 0.5)).abs() < 1e-5);
         assert_eq!(feet.y, 7.0);
@@ -354,7 +434,7 @@ mod tests {
         let map = room();
         let mut feet = vec2(2.5, 4.0);
         let mut vel = vec2(0.0, -40.0);
-        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.2, false);
+        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.2, false, false);
         assert!(res.hit_ceiling);
         assert!((feet.y - (1.0 + SIZE.y)).abs() < 1e-5);
     }
@@ -364,7 +444,7 @@ mod tests {
         let map = room();
         let mut feet = vec2(4.5, 7.0);
         let mut vel = vec2(0.0, -12.5);
-        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.2, false);
+        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.2, false, false);
         assert!(!res.hit_ceiling);
         assert!(
             (feet.y - 4.5).abs() < 1e-4,
@@ -377,13 +457,13 @@ mod tests {
         let map = room();
         let mut feet = vec2(4.5, 2.0);
         let mut vel = vec2(0.0, 10.0);
-        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.3, false);
+        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.3, false, false);
         assert!(res.landed);
         assert_eq!(feet.y, 3.0);
         assert!(standing_on_one_way(&map, feet, SIZE));
 
         let mut vel = vec2(0.0, 10.0);
-        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.1, true);
+        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.1, true, false);
         assert!(!res.landed);
         assert!(feet.y > 3.0);
     }
@@ -393,7 +473,15 @@ mod tests {
         let map = MapDef::from_rows(&["#####", "#...#", "#...#", "#...#", "#####"]);
         let mut feet = vec2(2.0, 3.5);
         let mut vel = vec2(500.0, 0.0);
-        move_body(&map, &mut feet, Vec2::new(0.5, 0.5), &mut vel, 0.5, false);
+        move_body(
+            &map,
+            &mut feet,
+            Vec2::new(0.5, 0.5),
+            &mut vel,
+            0.5,
+            false,
+            false,
+        );
         assert!((feet.x - 3.75).abs() < 1e-5, "{feet}");
     }
 
@@ -417,5 +505,86 @@ mod tests {
         let t = b.ray_hit(vec2(0.0, 4.0), vec2(1.0, 0.0), 100.0).unwrap();
         assert!((t - (5.0 - SIZE.x * 0.5)).abs() < 1e-5);
         assert!(b.ray_hit(vec2(0.0, 1.0), vec2(1.0, 0.0), 100.0).is_none());
+    }
+
+    fn ramp_room() -> MapDef {
+        MapDef::from_rows(&[
+            "##########",
+            "#........#",
+            "#........#",
+            "#..%%....#",
+            "#........#",
+            "#........#",
+            "#........#",
+            "#..../####",
+            "##########",
+        ])
+    }
+
+    /// Walk with gravity, sticking to the ground like a fighter does.
+    fn walk(map: &MapDef, feet: &mut Vec2, vx: f32, frames: usize) -> Vec<bool> {
+        let mut vel = Vec2::ZERO;
+        let mut on_ground = true;
+        let mut grounded = Vec::new();
+        for _ in 0..frames {
+            vel.x = vx;
+            vel.y += 48.0 * DT;
+            let res = move_body(map, feet, SIZE, &mut vel, DT, false, on_ground);
+            on_ground = res.landed;
+            grounded.push(res.landed);
+        }
+        grounded
+    }
+
+    #[test]
+    fn walking_up_a_ramp_reaches_the_ledge() {
+        let map = ramp_room();
+        let mut feet = vec2(2.5, 8.0);
+        walk(&map, &mut feet, 6.0, 120);
+        assert!(feet.x > 7.5, "made it across: {feet}");
+        assert!((feet.y - 7.0).abs() < 1e-3, "standing on the ledge: {feet}");
+    }
+
+    #[test]
+    fn walking_down_a_ramp_stays_grounded() {
+        let map = ramp_room();
+        let mut feet = vec2(8.0, 7.0);
+        let grounded = walk(&map, &mut feet, -6.0, 90);
+        assert!((feet.y - 8.0).abs() < 1e-3, "back on the floor: {feet}");
+        assert!(grounded.iter().all(|g| *g), "never left the ground");
+    }
+
+    #[test]
+    fn standing_mid_ramp_uses_the_surface_height() {
+        let map = ramp_room();
+        let mut feet = vec2(5.5, 7.0);
+        let mut vel = Vec2::ZERO;
+        for _ in 0..30 {
+            vel.y += 48.0 * DT;
+            move_body(&map, &mut feet, SIZE, &mut vel, DT, false, true);
+        }
+        assert!((feet.y - 7.5).abs() < 1e-3, "{feet}");
+    }
+
+    #[test]
+    fn sludge_blocks_jumps_like_rock() {
+        let map = ramp_room();
+        let mut feet = vec2(3.5, 8.0);
+        let mut vel = vec2(0.0, -15.0);
+        let res = move_body(&map, &mut feet, SIZE, &mut vel, 0.3, false, false);
+        assert!(res.hit_ceiling);
+        assert!((feet.y - (4.0 + SIZE.y)).abs() < 1e-4, "{feet}");
+    }
+
+    #[test]
+    fn shots_pass_over_the_open_half_of_a_ramp() {
+        let map = ramp_room();
+        let d = raycast(&map, vec2(2.5, 7.3), vec2(1.0, 0.0), 50.0);
+        assert!(
+            (d - 3.5).abs() < 1e-3,
+            "stopped by the ledge, not the ramp: {d}"
+        );
+        assert!(point_blocked(&map, vec2(5.9, 7.9)));
+        assert!(!point_blocked(&map, vec2(5.1, 7.2)));
     }
 }

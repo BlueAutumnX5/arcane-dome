@@ -91,7 +91,7 @@ pub fn stand_cells(map: &MapDef) -> Vec<Vec2> {
         for x in 0..map.width as i32 {
             let standable = map.tile(x, y) == TileKind::Air
                 && map.tile(x, y - 1) == TileKind::Air
-                && matches!(map.tile(x, y + 1), TileKind::Solid | TileKind::OneWay);
+                && map.tile(x, y + 1).is_floor();
             if standable && !pads.contains(&(x, y)) {
                 out.push(vec2(x as f32 + 0.5, y as f32 + 1.0));
             }

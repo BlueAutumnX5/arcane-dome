@@ -11,7 +11,8 @@ mod weapon;
 
 pub use error::{DataError, DataErrors};
 pub use map::{
-    BotHint, MapDef, MapObject, ObjectKind, PickupDef, PickupKind, SpawnDef, TileKind, parse_map,
+    Backdrop, BotHint, MapDef, MapObject, ObjectKind, PickupDef, PickupKind, SpawnDef, TileKind,
+    parse_map,
 };
 pub use modes::{ModeDef, parse_modes};
 pub use powerups::{PowerupConfig, PowerupDef, PowerupEffect, parse_powerups};

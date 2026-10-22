@@ -2,7 +2,7 @@ use super::fighter::*;
 use super::physics::{line_of_sight, raycast};
 use super::world::Event;
 use super::{DT, Input, Phase, World};
-use crate::data::{Falloff, ProjectileKind, Special, TileKind, WeaponDef};
+use crate::data::{Falloff, ProjectileKind, Special, WeaponDef};
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
 
@@ -289,7 +289,7 @@ impl World {
     }
 
     fn solid_at(&self, p: Vec2) -> bool {
-        self.map.tile(p.x.floor() as i32, p.y.floor() as i32) == TileKind::Solid
+        super::physics::point_blocked(&self.map, p)
     }
 
     fn end_projectile(&mut self, p: &mut Projectile, def: &WeaponDef) {

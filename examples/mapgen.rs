@@ -111,6 +111,9 @@ fn to_char(k: TileKind) -> char {
         TileKind::OneWay => '=',
         TileKind::Spikes => '^',
         TileKind::Water => '~',
+        TileKind::SlopeUpRight => '/',
+        TileKind::SlopeUpLeft => '\\',
+        TileKind::Sludge => '%',
     }
 }
 
@@ -483,7 +486,7 @@ fn render_json(
     writeln!(s, "  \"grid\": [").unwrap();
     for (i, r) in rows.iter().enumerate() {
         let comma = if i + 1 < rows.len() { "," } else { "" };
-        writeln!(s, "    \"{r}\"{comma}").unwrap();
+        writeln!(s, "    {}{comma}", serde_json::to_string(r).unwrap()).unwrap();
     }
     writeln!(s, "  ],").unwrap();
     for (key, items, last) in [("spawns", spawns, false), ("pickups", pickups, false)] {

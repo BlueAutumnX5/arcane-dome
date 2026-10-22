@@ -370,6 +370,21 @@ pub fn map_preview(map: &MapDef, r: Rect, sky: [u8; 3]) {
                     k + 0.5,
                     Color::from_rgba(60, 130, 220, 200),
                 ),
+                TileKind::Sludge => {
+                    draw_rectangle(px, py, k + 0.5, k + 0.5, Color::from_rgba(96, 110, 58, 255))
+                }
+                TileKind::SlopeUpRight => draw_triangle(
+                    vec2(px, py + k),
+                    vec2(px + k, py + k),
+                    vec2(px + k, py),
+                    Color::from_rgba(70, 78, 104, 255),
+                ),
+                TileKind::SlopeUpLeft => draw_triangle(
+                    vec2(px, py + k),
+                    vec2(px + k, py + k),
+                    vec2(px, py),
+                    Color::from_rgba(70, 78, 104, 255),
+                ),
                 TileKind::Air => {}
             }
         }

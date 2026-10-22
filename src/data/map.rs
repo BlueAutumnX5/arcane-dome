@@ -11,6 +11,12 @@ pub enum TileKind {
     OneWay,
     Spikes,
     Water,
+    /// Ramp whose floor rises toward the right (`/`).
+    SlopeUpRight,
+    /// Ramp whose floor rises toward the left (`\`).
+    SlopeUpLeft,
+    /// Crusty buildup. Blocks like rock; looks like sludge.
+    Sludge,
 }
 
 impl TileKind {
@@ -21,8 +27,46 @@ impl TileKind {
             Self::OneWay => "one_way",
             Self::Spikes => "spikes",
             Self::Water => "water",
+            Self::SlopeUpRight => "slope_up_right",
+            Self::SlopeUpLeft => "slope_up_left",
+            Self::Sludge => "sludge",
         }
     }
+
+    /// Fully blocking tiles (rock and sludge).
+    pub fn is_solid(self) -> bool {
+        matches!(self, Self::Solid | Self::Sludge)
+    }
+
+    pub fn is_slope(self) -> bool {
+        matches!(self, Self::SlopeUpRight | Self::SlopeUpLeft)
+    }
+
+    /// Something a fighter can stand on top of.
+    pub fn is_floor(self) -> bool {
+        self.is_solid() || self.is_slope() || self == Self::OneWay
+    }
+
+    /// For a slope tile at row `cy`, the floor height at local x `u` (0..1).
+    pub fn slope_surface(self, cy: i32, u: f32) -> Option<f32> {
+        let u = u.clamp(0.0, 1.0);
+        match self {
+            Self::SlopeUpRight => Some(cy as f32 + 1.0 - u),
+            Self::SlopeUpLeft => Some(cy as f32 + u),
+            _ => None,
+        }
+    }
+}
+
+/// Purely visual layer behind the play area, for building interiors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Backdrop {
+    #[default]
+    None,
+    /// Interior wall (`#` in the `interior` rows).
+    Wall,
+    /// Interior wall with a window (`w`).
+    Window,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -155,6 +199,10 @@ struct MapFile {
     recommended_players: Option<[u32; 2]>,
     legend: BTreeMap<String, TileKind>,
     grid: Vec<String>,
+    /// Optional backdrop rows, same size as `grid`: `#` interior wall,
+    /// `w` window, `.` open sky.
+    #[serde(default)]
+    interior: Vec<String>,
     spawns: Vec<SpawnDef>,
     #[serde(default)]
     pickups: Vec<PickupDef>,
@@ -208,6 +256,7 @@ pub struct MapDef {
     pub width: usize,
     pub height: usize,
     tiles: Vec<TileKind>,
+    backdrop: Vec<Backdrop>,
     pub spawns: Vec<SpawnDef>,
     pub pickups: Vec<PickupDef>,
     pub objects: Vec<MapObject>,
@@ -225,6 +274,20 @@ impl MapDef {
         }
     }
 
+    pub fn backdrop(&self, x: i32, y: i32) -> Backdrop {
+        if x < 0 || y < 0 || x as usize >= self.width || y as usize >= self.height {
+            return Backdrop::None;
+        }
+        self.backdrop
+            .get(y as usize * self.width + x as usize)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn has_backdrop(&self) -> bool {
+        self.backdrop.iter().any(|b| *b != Backdrop::None)
+    }
+
     /// Build a bare map from ASCII rows with the default legend
     /// (`#` solid, `=` one-way, `^` spikes, `~` water, anything else air).
     /// Handy for tests and tools; no spawns or pickups.
@@ -236,6 +299,9 @@ impl MapDef {
             for _ in 0..width {
                 tiles.push(match chars.next() {
                     Some('#') => TileKind::Solid,
+                    Some('/') => TileKind::SlopeUpRight,
+                    Some('\\') => TileKind::SlopeUpLeft,
+                    Some('%') => TileKind::Sludge,
                     Some('=') => TileKind::OneWay,
                     Some('^') => TileKind::Spikes,
                     Some('~') => TileKind::Water,
@@ -254,6 +320,7 @@ impl MapDef {
             width,
             height: rows.len(),
             tiles,
+            backdrop: Vec::new(),
             spawns: Vec::new(),
             pickups: Vec::new(),
             objects: Vec::new(),
@@ -267,8 +334,8 @@ impl MapDef {
         loop {
             match self.tile(x, yy) {
                 TileKind::Air | TileKind::Water => yy += 1,
-                TileKind::Solid | TileKind::OneWay => return true,
-                TileKind::Spikes => return false,
+                k if k.is_floor() => return true,
+                _ => return false,
             }
         }
     }
@@ -353,6 +420,38 @@ pub fn parse_map(
             }
         }
     }
+    let mut backdrop = Vec::new();
+    if !file.interior.is_empty() {
+        if file.interior.len() != file.grid.len() {
+            errs.push(format!(
+                "interior: has {} rows, expected {} (same as grid)",
+                file.interior.len(),
+                file.grid.len()
+            ));
+        }
+        for (y, row) in file.interior.iter().enumerate() {
+            if row.chars().count() != width {
+                errs.push(format!(
+                    "interior[{y}]: has {} columns, expected {width}",
+                    row.chars().count()
+                ));
+                continue;
+            }
+            for (x, c) in row.chars().enumerate() {
+                backdrop.push(match c {
+                    '.' => Backdrop::None,
+                    '#' => Backdrop::Wall,
+                    'w' => Backdrop::Window,
+                    other => {
+                        errs.push(format!(
+                            "interior[{y}] column {x}: '{other}' must be '.', '#' or 'w'"
+                        ));
+                        Backdrop::None
+                    }
+                });
+            }
+        }
+    }
     if !errs.is_empty() {
         return Err(to_errors(label, errs));
     }
@@ -368,6 +467,7 @@ pub fn parse_map(
         width,
         height: file.grid.len(),
         tiles,
+        backdrop,
         spawns: file.spawns,
         pickups: file.pickups,
         objects: file.objects,
@@ -455,7 +555,7 @@ pub fn parse_map(
                     "{what}.height_tiles: must be between 2 and 30 (got {h})"
                 ));
             }
-            if map.tile(o.x, o.y + 1) != TileKind::Solid {
+            if !map.tile(o.x, o.y + 1).is_solid() {
                 errs.push(format!(
                     "{what}: thrusters must sit directly on a solid tile"
                 ));
@@ -478,7 +578,7 @@ pub fn parse_map(
     }
 
     for (i, h) in map.bot_hints.iter().enumerate() {
-        if map.tile(h.x, h.y) == TileKind::Solid {
+        if map.tile(h.x, h.y).is_solid() {
             errs.push(format!("bot_hints[{i}]: is inside a solid tile"));
         }
     }
@@ -511,7 +611,7 @@ fn check_placement(
         return;
     }
     // Fighters are just under 2 tiles tall.
-    if needs_headroom && map.tile(x, y - 1) == TileKind::Solid {
+    if needs_headroom && map.tile(x, y - 1).is_solid() {
         errs.push(format!("{what}: has no headroom (tile above is solid)"));
     }
     if !map.has_ground_below(x, y) {
