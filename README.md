@@ -9,7 +9,7 @@ weapons, maps and modes all defined in JSON.
 
 > Status: early development. See [SPEC.md](SPEC.md) for the design and milestones.
 
-## What is in it so far
+## Whats already in the game
 
 - **1 map**, Foundry Ascent: a steel mill around a lava pit, with a climbable
   tower and a thruster shaft. More maps are on the way (two drafts are in
