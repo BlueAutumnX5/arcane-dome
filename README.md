@@ -1,3 +1,6 @@
+>  [!CAUTION]
+> # VERY VERY VERY VERY EARLY development!1!1!1! Do not expect playable visuals and gameplay yet!
+
 # Arcane Dome
 
 A 2D side-scrolling platform arena shooter written in Rust with
