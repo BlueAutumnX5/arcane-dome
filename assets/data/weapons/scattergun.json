@@ -1,6 +1,7 @@
 {
   "id": "scattergun",
-  "name": "Scattergun",
+  "name": "Shotgun",
+  "short_name": "Shotgun",
   "category": "close_range",
   "damage": 9.0,
   "headshot_mult": 1.25,

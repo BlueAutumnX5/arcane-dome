@@ -1,6 +1,7 @@
 {
   "id": "cinder_spitter",
-  "name": "Cinder Spitter",
+  "name": "Flamethrower",
+  "short_name": "Flamer",
   "category": "close_range",
   "damage": 4.0,
   "headshot_mult": 1.0,

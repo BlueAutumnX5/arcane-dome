@@ -1,6 +1,7 @@
 {
   "id": "thumper",
-  "name": "Thumper",
+  "name": "Grenade Launcher",
+  "short_name": "Grenades",
   "category": "explosive",
   "damage": 10.0,
   "fire_rate_rps": 1.2,

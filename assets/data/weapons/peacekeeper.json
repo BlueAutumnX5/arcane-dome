@@ -1,6 +1,7 @@
 {
   "id": "peacekeeper",
-  "name": "Peacekeeper",
+  "name": "Pistol",
+  "short_name": "Pistol",
   "category": "starter",
   "damage": 17.0,
   "headshot_mult": 2.0,

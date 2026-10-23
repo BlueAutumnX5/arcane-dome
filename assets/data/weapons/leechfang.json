@@ -1,6 +1,7 @@
 {
   "id": "leechfang",
-  "name": "Leechfang",
+  "name": "Leech SMG",
+  "short_name": "SMG",
   "category": "automatic",
   "damage": 6.0,
   "headshot_mult": 1.5,

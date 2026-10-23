@@ -34,6 +34,11 @@ fn main() {
     // Planned jumps: (take-off spot, landing spot) -> (made it, missed).
     let mut jumps: BTreeMap<(Spot, Spot), (u32, u32)> = BTreeMap::new();
     let (mut kills, mut thrusts, mut hazard_deaths) = (0, 0, 0);
+    // Behaviour, per difficulty: ticks alive, standing still, crouched, in a fight.
+    let mut behaviour: BTreeMap<String, [u64; 5]> = BTreeMap::new();
+    let mut doing: BTreeMap<(String, &str), u64> = BTreeMap::new();
+    // Pauses of a second or more outside fights: (count, total seconds).
+    let mut pauses: BTreeMap<String, (u32, f32)> = BTreeMap::new();
 
     for seed in 0..matches {
         for difficulty in [Difficulty::Easy, Difficulty::Hard] {
@@ -73,6 +78,8 @@ fn main() {
             let mut planned: Vec<Option<((i32, i32), Vec2)>> = vec![None; w.fighters.len()];
             let mut buried = vec![false; w.fighters.len()];
             let mut left_vel = vec![Vec2::ZERO; w.fighters.len()];
+            // Seconds standing still right now, outside a fight.
+            let mut calm = vec![0.0f32; w.fighters.len()];
             for _ in 0..seconds * TICK_RATE {
                 bots.think(&w, &mut inputs);
                 w.step(&inputs);
@@ -91,6 +98,49 @@ fn main() {
                         continue;
                     }
                     let key = (f.feet.x.round() as i32, f.feet.y.round() as i32);
+                    let b = behaviour.entry(format!("{difficulty:?}")).or_default();
+                    b[0] += 1;
+                    if f.on_ground && f.vel.x.abs() < 0.3 {
+                        b[1] += 1;
+                    }
+                    if f.crouching {
+                        b[2] += 1;
+                    }
+                    let about = bots.describe(&w, i);
+                    let fighting = about.contains("visible true");
+                    if !about.starts_with("idle 0.00") {
+                        *doing
+                            .entry((format!("{difficulty:?}"), "idle-flag"))
+                            .or_default() += 1;
+                        if f.vel.x.abs() > 0.3 || !f.on_ground {
+                            *doing
+                                .entry((format!("{difficulty:?}"), "idle-but-moving"))
+                                .or_default() += 1;
+                        }
+                    }
+                    for d in ["fight", "chase", "roam"] {
+                        if about.contains(&format!("doing {d} ")) {
+                            *doing.entry((format!("{difficulty:?}"), d)).or_default() += 1;
+                        }
+                    }
+                    if fighting && about.contains("goal Retreat") {
+                        b[4] += 1;
+                    }
+                    if fighting {
+                        b[3] += 1;
+                    }
+                    // Real pauses: still for a second or more, not fighting.
+                    if f.on_ground && f.vel.x.abs() < 0.3 && !fighting {
+                        calm[i] += 1.0 / TICK_RATE as f32;
+                        if (calm[i] - 1.0).abs() < 0.5 / TICK_RATE as f32 {
+                            pauses.entry(format!("{difficulty:?}")).or_default().0 += 1;
+                        }
+                    } else {
+                        if calm[i] >= 1.0 {
+                            pauses.entry(format!("{difficulty:?}")).or_default().1 += calm[i];
+                        }
+                        calm[i] = 0.0;
+                    }
                     if was_ground[i] && !f.on_ground && f.vel.y < -5.0 {
                         let now = w.time;
                         let list = &mut takeoffs[i];
@@ -277,6 +327,33 @@ fn main() {
     println!("hazard entered from last ground (x, y, hit within 1s): count");
     for (k, n) in &origins {
         println!("  {k:?}: {n}");
+    }
+    for ((d, what), n) in &doing {
+        let all = behaviour.get(d).map_or(1, |b| b[0]);
+        println!(
+            "{d}: {what} {:.1}% of the time",
+            *n as f64 * 100.0 / all as f64
+        );
+    }
+    for (d, (n, secs)) in &pauses {
+        let bot_minutes = behaviour
+            .get(d)
+            .map_or(1.0, |b| b[0] as f32 / TICK_RATE as f32 / 60.0);
+        println!(
+            "{d}: {:.1} real pauses per bot-minute, {:.1}s long on average",
+            *n as f32 / bot_minutes,
+            secs / (*n).max(1) as f32
+        );
+    }
+    for (d, b) in &behaviour {
+        let pct = |n: u64| n as f64 * 100.0 / b[0].max(1) as f64;
+        println!(
+            "{d}: standing still {:.1}%, crouched {:.1}%, fighting {:.1}% (backing off {:.1}%)",
+            pct(b[1]),
+            pct(b[2]),
+            pct(b[3]),
+            pct(b[4])
+        );
     }
     println!("planned jumps that missed most (from -> to: made / missed):");
     let mut worst: Vec<_> = jumps

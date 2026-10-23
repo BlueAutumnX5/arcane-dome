@@ -122,10 +122,12 @@ Field reference:
 | `specials` | array of enums | `lifesteal, burn, multishot, credits_bonus, crit, stun, shield_break, freeze` |
 | `specials` params | optional object | e.g. `{ "type": "lifesteal", "ratio": 0.25 }` |
 
-Example set for Milestone 1 (use these as the 10, all original names):
-Peacekeeper (starter pistol), Scattergun (close range, 8 pellets), Arc Rifle (automatic),
-Needle Gun (long range, high headshot mult), Rail Spike (hitscan sniper, pierce), Thumper (bouncing grenade),
-Hellbarrel (rocket, splash), Sunbeam (continuous beam), Leechfang (SMG with lifesteal), Cinder Spitter (burn).
+The Milestone 1 set, with plain display names for now (file ids in brackets):
+Pistol (peacekeeper, starter), Shotgun (scattergun, 8 pellets), Assault Rifle (arc_rifle, automatic),
+Marksman Rifle (needle_gun, high headshot mult), Sniper Rifle (rail_spike, hitscan, pierce),
+Grenade Launcher (thumper, bouncing grenade), Rocket Launcher (hellbarrel, splash), Laser (sunbeam,
+continuous beam), Leech SMG (leechfang, lifesteal), Flamethrower (cinder_spitter, burn).
+`short_name` (optional) is the label on the weapon bar.
 
 ---
 

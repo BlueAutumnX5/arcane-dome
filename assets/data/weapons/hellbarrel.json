@@ -1,6 +1,7 @@
 {
   "id": "hellbarrel",
-  "name": "Hellbarrel",
+  "name": "Rocket Launcher",
+  "short_name": "Rockets",
   "category": "heavy",
   "damage": 25.0,
   "fire_rate_rps": 0.9,

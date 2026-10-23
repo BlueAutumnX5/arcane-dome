@@ -1,6 +1,7 @@
 {
   "id": "arc_rifle",
-  "name": "Arc Rifle",
+  "name": "Assault Rifle",
+  "short_name": "Rifle",
   "category": "automatic",
   "damage": 9.0,
   "headshot_mult": 2.0,

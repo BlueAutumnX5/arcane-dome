@@ -1,6 +1,7 @@
 {
   "id": "rail_spike",
-  "name": "Rail Spike",
+  "name": "Sniper Rifle",
+  "short_name": "Sniper",
   "category": "long_range",
   "damage": 70.0,
   "headshot_mult": 2.0,

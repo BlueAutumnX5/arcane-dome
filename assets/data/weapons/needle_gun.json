@@ -1,6 +1,7 @@
 {
   "id": "needle_gun",
-  "name": "Needle Gun",
+  "name": "Marksman Rifle",
+  "short_name": "Marksman",
   "category": "long_range",
   "damage": 30.0,
   "headshot_mult": 3.0,

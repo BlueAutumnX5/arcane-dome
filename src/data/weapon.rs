@@ -196,6 +196,9 @@ impl From<RawSpecial> for Special {
 pub struct WeaponDef {
     pub id: String,
     pub name: String,
+    /// A word or two for the weapon bar (default: the first word of `name`).
+    #[serde(default)]
+    pub short_name: Option<String>,
     pub category: Category,
     #[serde(default)]
     pub unlock_cost: u32,
@@ -257,11 +260,15 @@ impl WeaponDef {
 
     /// Short label for the weapon bar.
     pub fn short_name(&self) -> String {
-        self.name
-            .split_whitespace()
-            .next()
-            .unwrap_or(&self.name)
-            .to_owned()
+        match &self.short_name {
+            Some(short) => short.clone(),
+            None => self
+                .name
+                .split_whitespace()
+                .next()
+                .unwrap_or(&self.name)
+                .to_owned(),
+        }
     }
 }
 

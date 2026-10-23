@@ -44,8 +44,12 @@ struct Params {
     hear_range: f32,
     /// Automatic weapons fire in bursts: (hold, pause) seconds.
     burst: (f32, f32),
-    /// How often a bot stops to stand or crouch (per second while roaming).
-    idle_rate: f32,
+    /// While roaming, a bot walks for this long (seconds, min..max), then
+    /// stops a moment to stand or crouch.
+    travel: (f32, f32),
+    /// Chance to break away from a fight (instead of committing to it)
+    /// each time the bot sizes one up.
+    break_away: f32,
 }
 
 fn params(d: Difficulty) -> Params {
@@ -60,7 +64,8 @@ fn params(d: Difficulty) -> Params {
             turn_rate: 2.5,
             hear_range: 3.0,
             burst: (0.5, 0.8),
-            idle_rate: 0.18,
+            travel: (2.0, 4.5),
+            break_away: 0.45,
         },
         Difficulty::Normal => Params {
             reaction: (0.55, 0.85),
@@ -72,7 +77,8 @@ fn params(d: Difficulty) -> Params {
             turn_rate: 4.5,
             hear_range: 4.0,
             burst: (0.8, 0.5),
-            idle_rate: 0.12,
+            travel: (3.0, 6.0),
+            break_away: 0.35,
         },
         Difficulty::Hard => Params {
             reaction: (0.3, 0.5),
@@ -84,7 +90,8 @@ fn params(d: Difficulty) -> Params {
             turn_rate: 8.0,
             hear_range: 5.0,
             burst: (1.2, 0.3),
-            idle_rate: 0.07,
+            travel: (4.5, 8.0),
+            break_away: 0.25,
         },
     }
 }
@@ -151,6 +158,14 @@ pub(crate) struct Brain {
     low_jump: bool,
     /// Where a hunted enemy was when the hunt was (re)decided.
     hunt_spot: Vec2,
+    /// The enemy currently being fought, and the time until the bot next
+    /// decides whether to stay in the fight or break away.
+    engaged: Option<usize>,
+    engage_timer: f32,
+    /// What the bot did this tick (debugging tools): fight, chase or roam.
+    doing: &'static str,
+    /// Seconds of walking left before the next stop while roaming.
+    travel_left: f32,
     /// Last place the bot stood on solid, safe ground.
     ground_x: f32,
     weapon_timer: f32,
@@ -190,6 +205,10 @@ impl Brain {
             jump_from_y: 0.0,
             low_jump: false,
             hunt_spot: Vec2::ZERO,
+            engaged: None,
+            engage_timer: 0.0,
+            doing: "roam",
+            travel_left: 3.0,
             ground_x: 0.0,
             weapon_timer: 0.0,
             was_alive: false,
@@ -212,8 +231,10 @@ impl Brain {
             })
             .collect();
         format!(
-            "goal {:?} dest ({:.1},{:.1}) target {:?} visible {} air_to {:?} stuck {:.2} path [{}]",
+            "idle {:.2} goal {:?} doing {} dest ({:.1},{:.1}) target {:?} visible {} air_to {:?} stuck {:.2} path [{}]",
+            self.idle_left,
             self.goal,
+            self.doing,
             dest.x,
             dest.y,
             self.target,
@@ -286,6 +307,8 @@ impl Brain {
             }
         }
 
+        self.size_up_fight(world, nav, me);
+
         let eye = me.eye();
         let mut input = Input::default();
         let def = &world.data.weapons[me.current];
@@ -296,14 +319,19 @@ impl Brain {
                 if self.target_visible
                     && eye.distance(world.fighters[t].center()) < preferred_range(def) + 6.0 =>
             {
+                self.doing = "fight";
+                self.idle_left = 0.0;
                 self.combat_move(world, me, t, def, &mut input)
             }
             (true, Some(_)) if !self.target_visible => {
                 // Lost sight: head for where they were last seen.
+                self.doing = "chase";
+                self.idle_left = 0.0;
                 let dest = self.last_seen;
                 self.follow(world, nav, me, dest, &mut input);
             }
             _ => {
+                self.doing = "roam";
                 let dest = self.goal_dest(world, nav);
                 self.follow(world, nav, me, dest, &mut input);
                 self.maybe_idle(me, &mut input);
@@ -486,9 +514,19 @@ impl Brain {
     }
 
     /// While roaming, sometimes stop for a moment, standing or crouched.
+    /// Roaming has a rhythm: walk a few seconds, stop a moment (sometimes
+    /// crouched, mostly looking ahead), walk on.
     fn maybe_idle(&mut self, me: &Fighter, input: &mut Input) {
         let urgent = matches!(self.goal, Goal::Retreat(_)) || me.health < LOW_HEALTH;
-        if self.idle_left > 0.0 && !urgent && me.on_ground {
+        if urgent {
+            self.idle_left = 0.0;
+            return;
+        }
+        if self.idle_left > 0.0 {
+            if !me.on_ground {
+                // Mid-jump: finish it, then stop.
+                return;
+            }
             self.idle_left -= DT;
             input.move_x = 0.0;
             input.jump = false;
@@ -497,11 +535,18 @@ impl Brain {
             if self.glance_left <= 0.0 && self.rng.chance(0.08 * DT) {
                 self.glance_left = self.rng.range(0.6, 1.2);
             }
+            if self.idle_left <= 0.0 {
+                let (lo, hi) = self.p.travel;
+                self.travel_left = self.rng.range(lo, hi);
+            }
             return;
         }
-        if !urgent && me.on_ground && self.rng.chance(self.p.idle_rate * DT) {
-            self.idle_left = self.rng.range(0.6, 2.4);
-            self.idle_crouch = self.rng.chance(0.3);
+        self.travel_left -= DT;
+        // Stop only on plain ground, not halfway into a jump or a drop.
+        let walking = matches!(self.path.first(), None | Some((_, EdgeKind::Walk)));
+        if self.travel_left <= 0.0 && me.on_ground && walking {
+            self.idle_left = self.rng.range(1.0, 3.0);
+            self.idle_crouch = self.rng.chance(0.4);
         }
     }
 
@@ -551,6 +596,54 @@ impl Brain {
         }
     }
 
+    /// A spot well away from `enemy` without running too far: the best of a
+    /// few random nav nodes.
+    fn retreat_node(&mut self, nav: &NavGraph, me: Vec2, enemy: Vec2) -> Option<usize> {
+        if nav.nodes.is_empty() {
+            return None;
+        }
+        (0..12)
+            .map(|_| self.rng.below(nav.nodes.len()))
+            .max_by(|&a, &b| {
+                let score = |n: usize| nav.pos(n).distance(enemy) - 0.4 * nav.pos(n).distance(me);
+                score(a).total_cmp(&score(b))
+            })
+    }
+
+    /// Spotting an enemy: shoot first, then size the fight up and either
+    /// commit to it or break away (still firing while backing off). The
+    /// choice comes up again now and then during a long fight.
+    fn size_up_fight(&mut self, world: &World, nav: &NavGraph, me: &Fighter) {
+        let t = match (self.target, self.target_visible) {
+            (Some(t), true) => t,
+            _ => {
+                self.engaged = None;
+                return;
+            }
+        };
+        if self.engaged != Some(t) {
+            self.engaged = Some(t);
+            self.engage_timer = self.rng.range(0.8, 1.8);
+            return;
+        }
+        self.engage_timer -= DT;
+        if self.engage_timer > 0.0 {
+            return;
+        }
+        let hurt = if me.health < 60.0 { 0.25 } else { 0.0 };
+        if self.rng.chance(self.p.break_away + hurt)
+            && let Some(n) = self.retreat_node(nav, me.feet, world.fighters[t].feet)
+        {
+            self.goal = Goal::Retreat(n);
+            self.goal_timer = self.rng.range(3.0, 5.0);
+            self.path.clear();
+            self.replan = 0.0;
+            self.engage_timer = self.rng.range(5.0, 8.0);
+        } else {
+            self.engage_timer = self.rng.range(3.0, 6.0);
+        }
+    }
+
     fn choose_goal(
         &mut self,
         world: &World,
@@ -574,20 +667,9 @@ impl Brain {
                 return Goal::Pickup(k);
             }
             if let Some(t) = target
-                && !nav.nodes.is_empty()
+                && let Some(n) = self.retreat_node(nav, me.feet, world.fighters[t].feet)
             {
-                let from = world.fighters[t].feet;
-                let best = (0..12)
-                    .map(|_| self.rng.below(nav.nodes.len()))
-                    .max_by(|&a, &b| {
-                        let score = |n: usize| {
-                            nav.pos(n).distance(from) - 0.4 * nav.pos(n).distance(me.feet)
-                        };
-                        score(a).total_cmp(&score(b))
-                    });
-                if let Some(n) = best {
-                    return Goal::Retreat(n);
-                }
+                return Goal::Retreat(n);
             }
         }
 

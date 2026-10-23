@@ -1,6 +1,7 @@
 {
   "id": "sunbeam",
-  "name": "Sunbeam",
+  "name": "Laser",
+  "short_name": "Laser",
   "category": "heavy",
   "damage": 4.0,
   "headshot_mult": 1.0,

@@ -17,9 +17,9 @@ weapons, maps and modes all defined in JSON.
 - **2 modes**, Deathmatch and Elimination, each played free-for-all or with
   2 to 4 teams (Blue, Red, Green, Yellow; each team picks its colour). Every
   match and round starts with a 5 second countdown.
-- **10 weapons**: Peacekeeper, Arc Rifle, Leechfang, Scattergun, Cinder
-  Spitter, Needle Gun, Rail Spike, Hellbarrel (rockets), Thumper (grenades) and
-  Sunbeam (a beam).
+- **10 weapons**: Pistol, Assault Rifle, Leech SMG (heals you as you hit),
+  Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher,
+  Grenade Launcher and Laser.
 - **Bots** with a view cone, reaction time and three difficulties (Easy,
   Normal, Hard), set per team.
 - **Map gadgets**: thrusters (stand on the pad and press jump), weapon
