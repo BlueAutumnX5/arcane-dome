@@ -1,6 +1,6 @@
 use super::nav::{EdgeKind, NavGraph};
 use crate::data::{Category, ObjectKind, PickupKind, WeaponDef};
-use crate::sim::physics::{hazard_dps, line_of_sight};
+use crate::sim::physics::{hazard_dps, line_of_sight, standing_on_hatch};
 use crate::sim::{DT, Difficulty, Fighter, Input, Rng, World};
 use macroquad::math::{Vec2, vec2};
 use std::f32::consts::PI;
@@ -812,8 +812,21 @@ impl Brain {
             }
             EdgeKind::Drop => {
                 if me.on_ground {
-                    input.drop = true;
-                    input.move_x = 0.0;
+                    // Drop only once fully over the hatch: standing half on
+                    // the floor beside it, a drop does nothing. Otherwise
+                    // step toward the side that is all hatch.
+                    let hatch_at =
+                        |x: f32| standing_on_hatch(&world.map, vec2(x, me.feet.y), me.size());
+                    if hatch_at(me.feet.x) {
+                        input.drop = true;
+                        input.move_x = 0.0;
+                    } else if hatch_at(me.feet.x + 0.4) {
+                        input.move_x = 1.0;
+                    } else if hatch_at(me.feet.x - 0.4) {
+                        input.move_x = -1.0;
+                    } else {
+                        input.drop = true;
+                    }
                 }
             }
             EdgeKind::Fall if me.on_ground && dx.abs() < 0.6 => {

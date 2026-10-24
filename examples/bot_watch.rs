@@ -260,7 +260,10 @@ fn main() {
                     last_hp[i] = f.health;
                     was_hurt[i] = hurt;
                     let s = &mut still[i];
-                    if f.feet.distance(s.0) > 2.5 {
+                    // A deliberate pause is not being stuck.
+                    let pausing = !bots.describe(&w, i).starts_with("idle 0.00")
+                        && !bots.describe(&w, i).starts_with("idle -");
+                    if f.feet.distance(s.0) > 2.5 || pausing {
                         *s = (f.feet, 0.0, false);
                     } else {
                         s.1 += 1.0 / TICK_RATE as f32;

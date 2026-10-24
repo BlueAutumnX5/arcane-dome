@@ -921,9 +921,9 @@ pub fn parse_map(
         );
         if o.kind == ObjectKind::Thruster {
             let h = o.launch_height();
-            if !(2.0..=30.0).contains(&h) {
+            if !(2.0..=40.0).contains(&h) {
                 errs.push(format!(
-                    "{what}.height_tiles: must be between 2 and 30 (got {h})"
+                    "{what}.height_tiles: must be between 2 and 40 (got {h})"
                 ));
             }
         }

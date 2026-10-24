@@ -11,12 +11,16 @@ weapons, maps and modes all defined in JSON.
 
 ## Whats already in the game
 
-- **1 map**, Foundry Ascent: a steel mill around a lava pit, with a climbable
-  tower and a thruster shaft. More maps are on the way (two drafts are in
-  `drafts/maps/`).
+- **2 maps**:
+  - Foundry Ascent: a steel mill around a lava pit, with a climbable tower and
+    a thruster shaft.
+  - Frostline Relay: a frozen mountain relay station built for 3 and 4 teams,
+    with cliffs, a valley, an ice island and a relay shaft to the tower roof.
+
+  More are on the way.
 - **2 modes**, Deathmatch and Elimination, each played free-for-all or with
   2 to 4 teams (Blue, Red, Green, Yellow; each team picks its colour). Every
-  match and round starts with a 5 second countdown.
+  match and round starts with a 3 second countdown.
 - **10 weapons**: Pistol, Assault Rifle, Leech SMG (heals you as you hit),
   Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher,
   Grenade Launcher and Laser.

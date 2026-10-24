@@ -33,7 +33,7 @@ the world) is planned for much later and is out of scope for now.
 
 Custom match screen: map, mode, score or time limit, number of teams, bots and difficulty per
 team (or bot count and difficulty in free-for-all). Every match and every elimination round
-starts with a 5 second countdown ("5, 4, 3, 2, 1, GO"); fighters can aim but not move or shoot.
+starts with a 3 second countdown ("3, 2, 1, GO"); fighters can aim but not move or shoot.
 
 ## Later (NOT Milestone 1)
 - Credits earned per kill with bonuses (headshot, multikill, melee) used to unlock weapons and skins

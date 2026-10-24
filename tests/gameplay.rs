@@ -700,7 +700,7 @@ fn counted_world(mode: &str) -> World {
 #[test]
 fn countdown_holds_everyone_until_go() {
     let mut w = counted_world("deathmatch");
-    assert_eq!(w.countdown, 5.0);
+    assert_eq!(w.countdown, 3.0);
     let clock = w.time_left;
     let protect = w.fighters[0].spawn_protect;
     run(&mut w, 30);
@@ -709,7 +709,7 @@ fn countdown_holds_everyone_until_go() {
     let mut go = idle(2);
     go[0].move_x = 1.0;
     go[0].fire = true;
-    for _ in 0..(4.0 / DT) as usize {
+    for _ in 0..(2.0 / DT) as usize {
         w.step(&go);
     }
     assert!(w.countdown > 0.0);
@@ -748,7 +748,7 @@ fn every_elimination_round_starts_with_a_countdown() {
     run(&mut w, (3.0 / DT) as usize + 2);
     assert_eq!(w.round, 2);
     assert!(
-        w.countdown > 4.5,
+        w.countdown > 2.5,
         "round 2 did not count down: {}",
         w.countdown
     );

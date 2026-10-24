@@ -144,7 +144,15 @@ impl World {
         for f in &mut self.fighters {
             f.alive = false;
         }
-        for i in 0..self.fighters.len() {
+        // Spawn in a shuffled order: each spawn avoids the enemies already
+        // placed, so whoever went first (always Blue, before) set up where
+        // everyone else would land and fight.
+        let mut order: Vec<usize> = (0..self.fighters.len()).collect();
+        for k in (1..order.len()).rev() {
+            let j = self.rng.below(k + 1);
+            order.swap(k, j);
+        }
+        for i in order {
             self.spawn_fighter(i);
         }
     }

@@ -71,7 +71,7 @@ pub struct MatchConfig {
     /// Magazines never empty.
     pub infinite_ammo: bool,
     pub seed: u64,
-    /// "5, 4, 3, 2, 1, GO" before the match and each elimination round, in
+    /// "3, 2, 1, GO" before the match and each elimination round, in
     /// seconds. Everyone can aim but not move or shoot until it ends.
     pub countdown_s: f32,
     /// False for bot-only matches (tests, attract mode).
@@ -97,7 +97,7 @@ impl Default for MatchConfig {
             stations: true,
             infinite_ammo: false,
             seed: 1,
-            countdown_s: 5.0,
+            countdown_s: 3.0,
             include_player: true,
             player_name: "You".into(),
         }
