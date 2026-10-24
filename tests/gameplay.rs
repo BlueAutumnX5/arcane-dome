@@ -2,8 +2,8 @@
 
 use arcane_dome::data::{GameData, parse_map, parse_modes, parse_powerups, parse_weapon};
 use arcane_dome::sim::{
-    DT, Event, Input, MAX_HEALTH, MAX_SHIELD, MatchConfig, Phase, RESPAWN_DELAY, SPAWN_PROTECT,
-    STAND_SIZE, World,
+    DT, ElimStyle, Event, Input, MAX_HEALTH, MAX_SHIELD, MatchConfig, Phase, RESPAWN_DELAY,
+    SPAWN_PROTECT, STAND_SIZE, World,
 };
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
@@ -839,4 +839,119 @@ fn respawned_fighters_are_protected_for_three_seconds() {
         w.fighters[1].health < MAX_HEALTH,
         "still protected after 3 s"
     );
+}
+
+/// An Elimination world with lives (Last Man Standing or Attrition).
+fn lives_world(style: ElimStyle, teams: u8, bots: &[u32], lives: u32) -> World {
+    let mut team_bots = [0; 4];
+    team_bots[..bots.len()].copy_from_slice(bots);
+    let cfg = MatchConfig {
+        map_id: "arena".into(),
+        mode_id: "elimination".into(),
+        elim_style: style,
+        lives: Some(lives),
+        teams,
+        bots: bots.iter().sum(),
+        team_bots,
+        countdown_s: 0.0,
+        ..Default::default()
+    };
+    let mut w = World::new(data(), cfg).unwrap();
+    for f in &mut w.fighters {
+        f.spawn_protect = 0.0;
+    }
+    w
+}
+
+/// Kill fighter `i` (by fighter `by`) and wait out the respawn.
+fn kill_and_wait(w: &mut World, i: usize, by: usize) {
+    w.fighters[i].spawn_protect = 0.0;
+    w.damage(i, Some(by), None, 500.0, false, false);
+    run(w, (RESPAWN_DELAY / DT) as usize + 5);
+}
+
+#[test]
+fn last_man_standing_respawns_until_out_of_lives() {
+    // Free-for-all: you and two bots, 2 lives each.
+    let mut w = lives_world(ElimStyle::LastManStanding, 0, &[2], 2);
+    assert!(w.respawns() && w.uses_lives());
+    kill_and_wait(&mut w, 1, 0);
+    assert!(w.fighters[1].alive, "a spare life: respawned");
+    assert_eq!(w.lives_left[1], 1);
+    kill_and_wait(&mut w, 1, 0);
+    assert!(!w.fighters[1].alive && w.fighters[1].out, "out of lives");
+    assert_eq!(w.phase, Phase::Playing, "two players still in");
+    kill_and_wait(&mut w, 2, 0);
+    kill_and_wait(&mut w, 2, 0);
+    assert_eq!(w.phase, Phase::MatchOver { winner: Some(0) });
+}
+
+#[test]
+fn attrition_teams_share_a_pool_and_fight_on_when_it_is_empty() {
+    // Blue: you + 1 bot; Red: 2 bots; 2 lives in each pool.
+    let mut w = lives_world(ElimStyle::Attrition, 2, &[1, 2], 2);
+    let reds: Vec<usize> = (0..w.fighters.len())
+        .filter(|&i| w.fighters[i].team == Some(1))
+        .collect();
+    // Two Red deaths spend Red's pool; both respawn.
+    kill_and_wait(&mut w, reds[0], 0);
+    kill_and_wait(&mut w, reds[1], 0);
+    assert_eq!(w.team_lives[1], 0);
+    assert!(reds.iter().all(|&i| w.fighters[i].alive));
+    // Pool empty: the next deaths are for good, but Red fights on until the last one.
+    kill_and_wait(&mut w, reds[0], 0);
+    assert!(w.fighters[reds[0]].out);
+    assert_eq!(w.phase, Phase::Playing, "Red still has a fighter standing");
+    kill_and_wait(&mut w, reds[1], 0);
+    assert_eq!(w.phase, Phase::MatchOver { winner: Some(0) });
+}
+
+#[test]
+fn attrition_without_teams_plays_as_last_man_standing() {
+    let w = lives_world(ElimStyle::Attrition, 0, &[2], 3);
+    assert_eq!(w.style, ElimStyle::LastManStanding);
+}
+
+#[test]
+fn limits_can_be_off_even_all_of_them_for_an_endless_match() {
+    let cfg = |mode: &str, score: u32, time: f32, lives: Option<u32>, style| MatchConfig {
+        map_id: "arena".into(),
+        mode_id: mode.into(),
+        score_limit: Some(score),
+        time_limit_s: Some(time),
+        lives,
+        elim_style: style,
+        bots: 1,
+        countdown_s: 0.0,
+        ..Default::default()
+    };
+    // Score off: the clock decides.
+    let w = World::new(data(), cfg("deathmatch", 0, 60.0, None, ElimStyle::Rounds)).unwrap();
+    assert_eq!(w.mode.score_limit, None);
+    // Time off: the score decides.
+    let w = World::new(data(), cfg("deathmatch", 5, 0.0, None, ElimStyle::Rounds)).unwrap();
+    assert!(w.time_left.is_infinite());
+    // Both off: an endless match that keeps going.
+    let mut w = World::new(data(), cfg("deathmatch", 0, 0.0, None, ElimStyle::Rounds)).unwrap();
+    assert!(w.time_left.is_infinite() && w.mode.score_limit.is_none());
+    for _ in 0..50 {
+        w.fighters[1].spawn_protect = 0.0;
+        w.damage(1, Some(0), None, 500.0, false, false);
+        run(&mut w, (RESPAWN_DELAY / DT) as usize + 5);
+    }
+    assert_eq!(w.phase, Phase::Playing, "an endless match ended");
+    // Unlimited lives and no clock: endless too.
+    let w = World::new(
+        data(),
+        cfg("elimination", 5, 0.0, Some(0), ElimStyle::LastManStanding),
+    )
+    .unwrap();
+    assert!(w.lives_limit.is_none() && w.time_left.is_infinite());
+    // Unlimited lives with a clock: allowed (most kills wins on time).
+    let w = World::new(
+        data(),
+        cfg("elimination", 5, 60.0, Some(0), ElimStyle::LastManStanding),
+    )
+    .unwrap();
+    assert_eq!(w.lives_limit, None);
 }

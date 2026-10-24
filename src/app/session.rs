@@ -210,7 +210,8 @@ impl Session {
     /// Follow the player, or a living fighter while the player is dead.
     fn focus_point(&self) -> Vec2 {
         let me = &self.world.fighters[self.player];
-        if me.alive || self.world.mode.respawn {
+        // Out of the match (or waiting for the next round): watch the others.
+        if me.alive || (self.world.respawns() && !me.out) {
             return me.center();
         }
         self.world

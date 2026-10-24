@@ -27,7 +27,11 @@ the world) is planned for much later and is out of scope for now.
 
 ## Modes (Milestone 1)
 - Deathmatch: most kills wins
-- Elimination: no respawn, last one standing wins the round
+- Elimination, in three styles:
+  - Rounds: one life per round; the last side standing takes the round, most rounds wins
+  - Last Man Standing: everyone has their own lives; out of lives, out (spectating)
+  - Attrition (teams only): each team shares a pool of lives; when it is empty nobody
+    respawns, and the team fights on until its last fighter falls
 - Both play free-for-all or in 2 to 4 teams (Team Deathmatch, Team Elimination). Each team
   picks a colour: Blue, Red, Green or Yellow.
 
@@ -220,13 +224,17 @@ spawn, pickup and object. The old ASCII `grid` + `legend` format still loads
 ```json
 {
   "deathmatch":  { "teams": 4, "respawn": true,  "score_limit": 25, "team_score_limit": 50, "time_limit_s": 600 },
-  "elimination": { "teams": 4, "respawn": false, "rounds": 5, "time_limit_s": 180 }
+  "elimination": { "teams": 4, "respawn": false, "rounds": 5, "time_limit_s": 180, "lives": 3, "team_lives": 15 }
 }
 ```
 
 `teams`: the most teams the mode can be played with (1 = free-for-all only). Teams are a
 match setting, not a separate mode: "Teams: Off" plays free-for-all, 2 to 4 plays Team
 Deathmatch or Team Elimination. The setup offers the team counts the mode and the map both
-support. `team_score_limit` is the default score limit when played in teams.
+support. `team_score_limit` is the default score limit when played in teams. `lives` and
+`team_lives` are the default lives for Last Man Standing and Attrition.
+
+Every limit (score, time, lives) can be turned off in the match setup. With all of them
+off the match is endless, and the setup says so; it is left from the pause menu.
 
 

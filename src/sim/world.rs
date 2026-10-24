@@ -29,6 +29,18 @@ impl Difficulty {
     }
 }
 
+/// How an Elimination match is played.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ElimStyle {
+    /// One life per round; most rounds won wins.
+    #[default]
+    Rounds,
+    /// Everyone has their own lives; out of lives, out of the match.
+    LastManStanding,
+    /// Each team shares a pool of lives (teams only).
+    Attrition,
+}
+
 /// How long "GO" stays up after the countdown.
 pub const GO_SHOWN_S: f32 = 1.0;
 
@@ -47,8 +59,13 @@ pub struct MatchConfig {
     pub score_limit: Option<u32>,
     /// Overrides the mode's round count (elimination modes).
     pub rounds: Option<u32>,
-    /// Overrides the mode's time limit.
+    /// Overrides the mode's time limit; `Some(0.0)` turns it off.
     pub time_limit_s: Option<f32>,
+    /// Elimination: how it is played.
+    pub elim_style: ElimStyle,
+    /// Elimination with lives: lives per fighter (Last Man Standing) or per
+    /// team (Attrition). `None` = the mode's default; `Some(0)` = unlimited.
+    pub lives: Option<u32>,
     /// Free-for-all: how many bots.
     pub bots: u32,
     /// Free-for-all: how good the bots are.
@@ -87,6 +104,8 @@ impl Default for MatchConfig {
             score_limit: None,
             rounds: None,
             time_limit_s: None,
+            elim_style: ElimStyle::Rounds,
+            lives: None,
             bots: 5,
             difficulty: Difficulty::Normal,
             teams: 0,
@@ -202,6 +221,15 @@ pub struct World {
     pub scores: Vec<i32>,
     pub round: u32,
     pub round_wins: Vec<u32>,
+    /// Elimination style in play (Attrition falls back to Last Man Standing
+    /// without teams; deathmatch ignores it).
+    pub style: ElimStyle,
+    /// Lives each fighter or team starts with (`None` = unlimited).
+    pub lives_limit: Option<u32>,
+    /// Last Man Standing: lives left per fighter, this one included.
+    pub lives_left: Vec<u32>,
+    /// Attrition: lives left in each team's shared pool.
+    pub team_lives: Vec<u32>,
     /// Seconds left before the fight starts. It keeps counting below zero
     /// for a moment (down to `-GO_SHOWN_S`) so the HUD can show "GO".
     pub countdown: f32,
@@ -242,14 +270,33 @@ impl World {
         if num_teams > 0 && mode.team_score_limit.is_some() {
             mode.score_limit = mode.team_score_limit;
         }
+        // Limits: 0 turns one off. All of them off makes an endless match
+        // (left from the pause menu).
         if let Some(s) = config.score_limit {
-            mode.score_limit = Some(s.max(1));
+            mode.score_limit = (s > 0).then_some(s);
         }
         if let Some(r) = config.rounds {
             mode.rounds = Some(r.max(1));
         }
         if let Some(t) = config.time_limit_s {
-            mode.time_limit_s = t.max(1.0);
+            mode.time_limit_s = if t > 0.0 { t.max(1.0) } else { f32::INFINITY };
+        }
+        let style = match config.elim_style {
+            _ if mode.respawn => ElimStyle::Rounds,
+            ElimStyle::Attrition if num_teams == 0 => ElimStyle::LastManStanding,
+            s => s,
+        };
+        let default_lives = match style {
+            ElimStyle::Attrition => mode.team_lives.unwrap_or(15),
+            _ => mode.lives.unwrap_or(3),
+        };
+        let lives_limit = match config.lives {
+            Some(0) => None,
+            Some(n) => Some(n),
+            None => Some(default_lives),
+        };
+        if style != ElimStyle::Rounds {
+            mode.rounds = Some(1);
         }
 
         let team = |t: u8| if mode.is_team() { Some(t) } else { None };
@@ -331,6 +378,7 @@ impl World {
             .collect();
         let stand_cells = super::gadgets::stand_cells(&map);
 
+        let n_fighters = fighters.len();
         let sides = if mode.is_team() {
             num_teams
         } else {
@@ -355,6 +403,10 @@ impl World {
             scores: vec![0; sides],
             round: 1,
             round_wins: vec![0; sides],
+            style,
+            lives_limit,
+            lives_left: vec![lives_limit.unwrap_or(0); n_fighters],
+            team_lives: vec![lives_limit.unwrap_or(0); sides],
             countdown: 0.0,
         };
         world.start_round();
@@ -600,12 +652,12 @@ impl World {
     }
 
     fn update_respawns(&mut self) {
-        if !self.mode.respawn || self.phase != Phase::Playing {
+        if !self.respawns() || self.phase != Phase::Playing {
             return;
         }
         for i in 0..self.fighters.len() {
             let f = &mut self.fighters[i];
-            if !f.alive {
+            if !f.alive && !f.out {
                 f.respawn_timer -= DT;
                 if f.respawn_timer <= 0.0 {
                     self.spawn_fighter(i);

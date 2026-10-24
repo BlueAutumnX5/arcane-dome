@@ -19,7 +19,10 @@ weapons, maps and modes all defined in JSON.
   - Redstone Arches: a desert canyon built for 2 teams, under a giant stone
     arch you can walk across.
 - **2 modes**, Deathmatch and Elimination, each played free-for-all or with
-  2 to 4 teams (Blue, Red, Green, Yellow; each team picks its colour). Every
+  2 to 4 teams (Blue, Red, Green, Yellow; each team picks its colour).
+  Elimination comes in three styles: Rounds, Last Man Standing (everyone has
+  their own lives) and Attrition (each team shares a pool of lives). Every
+  limit can be turned off, even all of them for an endless match. Every
   match and round starts with a 3 second countdown.
 - **10 weapons**: Pistol, Assault Rifle, Leech SMG (heals you as you hit),
   Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher,

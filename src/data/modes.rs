@@ -29,6 +29,12 @@ pub struct ModeDef {
     pub rounds: Option<u32>,
     /// Whole match when respawning, per round otherwise.
     pub time_limit_s: f32,
+    /// Elimination, Last Man Standing: default lives per fighter.
+    #[serde(default)]
+    pub lives: Option<u32>,
+    /// Elimination, Attrition: default lives in each team's pool.
+    #[serde(default)]
+    pub team_lives: Option<u32>,
 }
 
 impl ModeDef {

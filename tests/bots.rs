@@ -166,3 +166,45 @@ fn four_team_bot_matches_involve_every_team() {
         }
     }
 }
+
+#[test]
+fn lives_styles_play_out_on_every_map() {
+    use arcane_dome::sim::ElimStyle;
+    let data = shipped();
+    for map in &data.maps {
+        for (style, teams) in [(ElimStyle::LastManStanding, 0), (ElimStyle::Attrition, 2)] {
+            let cfg = MatchConfig {
+                map_id: map.id.clone(),
+                mode_id: "elimination".into(),
+                elim_style: style,
+                lives: Some(2),
+                teams,
+                bots: 5,
+                team_bots: [3, 3, 0, 0],
+                difficulty: Difficulty::Hard,
+                team_difficulty: [Difficulty::Hard; 4],
+                include_player: false,
+                countdown_s: 0.0,
+                seed: 5,
+                ..Default::default()
+            };
+            let mut world = World::new(Arc::clone(&data), cfg).unwrap();
+            let mut bots = BotSet::new(&world);
+            let mut inputs = vec![Input::default(); world.fighters.len()];
+            for _ in 0..300 * TICK_RATE {
+                bots.think(&world, &mut inputs);
+                world.step(&inputs);
+                if matches!(world.phase, Phase::MatchOver { .. }) {
+                    break;
+                }
+            }
+            let label = format!("{} / {style:?}", map.id);
+            let out = world.fighters.iter().filter(|f| f.out).count();
+            assert!(out > 0, "{label}: nobody ran out of lives in 5 minutes");
+            for f in &world.fighters {
+                assert!(f.feet.is_finite(), "{label}: {} escaped", f.name);
+                assert!(!(f.out && f.alive), "{label}: {} is out but alive", f.name);
+            }
+        }
+    }
+}

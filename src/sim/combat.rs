@@ -478,6 +478,7 @@ impl World {
                 .map(|(a, _)| a),
         }
         .filter(|&a| !self.allies(a, victim));
+        self.spend_life(victim);
 
         let playing = self.phase == Phase::Playing;
         if let Some(k) = credited {

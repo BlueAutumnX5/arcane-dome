@@ -1,6 +1,6 @@
 //! Scoring, win conditions and rounds. Driven entirely by `ModeDef` fields.
 
-use super::world::{Event, MAX_TEAMS, TEAM_NAMES};
+use super::world::{ElimStyle, Event, MAX_TEAMS, TEAM_NAMES};
 use super::{ObjectState, World};
 
 /// Seconds between elimination rounds.
@@ -51,6 +51,61 @@ impl World {
         self.config.team_colors[team % MAX_TEAMS] as usize
     }
 
+    /// Do dead fighters come back (respawn modes and Elimination with lives)?
+    pub fn respawns(&self) -> bool {
+        self.mode.respawn || self.uses_lives()
+    }
+
+    /// Elimination played with lives instead of rounds.
+    pub fn uses_lives(&self) -> bool {
+        !self.mode.respawn && self.style != ElimStyle::Rounds
+    }
+
+    /// A death in Elimination with lives: it costs the fighter (or their
+    /// team's pool) a life; with none left to pay, the fighter is out.
+    pub(crate) fn spend_life(&mut self, victim: usize) {
+        if !self.uses_lives() || self.lives_limit.is_none() {
+            return;
+        }
+        let side = self.side_of(victim);
+        let out = match self.style {
+            ElimStyle::Attrition => {
+                // The pool pays for the respawn; an empty pool means no more.
+                let pool = &mut self.team_lives[side];
+                let empty = *pool == 0;
+                *pool = pool.saturating_sub(1);
+                empty
+            }
+            _ => {
+                let lives = &mut self.lives_left[victim];
+                *lives = lives.saturating_sub(1);
+                *lives == 0
+            }
+        };
+        self.fighters[victim].out = out;
+    }
+
+    /// Lives a side still has: its pool (Attrition) or its fighters' lives,
+    /// counting fighters still alive.
+    pub fn side_lives(&self, side: usize) -> u32 {
+        match self.style {
+            ElimStyle::Attrition => {
+                let standing = self
+                    .fighters
+                    .iter()
+                    .filter(|f| f.alive && self.side_of(f.id) == side)
+                    .count() as u32;
+                self.team_lives[side] + standing
+            }
+            _ => self
+                .fighters
+                .iter()
+                .filter(|f| self.side_of(f.id) == side)
+                .map(|f| if f.out { 0 } else { self.lives_left[f.id] })
+                .sum(),
+        }
+    }
+
     pub fn rounds_to_win(&self) -> u32 {
         self.mode.rounds.unwrap_or(1) / 2 + 1
     }
@@ -74,6 +129,30 @@ impl World {
 
     pub(crate) fn check_rules(&mut self) {
         if self.phase != Phase::Playing {
+            return;
+        }
+        if self.uses_lives() {
+            // The match goes on while two sides still have someone in it.
+            let mut in_play = vec![false; self.num_sides()];
+            for f in self.fighters.iter().filter(|f| !f.out) {
+                in_play[self.side_of(f.id)] = true;
+            }
+            let left = in_play.iter().filter(|&&b| b).count();
+            if left <= 1 {
+                let w = in_play.iter().position(|&b| b);
+                self.finish(w);
+            } else if self.time_left <= 0.0 {
+                // Time: most lives left wins (most kills, with unlimited lives).
+                let by: Vec<i64> = (0..self.num_sides())
+                    .map(|s| match self.lives_limit {
+                        Some(_) if in_play[s] => self.side_lives(s) as i64,
+                        Some(_) => -1,
+                        None => self.scores[s] as i64,
+                    })
+                    .collect();
+                let w = Self::unique_best(&by);
+                self.finish(w);
+            }
             return;
         }
         if self.mode.respawn {
@@ -143,6 +222,7 @@ impl World {
         }
         for f in &mut self.fighters {
             f.alive = false;
+            f.out = false;
         }
         // Spawn in a shuffled order: each spawn avoids the enemies already
         // placed, so whoever went first (always Blue, before) set up where

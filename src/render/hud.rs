@@ -123,7 +123,26 @@ fn text_right(t: &str, rx: f32, y: f32, size: f32, color: Color) {
     text(t, rx - d.width, y, size, color);
 }
 
+/// "to 25", or "no limit" when the score limit is off.
+fn limit_text(limit: Option<u32>) -> String {
+    limit.map_or("no limit".into(), |l| format!("to {l}"))
+}
+
+/// The name of the Elimination style being played.
+fn style_text(world: &World) -> String {
+    match world.style {
+        crate::sim::ElimStyle::Attrition => "Attrition".into(),
+        crate::sim::ElimStyle::LastManStanding => "Last Man Standing".into(),
+        crate::sim::ElimStyle::Rounds => {
+            format!("Round {}/{}", world.round, world.mode.rounds.unwrap_or(1))
+        }
+    }
+}
+
 fn clock(secs: f32) -> String {
+    if secs.is_infinite() {
+        return "--:--".into();
+    }
     let s = secs.max(0.0).ceil() as u32;
     format!("{}:{:02}", s / 60, s % 60)
 }
@@ -385,6 +404,11 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
             .map(|t| {
                 let label = if mode.respawn {
                     format!("{} {}", world.side_name(t), world.scores[t])
+                } else if world.uses_lives() {
+                    match world.lives_limit {
+                        Some(_) => format!("{} {} lives", world.side_name(t), world.side_lives(t)),
+                        None => format!("{} {}", world.side_name(t), world.scores[t]),
+                    }
                 } else {
                     format!(
                         "{} {} ({} up)",
@@ -397,7 +421,9 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
             })
             .collect();
         let goal = if mode.respawn {
-            format!("to {}", mode.score_limit.unwrap_or(0))
+            limit_text(mode.score_limit)
+        } else if world.uses_lives() {
+            style_text(world)
         } else {
             format!("Round {}/{}", world.round, mode.rounds.unwrap_or(1))
         };
@@ -406,6 +432,19 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
     }
     let line = if mode.is_team() {
         String::new()
+    } else if world.uses_lives() {
+        let left = (0..world.num_sides())
+            .filter(|&s| !world.fighters[s].out)
+            .count();
+        match world.lives_limit {
+            Some(_) => format!(
+                "Lives {}    {} still in    {}",
+                world.lives_left[player],
+                left,
+                style_text(world)
+            ),
+            None => format!("Kills {}    {}", world.scores[player], style_text(world)),
+        }
     } else if !mode.respawn {
         format!("Round {}/{}", world.round, mode.rounds.unwrap_or(1))
     } else {
@@ -415,11 +454,11 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
             .max_by_key(|&(s, v)| (v, std::cmp::Reverse(s)))
             .unwrap_or((0, 0));
         format!(
-            "You {}    Leader {} {}    to {}",
+            "You {}    Leader {} {}    {}",
             mine,
             world.side_name(leader),
             best,
-            mode.score_limit.unwrap_or(0)
+            limit_text(mode.score_limit)
         )
     };
     text_center(
@@ -517,7 +556,9 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
         }
         Phase::Playing if !f.alive => {
             // The countdown shows only for the last few seconds.
-            let msg = if !mode.respawn {
+            let msg = if f.out {
+                Some("Out of lives - spectating".to_owned())
+            } else if !world.respawns() {
                 Some("Eliminated - waiting for the next round".to_owned())
             } else if f.respawn_timer <= RESPAWN_SHOWN_S {
                 Some(format!(
@@ -671,6 +712,11 @@ fn draw_team_scoreboard(world: &World, player: Option<usize>) {
         draw_rectangle(px, py, 5.0 * s, panel_h, c);
         let total = if world.mode.respawn {
             world.scores[t]
+        } else if world.uses_lives() {
+            match world.lives_limit {
+                Some(_) => world.side_lives(t) as i32,
+                None => world.scores[t],
+            }
         } else {
             world.round_wins[t] as i32
         };

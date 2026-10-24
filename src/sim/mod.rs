@@ -20,7 +20,8 @@ pub use input::Input;
 pub use rng::Rng;
 pub use rules::Phase;
 pub use world::{
-    Difficulty, Event, GO_SHOWN_S, MAX_TEAMS, MatchConfig, PickupState, TEAM_NAMES, World,
+    Difficulty, ElimStyle, Event, GO_SHOWN_S, MAX_TEAMS, MatchConfig, PickupState, TEAM_NAMES,
+    World,
 };
 
 /// Simulation ticks per second.

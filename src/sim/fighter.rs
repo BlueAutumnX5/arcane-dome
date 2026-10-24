@@ -74,6 +74,8 @@ pub struct Fighter {
     pub respawn_timer: f32,
     /// World time of the last death (for the death screen).
     pub died_at: f32,
+    /// Out of lives: watches the rest of the match (Elimination with lives).
+    pub out: bool,
     pub spawn_protect: f32,
 
     /// One entry per weapon in `GameData::weapons` (same index = same weapon).
@@ -142,6 +144,7 @@ impl Fighter {
             alive: false,
             respawn_timer: 0.0,
             died_at: 0.0,
+            out: false,
             spawn_protect: 0.0,
             inventory: vec![Slot::default(); weapons],
             current: 0,

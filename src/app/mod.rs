@@ -5,17 +5,62 @@ mod ui;
 
 use crate::data::{GameData, ProjectileKind, find_assets_dir};
 use crate::render::TEAM_COLORS;
-use crate::sim::{Difficulty, MAX_TEAMS, MatchConfig, TEAM_NAMES};
+use crate::sim::{Difficulty, ElimStyle, MAX_TEAMS, MatchConfig, TEAM_NAMES};
 use macroquad::prelude::*;
 use session::Session;
 use std::sync::Arc;
 use ui::{ACCENT, Side, Ui};
 
-const SCORE_LIMITS: [u32; 10] = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
+// Limit choices; 0 means Off.
+const SCORE_LIMITS: [u32; 11] = [0, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
 const ROUND_COUNTS: [u32; 5] = [1, 3, 5, 7, 9];
 /// Most bots one team can have.
 const MAX_TEAM_BOTS: i32 = 7;
-const TIME_LIMITS: [f32; 8] = [60.0, 120.0, 180.0, 300.0, 480.0, 600.0, 900.0, 1200.0];
+const TIME_LIMITS: [f32; 9] = [0.0, 60.0, 120.0, 180.0, 300.0, 480.0, 600.0, 900.0, 1200.0];
+const LIVES: [u32; 6] = [0, 1, 2, 3, 5, 10];
+const TEAM_LIVES: [u32; 7] = [0, 5, 10, 15, 20, 30, 50];
+const STYLES: [ElimStyle; 3] = [
+    ElimStyle::Rounds,
+    ElimStyle::LastManStanding,
+    ElimStyle::Attrition,
+];
+
+fn style_name(st: ElimStyle) -> &'static str {
+    match st {
+        ElimStyle::Rounds => "Rounds",
+        ElimStyle::LastManStanding => "Last Man Standing",
+        ElimStyle::Attrition => "Attrition",
+    }
+}
+
+fn style_blurb(st: ElimStyle) -> &'static str {
+    match st {
+        ElimStyle::Rounds => {
+            "One life per round. The last side standing takes the round; win the most rounds."
+        }
+        ElimStyle::LastManStanding => {
+            "Everyone has their own lives. Out of lives, out of the match: the last one in wins."
+        }
+        ElimStyle::Attrition => {
+            "Each team shares a pool of lives. When it runs dry nobody respawns: last team standing wins."
+        }
+    }
+}
+
+/// A count, or "Off" for 0.
+fn count_or_off(n: u32) -> String {
+    if n == 0 { "Off".into() } else { n.to_string() }
+}
+
+/// A m:ss time, or "Off" for 0.
+fn time_or_off(t: f32) -> String {
+    let t = t as u32;
+    if t == 0 {
+        "Off".into()
+    } else {
+        format!("{}:{:02}", t / 60, t % 60)
+    }
+}
 const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -67,6 +112,11 @@ struct Setup {
     team_skill: [usize; MAX_TEAMS],
     /// Each team's colour (palette index); always all different.
     team_colors: [u8; MAX_TEAMS],
+    /// Elimination: style (index into STYLES) and lives (index into LIVES
+    /// or TEAM_LIVES).
+    elim_style: usize,
+    lives: usize,
+    team_lives: usize,
     powerups: bool,
     stations: bool,
     infinite_ammo: bool,
@@ -110,6 +160,9 @@ pub async fn run() {
             team_bots: [2, 3, 3, 3],
             team_skill: [1; MAX_TEAMS],
             team_colors: [0, 1, 2, 3],
+            elim_style: 0,
+            lives: 3,
+            team_lives: 3,
             powerups: true,
             stations: true,
             infinite_ammo: false,
@@ -385,6 +438,14 @@ impl App {
             self.setup.rounds = nearest(&l, r as f32);
         }
         self.setup.time = nearest(&TIME_LIMITS, mode.time_limit_s);
+        if let Some(l) = mode.lives {
+            let list: Vec<f32> = LIVES.iter().map(|&v| v as f32).collect();
+            self.setup.lives = nearest(&list, l as f32);
+        }
+        if let Some(l) = mode.team_lives {
+            let list: Vec<f32> = TEAM_LIVES.iter().map(|&v| v as f32).collect();
+            self.setup.team_lives = nearest(&list, l as f32);
+        }
     }
 
     fn setup_config(&mut self) -> MatchConfig {
@@ -398,6 +459,11 @@ impl App {
             score_limit: Some(SCORE_LIMITS[c.score]),
             rounds: Some(ROUND_COUNTS[c.rounds]),
             time_limit_s: Some(TIME_LIMITS[c.time]),
+            elim_style: STYLES[c.elim_style],
+            lives: Some(match STYLES[c.elim_style] {
+                ElimStyle::Attrition => TEAM_LIVES[c.team_lives],
+                _ => LIVES[c.lives],
+            }),
             bots: c.ffa_bots,
             difficulty: Difficulty::ALL[c.ffa_skill],
             teams: c.teams as u8,
@@ -434,7 +500,7 @@ impl App {
         let top = 80.0 * s;
         ui::panel(Rect::new(lx, top, lw, sh - top - 100.0 * s), None);
         let pad = 12.0 * s;
-        let pv = Rect::new(lx + pad, top + pad, lw - 2.0 * pad, 170.0 * s);
+        let pv = Rect::new(lx + pad, top + pad, lw - 2.0 * pad, 150.0 * s);
         let thumb = self
             .thumbs
             .entry(map.id.clone())
@@ -474,7 +540,21 @@ impl App {
             true,
         );
         y += rh + 2.0 * s;
-        for line in ui::wrap(&mode.description, pv.w, dsize).iter().take(2) {
+        // Elimination: how it is played. Attrition needs teams.
+        let style = STYLES[self.setup.elim_style];
+        let mut d_style = 0;
+        if !mode.respawn {
+            d_style = self
+                .ui
+                .stepper("s_style", "Style", style_name(style), row(y), false, true);
+            y += rh + 2.0 * s;
+        }
+        let blurb = if mode.respawn {
+            mode.description.as_str()
+        } else {
+            style_blurb(style)
+        };
+        for line in ui::wrap(blurb, pv.w, dsize).iter().take(2) {
             y += dsize;
             ui::text_left(
                 line,
@@ -485,25 +565,28 @@ impl App {
             );
         }
         y += 10.0 * s;
-        let (limit_label, limit_value) = if mode.respawn {
-            ("Score Limit", SCORE_LIMITS[self.setup.score].to_string())
-        } else {
-            ("Rounds", ROUND_COUNTS[self.setup.rounds].to_string())
+        let (limit_label, limit_value) = match (mode.respawn, style) {
+            (true, _) => ("Score Limit", count_or_off(SCORE_LIMITS[self.setup.score])),
+            (false, ElimStyle::Rounds) => ("Rounds", ROUND_COUNTS[self.setup.rounds].to_string()),
+            (false, ElimStyle::LastManStanding) => ("Lives", count_or_off(LIVES[self.setup.lives])),
+            (false, ElimStyle::Attrition) => (
+                "Team Lives",
+                count_or_off(TEAM_LIVES[self.setup.team_lives]),
+            ),
         };
         let d_limit = self
             .ui
             .stepper("s_limit", limit_label, &limit_value, row(y), false, true);
         y += rh + 4.0 * s;
-        let t = TIME_LIMITS[self.setup.time] as u32;
-        let tl = if mode.respawn {
-            "Time Limit"
-        } else {
+        let tl = if !mode.respawn && style == ElimStyle::Rounds {
             "Round Time"
+        } else {
+            "Time Limit"
         };
         let d_time = self.ui.stepper(
             "s_time",
             tl,
-            &format!("{}:{:02}", t / 60, t % 60),
+            &time_or_off(TIME_LIMITS[self.setup.time]),
             row(y),
             false,
             true,
@@ -646,6 +729,33 @@ impl App {
             };
             ui::text_left(&note, rx, sh - 120.0 * s, 17.0 * s, col);
         }
+        // Every limit off: say so, and how to leave.
+        let c = &self.setup;
+        let no_clock = TIME_LIMITS[c.time] == 0.0;
+        let endless = no_clock
+            && match (mode.respawn, STYLES[c.elim_style]) {
+                (true, _) => SCORE_LIMITS[c.score] == 0,
+                (false, ElimStyle::Rounds) => false,
+                (false, ElimStyle::LastManStanding) => LIVES[c.lives] == 0,
+                (false, ElimStyle::Attrition) => TEAM_LIVES[c.team_lives] == 0,
+            };
+        if endless {
+            let gold = Color::new(1.0, 0.82, 0.3, 0.95);
+            ui::text_left(
+                "Endless match: no limit is on, so it never ends by itself.",
+                rx,
+                sh - 170.0 * s,
+                17.0 * s,
+                gold,
+            );
+            ui::text_left(
+                "Leave any time from the pause menu (P or Esc).",
+                rx,
+                sh - 148.0 * s,
+                17.0 * s,
+                gold,
+            );
+        }
 
         // Apply changes.
         let c = &mut self.setup;
@@ -659,10 +769,24 @@ impl App {
             reset = true;
         }
         if d_limit != 0 {
-            if mode.respawn {
-                c.score = step(c.score, d_limit, SCORE_LIMITS.len());
-            } else {
-                c.rounds = step(c.rounds, d_limit, ROUND_COUNTS.len());
+            match (mode.respawn, STYLES[c.elim_style]) {
+                (true, _) => c.score = step(c.score, d_limit, SCORE_LIMITS.len()),
+                (false, ElimStyle::Rounds) => {
+                    c.rounds = step(c.rounds, d_limit, ROUND_COUNTS.len())
+                }
+                (false, ElimStyle::LastManStanding) => {
+                    c.lives = step(c.lives, d_limit, LIVES.len())
+                }
+                (false, ElimStyle::Attrition) => {
+                    c.team_lives = step(c.team_lives, d_limit, TEAM_LIVES.len())
+                }
+            }
+        }
+        if d_style != 0 {
+            c.elim_style = step(c.elim_style, d_style, STYLES.len());
+            // Attrition needs teams: skip past it in free-for-all.
+            if c.teams < 2 && STYLES[c.elim_style] == ElimStyle::Attrition {
+                c.elim_style = step(c.elim_style, d_style, STYLES.len());
             }
         }
         if d_time != 0 {
@@ -687,6 +811,9 @@ impl App {
         let at = (at as i32 + d_teams).clamp(0, allowed.len() as i32 - 1) as usize;
         let was_team = c.teams >= 2;
         c.teams = allowed[at];
+        if c.teams < 2 && STYLES[c.elim_style] == ElimStyle::Attrition {
+            c.elim_style = 1; // Last Man Standing
+        }
         let score_default_changed = was_team != (c.teams >= 2);
         if let Some(t) = recolor {
             // Next colour; the team that had it takes this team's old one.
@@ -909,6 +1036,22 @@ impl App {
             .and_then(|n| n.parse().ok())
         {
             self.setup.team_bots = [n; MAX_TEAMS];
+        }
+        // ARCANE_SHOT_STYLE=rounds|lms|attrition, ARCANE_SHOT_ENDLESS=1 (all limits off).
+        if let Ok(st) = std::env::var("ARCANE_SHOT_STYLE") {
+            self.setup.elim_style = match st.as_str() {
+                "lms" => 1,
+                "attrition" => 2,
+                _ => 0,
+            };
+        }
+        if std::env::var_os("ARCANE_SHOT_ENDLESS").is_some() {
+            (
+                self.setup.score,
+                self.setup.time,
+                self.setup.lives,
+                self.setup.team_lives,
+            ) = (0, 0, 0, 0);
         }
         // ARCANE_SHOT_COLORS=3,0,2,1 picks team colours (palette indices).
         if let Ok(list) = std::env::var("ARCANE_SHOT_COLORS") {

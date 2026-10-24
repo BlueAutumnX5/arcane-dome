@@ -4,7 +4,7 @@
     "description": "Most kills wins. With teams on, every kill counts for your team, so stick together."
   },
   "elimination": {
-    "teams": 4, "respawn": false, "rounds": 5, "time_limit_s": 180,
+    "teams": 4, "respawn": false, "rounds": 5, "time_limit_s": 180, "lives": 3, "team_lives": 15,
     "description": "No respawns. The last one standing takes the round (or the last team, with teams on)."
   }
 }
