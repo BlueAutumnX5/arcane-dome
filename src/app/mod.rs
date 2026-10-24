@@ -7,6 +7,7 @@ mod ui;
 use crate::data::{GameData, ProjectileKind, find_assets_dir};
 use crate::render::TEAM_COLORS;
 use crate::sim::{Difficulty, ElimStyle, MAX_TEAMS, MatchConfig, TEAM_NAMES};
+use editor::Editor;
 use macroquad::prelude::*;
 use session::Session;
 use std::sync::Arc;
@@ -76,6 +77,7 @@ enum Screen {
     Setup,
     Info(Info),
     Game(Box<Session>),
+    Editor(Box<Editor>),
     Error(String),
 }
 
@@ -125,6 +127,8 @@ struct Setup {
 
 struct App {
     data: Option<Arc<GameData>>,
+    /// The assets folder, where the editor reads and writes maps.
+    assets: Option<std::path::PathBuf>,
     screen: Screen,
     setup: Setup,
     ui: Ui,
@@ -136,12 +140,13 @@ struct App {
 }
 
 pub async fn run() {
-    let data = match find_assets_dir() {
+    let assets = find_assets_dir();
+    let data = match &assets {
         None => Err(
             "Could not find the assets folder.\nRun from the project folder or set ARCANE_DOME_ASSETS."
                 .to_owned(),
         ),
-        Some(dir) => GameData::load(&dir).map(Arc::new).map_err(|e| e.to_string()),
+        Some(dir) => GameData::load(dir).map(Arc::new).map_err(|e| e.to_string()),
     };
     let mut app = App {
         screen: match &data {
@@ -149,6 +154,7 @@ pub async fn run() {
             Err(e) => Screen::Error(e.clone()),
         },
         data: data.ok(),
+        assets,
         setup: Setup {
             map: 0,
             mode: 0,
@@ -229,6 +235,10 @@ impl App {
                 }
                 session::Outcome::Menu => Some(Screen::Menu),
             },
+            Screen::Editor(ed) => match ed.frame(dt) {
+                editor::Outcome::Continue => None,
+                editor::Outcome::Menu => Some(Screen::Menu),
+            },
         };
         if let Some(s) = next {
             self.screen = s;
@@ -250,6 +260,19 @@ impl App {
     fn start(&self, cfg: MatchConfig) -> Screen {
         match Session::new(self.data(), cfg) {
             Ok(s) => Screen::Game(Box::new(s)),
+            Err(e) => Screen::Error(e),
+        }
+    }
+
+    /// Open the map picked on the setup screen in the editor.
+    fn open_editor(&self) -> Screen {
+        let data = self.data();
+        let map = &data.maps[self.setup.map.min(data.maps.len() - 1)];
+        let Some(assets) = &self.assets else {
+            return Screen::Error("Could not find the assets folder.".into());
+        };
+        match Editor::open(data.clone(), assets.clone(), &map.id) {
+            Ok(ed) => Screen::Editor(Box::new(ed)),
             Err(e) => Screen::Error(e),
         }
     }
@@ -345,9 +368,18 @@ impl App {
             next = Some(Screen::Setup);
         }
         if self.ui.tab(
+            "m_editor",
+            "Map Editor",
+            Rect::new(lx, y0 + gap * 2.0, bw, bh),
+            Side::Left,
+            false,
+        ) {
+            next = Some(self.open_editor());
+        }
+        if self.ui.tab(
             "m_quit",
             "Quit",
-            Rect::new(lx, y0 + gap * 2.0, bw, bh),
+            Rect::new(lx, y0 + gap * 3.0, bw, bh),
             Side::Left,
             false,
         ) {
@@ -1066,6 +1098,15 @@ impl App {
             "howto" => self.screen = Screen::Info(Info::HowTo),
             "weapons" => self.screen = Screen::Info(Info::Weapons),
             "about" => self.screen = Screen::Info(Info::About),
+            // editor[:map] opens the editor on a map.
+            s if s.starts_with("editor") => {
+                if let Some(id) = s.strip_prefix("editor:")
+                    && let Some(i) = self.data().maps.iter().position(|m| m.id == id)
+                {
+                    self.setup.map = i;
+                }
+                self.screen = self.open_editor();
+            }
             s if s.starts_with("game") => {
                 let mut cfg = self.setup_config();
                 cfg.seed = 3;
@@ -1101,7 +1142,7 @@ impl App {
 }
 
 /// Optional screenshot hook for checking visuals without a person at the keyboard:
-/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|game[:map_id[@x,y]] ARCANE_SHOT_AFTER=2`,
+/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|editor[:map_id]|game[:map_id[@x,y]] ARCANE_SHOT_AFTER=2`,
 /// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_COLORS=3,0,2,1
 /// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`.
 mod debug {

@@ -16,3 +16,6 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+
+# Map editor drafts (work in progress, per player)
+assets/editor/

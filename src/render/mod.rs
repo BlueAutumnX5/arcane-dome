@@ -5,7 +5,7 @@ mod gadgets;
 mod hud;
 mod terrain;
 
-pub use terrain::MapArt;
+pub use terrain::{MapArt, draw_sky};
 
 pub use effects::Effects;
 pub use hud::{draw_crosshair, draw_hud, draw_scoreboard};
