@@ -29,7 +29,8 @@ pub(crate) const WATER_SPEED: f32 = 0.6;
 pub(crate) const WATER_MAX_FALL: f32 = 5.0;
 /// Seconds from death to respawning (respawn modes).
 pub const RESPAWN_DELAY: f32 = 5.0;
-pub(crate) const SPAWN_PROTECT: f32 = 1.5;
+/// Seconds of spawn protection: no damage taken.
+pub const SPAWN_PROTECT: f32 = 3.0;
 pub(crate) const SWITCH_DELAY: f32 = 0.2;
 pub(crate) const MAX_BLOOM_DEG: f32 = 12.0;
 pub(crate) const BLOOM_DECAY_DEG: f32 = 20.0;

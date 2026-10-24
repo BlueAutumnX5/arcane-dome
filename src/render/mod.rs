@@ -294,15 +294,29 @@ fn draw_pickups(world: &World) {
     }
 }
 
+/// Blinks per second of the spawn-protection overlay in its last second.
+const PROTECT_BLINK_HZ: f32 = 8.0;
+
 fn draw_fighter(world: &World, f: &Fighter, is_player: bool) {
     let b = f.aabb();
-    let mut col = fighter_color(f);
-    if f.spawn_protect > 0.0 && (world.time * 12.0).sin() > 0.0 {
-        col.a = 0.45;
-    }
+    let col = fighter_color(f);
     let size = b.max - b.min;
     draw_rectangle(b.min.x, b.min.y, size.x, size.y, col);
     draw_rectangle(b.min.x, b.min.y, size.x, HEAD_HEIGHT, shade(col, 0.7));
+    // Spawn protection: a turquoise overlay that blinks fast in its last second.
+    let blink_off = f.spawn_protect < 1.0 && (world.time * PROTECT_BLINK_HZ).fract() < 0.5;
+    if f.spawn_protect > 0.0 && !blink_off {
+        let t = Color::new(0.25, 0.95, 0.85, 0.5);
+        draw_rectangle(b.min.x, b.min.y, size.x, size.y, t);
+        draw_rectangle_lines(
+            b.min.x - 0.06,
+            b.min.y - 0.06,
+            size.x + 0.12,
+            size.y + 0.12,
+            0.07,
+            Color::new(0.4, 1.0, 0.92, 0.9),
+        );
+    }
     // Visor on the facing side.
     let vx = if f.facing > 0.0 {
         b.max.x - 0.28

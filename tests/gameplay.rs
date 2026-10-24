@@ -2,7 +2,8 @@
 
 use arcane_dome::data::{GameData, parse_map, parse_modes, parse_powerups, parse_weapon};
 use arcane_dome::sim::{
-    DT, Event, Input, MAX_HEALTH, MAX_SHIELD, MatchConfig, Phase, RESPAWN_DELAY, STAND_SIZE, World,
+    DT, Event, Input, MAX_HEALTH, MAX_SHIELD, MatchConfig, Phase, RESPAWN_DELAY, SPAWN_PROTECT,
+    STAND_SIZE, World,
 };
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
@@ -817,4 +818,25 @@ fn teams_wear_the_colours_picked_in_setup() {
     c.bots = 3;
     let w = World::new(data(), c).unwrap();
     assert!(w.fighters.iter().all(|f| f.tint.is_none()));
+}
+
+#[test]
+fn respawned_fighters_are_protected_for_three_seconds() {
+    let mut w = world("deathmatch", 1, 0);
+    run(&mut w, 5);
+    w.damage(1, Some(0), None, 500.0, false, false);
+    run(&mut w, (RESPAWN_DELAY / DT) as usize + 2);
+    assert!(w.fighters[1].alive);
+    assert_eq!(SPAWN_PROTECT, 3.0);
+    // Just before it runs out: hits do nothing.
+    run(&mut w, ((SPAWN_PROTECT - 0.2) / DT) as usize);
+    w.damage(1, Some(0), None, 40.0, false, false);
+    assert_eq!(w.fighters[1].health, MAX_HEALTH, "hurt while protected");
+    // Once it has run out, they do.
+    run(&mut w, (0.3 / DT) as usize);
+    w.damage(1, Some(0), None, 40.0, false, false);
+    assert!(
+        w.fighters[1].health < MAX_HEALTH,
+        "still protected after 3 s"
+    );
 }
