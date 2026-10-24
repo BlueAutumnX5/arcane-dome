@@ -63,11 +63,34 @@ powerups, 2 to 4 teams with pickable colours, free-for-all Elimination, a start 
 a death screen, and bot-behaviour tools (`map_check`, `bot_watch`).
 
 ## Milestone 2 (next)
-- [ ] Map editor in-game, so anyone can build maps (with hand-placed jump links for bots)
+- [ ] Map editor in-game, so anyone can build maps (v1 below; hand-placed bot jump links in v2)
 - [ ] Animations for fighters and weapons
 - [ ] Textures for terrain and decor
 - [ ] Sound: CC0 packs and generated effects, credited in CREDITS.md
 - [ ] Maybe: Capture the Flag and King of the Hill
+
+### Map editor v1 (Milestone 2, step 1)
+An in-game screen ("Map Editor" on the main menu). It reuses the map renderer,
+physics and nav graph, and writes the same map JSON the game loads.
+
+- **Shapes**: draw polygons point by point on a grid (snap 0.5 tile, hold Shift
+  for free placement). Kinds: solid, hatch, water, lava. Each shape has a
+  material. Select, move, delete; drag single points.
+- **Things**: place spawns (team Any/Blue/Red/Green/Yellow, plus per-team-count
+  overrides), pickups (health, ammo, weapon), thrusters (height), weapon and
+  shield stations, powerup spots.
+- **Map settings**: name, size, supported team counts, sky preset.
+- **Undo/redo** for every edit (Ctrl+Z / Ctrl+Y).
+- **Validate**: runs the normal map checks plus the nav check (every spawn can
+  reach every other) and the headroom check, and lists problems; clicking one
+  jumps the camera to it.
+- **Test-play**: starts a quick match with bots on the map being edited;
+  leaving returns to the editor with nothing lost.
+- **Saving**: work in progress is saved to `assets/editor/<id>.json` at any
+  time, even if broken. "Publish" copies it to `assets/data/maps/<id>.json`
+  only when Validate passes, because one broken file in `maps/` stops the game
+  from loading. Published maps show up in the setup map list.
+- **v2 (later)**: decor, themes and sky editing, hand-placed bot jump links.
 
 ## Suggested layout
 ```
