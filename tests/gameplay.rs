@@ -275,7 +275,7 @@ fn reaching_the_score_limit_ends_the_match() {
     for _ in 0..3 {
         w.fighters[1].spawn_protect = 0.0;
         w.damage(1, Some(0), None, 500.0, false, false);
-        run(&mut w, 200);
+        run(&mut w, (RESPAWN_DELAY / DT) as usize + 10);
     }
     assert_eq!(w.phase, Phase::MatchOver { winner: Some(0) });
 }
@@ -639,7 +639,7 @@ fn any_of_four_teams_can_win_on_score() {
     for _ in 0..5 {
         w.fighters[red].spawn_protect = 0.0;
         w.damage(red, Some(gold), None, 500.0, false, false);
-        run(&mut w, (5.0 / DT) as usize);
+        run(&mut w, (RESPAWN_DELAY / DT) as usize + 10);
         if matches!(w.phase, Phase::MatchOver { .. }) {
             break;
         }
