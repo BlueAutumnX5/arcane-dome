@@ -29,6 +29,8 @@ const HURT_BLOOD: f32 = 0.25;
 fn draw_splatter(fighter: usize, life: u32, strength: f32, dead_for: Option<f32>) {
     let (sw, sh) = (screen_width(), screen_height());
     let fade = strength * dead_for.map_or(1.0, |t| (t / 0.35).clamp(0.0, 1.0));
+    // Drips run only on the death screen; while hurt there are just splats.
+    let dying = dead_for.is_some();
     let dead_for = dead_for.unwrap_or(10.0);
     // Vignette: red bands thickening toward the edges.
     for k in 0..6 {
@@ -92,8 +94,12 @@ fn draw_splatter(fighter: usize, life: u32, strength: f32, dead_for: Option<f32>
             let rx = x + (rand() - 0.5) * r * 1.2;
             let len = r * (1.0 + rand() * 2.5) * (dead_for / 1.2).clamp(0.0, 1.0);
             let w = r * (0.1 + rand() * 0.12);
-            draw_rectangle(rx - w * 0.5, y, w, len, c);
-            draw_circle(rx, y + len, w * 0.8, c);
+            // (Still drawn from the random sequence when skipped, so the
+            // splats keep the same places alive and dead.)
+            if dying {
+                draw_rectangle(rx - w * 0.5, y, w, len, c);
+                draw_circle(rx, y + len, w * 0.8, c);
+            }
         }
     }
 }
