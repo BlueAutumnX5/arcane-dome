@@ -12,7 +12,7 @@ mod world;
 
 pub use combat::Projectile;
 pub use fighter::{Buff, Fighter, Slot};
-pub use fighter::{CROUCH_SIZE, HEAD_HEIGHT, MAX_HEALTH, MAX_SHIELD, STAND_SIZE};
+pub use fighter::{CROUCH_SIZE, HEAD_HEIGHT, MAX_HEALTH, MAX_SHIELD, RESPAWN_DELAY, STAND_SIZE};
 pub use gadgets::{ObjectState, absorb};
 pub use input::Input;
 pub use rng::Rng;

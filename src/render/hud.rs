@@ -17,6 +17,83 @@ fn text_center(t: &str, cx: f32, y: f32, size: f32, color: Color) {
     text(t, cx - d.width / 2.0, y, size, color);
 }
 
+/// Seconds before respawning when "Respawn in N" appears.
+const RESPAWN_SHOWN_S: f32 = 3.0;
+
+/// The death screen: a red vignette and splatter that land over the first
+/// moments after dying. Drawn in code; the pattern is fixed per death.
+fn draw_death_splatter(world: &World, fighter: usize, dead_for: f32) {
+    let (sw, sh) = (screen_width(), screen_height());
+    let fade = (dead_for / 0.35).clamp(0.0, 1.0);
+    // Vignette: red bands thickening toward the edges.
+    for k in 0..6 {
+        let t = (k + 1) as f32 / 6.0;
+        let band = sh * 0.05 * t;
+        let c = Color::new(0.55, 0.02, 0.02, 0.09 * fade);
+        draw_rectangle(0.0, 0.0, sw, band, c);
+        draw_rectangle(0.0, sh - band, sw, band, c);
+        draw_rectangle(0.0, 0.0, band * 1.4, sh, c);
+        draw_rectangle(sw - band * 1.4, 0.0, band * 1.4, sh, c);
+    }
+    draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.45, 0.0, 0.0, 0.18 * fade));
+    // Splats: a blob, a few droplets and a run or two, mostly near the edges.
+    let deaths = world.fighters[fighter].deaths;
+    let mut seed =
+        (fighter as u32 + 1).wrapping_mul(0x9E37_79B9) ^ deaths.wrapping_mul(0x85EB_CA6B);
+    let mut rand = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        (seed % 10_000) as f32 / 10_000.0
+    };
+    let unit = sh / 720.0;
+    for n in 0..14 {
+        // Pick a spot nearer an edge than the middle.
+        let (mut x, mut y) = (rand(), rand());
+        if n % 2 == 0 {
+            x = if x < 0.5 {
+                x * 0.35
+            } else {
+                1.0 - (1.0 - x) * 0.35
+            };
+        } else {
+            y = if y < 0.5 {
+                y * 0.35
+            } else {
+                1.0 - (1.0 - y) * 0.35
+            };
+        }
+        let (x, y) = (x * sw, y * sh);
+        let landed = ((dead_for - n as f32 * 0.025) / 0.12).clamp(0.0, 1.0);
+        if landed <= 0.0 {
+            continue;
+        }
+        let r = (18.0 + rand() * 46.0) * unit * (0.6 + 0.4 * landed);
+        let dark = 0.35 + rand() * 0.25;
+        let c = Color::new(dark, 0.0, 0.01, 0.72 * fade);
+        draw_circle(x, y, r, c);
+        for _ in 0..7 {
+            let a = rand() * std::f32::consts::TAU;
+            let d = r * (0.9 + rand() * 1.1);
+            draw_circle(
+                x + a.cos() * d,
+                y + a.sin() * d,
+                r * (0.08 + rand() * 0.22),
+                c,
+            );
+        }
+        // Runs that creep down over the first second.
+        let runs = (rand() * 3.0) as i32;
+        for _ in 0..runs {
+            let rx = x + (rand() - 0.5) * r * 1.2;
+            let len = r * (1.0 + rand() * 2.5) * (dead_for / 1.2).clamp(0.0, 1.0);
+            let w = r * (0.1 + rand() * 0.12);
+            draw_rectangle(rx - w * 0.5, y, w, len, c);
+            draw_circle(rx, y + len, w * 0.8, c);
+        }
+    }
+}
+
 /// Coloured pieces of text side by side, `gap` apart, centred on `cx`.
 fn segments_center(parts: &[(String, Color)], cx: f32, y: f32, size: f32, gap: f32) {
     let widths: Vec<f32> = parts
@@ -97,6 +174,10 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
     let sw = screen_width();
     let sh = screen_height();
     let f = &world.fighters[player];
+
+    if !f.alive && world.phase == Phase::Playing {
+        draw_death_splatter(world, f.id, world.time - f.died_at);
+    }
 
     if effects.hurt > 0.0 {
         let a = effects.hurt / 0.25 * 0.35;
@@ -418,12 +499,29 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
             text_center(&msg, cx, sh * 0.3, 40.0 * s, side_color(world, winner));
         }
         Phase::Playing if !f.alive => {
-            let msg = if mode.respawn {
-                format!("Respawning in {:.1}", f.respawn_timer.max(0.0))
+            // The countdown shows only for the last few seconds.
+            let msg = if !mode.respawn {
+                Some("Eliminated - waiting for the next round".to_owned())
+            } else if f.respawn_timer <= RESPAWN_SHOWN_S {
+                Some(format!(
+                    "Respawn in {}",
+                    f.respawn_timer.max(0.0).ceil() as i32
+                ))
             } else {
-                "Eliminated - waiting for the next round".to_owned()
+                None
             };
-            text_center(&msg, cx, sh * 0.35, 32.0 * s, WHITE);
+            if let Some(msg) = msg {
+                let y = sh * 0.64;
+                let gold = Color::new(1.0, 0.82, 0.25, 1.0);
+                text_center(
+                    &msg,
+                    cx + 2.0 * s,
+                    y + 2.0 * s,
+                    40.0 * s,
+                    Color::new(0.0, 0.0, 0.0, 0.6),
+                );
+                text_center(&msg, cx, y, 40.0 * s, gold);
+            }
         }
         Phase::Playing => {
             if def.projectile.kind == ProjectileKind::Beam && slot.mag == 0 && !f.is_reloading() {

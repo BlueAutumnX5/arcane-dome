@@ -75,6 +75,14 @@ impl Session {
         })
     }
 
+    /// Debug screenshots: kill the player, to show the death screen.
+    pub fn debug_kill_player(&mut self) {
+        let p = self.player;
+        self.world.countdown = 0.0;
+        self.world.fighters[p].spawn_protect = 0.0;
+        self.world.damage(p, None, None, 9999.0, false, false);
+    }
+
     /// Debug screenshots: put the player's feet at `at` and look there.
     pub fn debug_place_player(&mut self, at: Vec2) {
         self.world.fighters[self.player].feet = at;

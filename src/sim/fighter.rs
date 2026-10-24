@@ -27,7 +27,8 @@ pub(crate) const SWIM_VEL: f32 = 9.0;
 pub(crate) const WATER_GRAVITY: f32 = 0.35;
 pub(crate) const WATER_SPEED: f32 = 0.6;
 pub(crate) const WATER_MAX_FALL: f32 = 5.0;
-pub(crate) const RESPAWN_DELAY: f32 = 3.0;
+/// Seconds from death to respawning (respawn modes).
+pub const RESPAWN_DELAY: f32 = 5.0;
 pub(crate) const SPAWN_PROTECT: f32 = 1.5;
 pub(crate) const SWITCH_DELAY: f32 = 0.2;
 pub(crate) const MAX_BLOOM_DEG: f32 = 12.0;
@@ -70,6 +71,8 @@ pub struct Fighter {
     pub health: f32,
     pub alive: bool,
     pub respawn_timer: f32,
+    /// World time of the last death (for the death screen).
+    pub died_at: f32,
     pub spawn_protect: f32,
 
     /// One entry per weapon in `GameData::weapons` (same index = same weapon).
@@ -137,6 +140,7 @@ impl Fighter {
             health: MAX_HEALTH,
             alive: false,
             respawn_timer: 0.0,
+            died_at: 0.0,
             spawn_protect: 0.0,
             inventory: vec![Slot::default(); weapons],
             current: 0,

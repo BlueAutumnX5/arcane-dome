@@ -467,6 +467,7 @@ impl World {
         v.health = 0.0;
         v.deaths += 1;
         v.respawn_timer = RESPAWN_DELAY;
+        v.died_at = time;
         v.burn = None;
         v.vel = Vec2::ZERO;
         let credited = match attacker {

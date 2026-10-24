@@ -2,7 +2,7 @@
 
 use arcane_dome::data::{GameData, parse_map, parse_modes, parse_powerups, parse_weapon};
 use arcane_dome::sim::{
-    DT, Event, Input, MAX_HEALTH, MAX_SHIELD, MatchConfig, Phase, STAND_SIZE, World,
+    DT, Event, Input, MAX_HEALTH, MAX_SHIELD, MatchConfig, Phase, RESPAWN_DELAY, STAND_SIZE, World,
 };
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
@@ -262,7 +262,9 @@ fn kills_score_and_dead_fighters_respawn() {
     assert_eq!(w.fighters[0].kills, 1);
     assert_eq!(w.fighters[1].deaths, 1);
     assert_eq!(w.scores[0], 1);
-    run(&mut w, (3.0 / DT) as usize + 2);
+    run(&mut w, ((RESPAWN_DELAY - 0.2) / DT) as usize);
+    assert!(!w.fighters[1].alive, "respawned too early");
+    run(&mut w, (0.2 / DT) as usize + 2);
     assert!(w.fighters[1].alive, "respawned after the delay");
     assert_eq!(w.fighters[1].health, MAX_HEALTH);
 }

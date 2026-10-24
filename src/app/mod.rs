@@ -937,6 +937,12 @@ impl App {
                 if let (Screen::Game(g), Some(at)) = (&mut self.screen, at) {
                     g.debug_place_player(at);
                 }
+                // ARCANE_SHOT_KILL=1 shows the death screen.
+                if let (Screen::Game(g), Ok(_)) =
+                    (&mut self.screen, std::env::var("ARCANE_SHOT_KILL"))
+                {
+                    g.debug_kill_player();
+                }
             }
             _ => {}
         }
