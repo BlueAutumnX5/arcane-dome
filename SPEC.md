@@ -39,21 +39,31 @@ starts with a 3 second countdown ("3, 2, 1, GO"); fighters can aim but not move 
 - Credits earned per kill with bonuses (headshot, multikill, melee) used to unlock weapons and skins
 - Armor abilities and one-use gadgets: mines, teleport, cloak, heal kit, static field, ammo refill
 - Classes (Medic, Sniper, Heavy, etc.) with weapon pools
-- Map editor in-game
 - LAN or online multiplayer
 
-## Milestone 1 checklist
-- [ ] Window, fixed-step loop, tilemap rendering, camera
-- [ ] Player movement with gravity, double jump, crouch, one-way platforms
+## Milestone 1 checklist (done, v0.1.0)
+- [x] Window, fixed-step loop, terrain rendering, camera (freeform polygon terrain instead of a tilemap)
+- [x] Player movement with gravity, double jump, crouch, one-way platforms (hatches: stand on them, drop through with S, fly up through them)
 - [x] Terrain collision (polygon ray probes), tests for edge cases (corners, slopes, hatches)
-- [ ] Weapon loader from JSON, 10 weapons covering at least 5 projectile types
-- [ ] Hitscan, bullet, bouncing grenade, rocket with splash, beam
-- [ ] Health, damage, headshot multiplier, death, respawn at spawn points
-- [ ] Pickups: health, ammo, weapon crates
-- [ ] Bot AI: waypoint graph auto-built from the tilemap, chase, strafe, shoot, retreat when low health
-- [ ] 3 maps loaded from JSON
-- [ ] 3 modes above, HUD (health, ammo, weapon bar, score, timer), scoreboard
-- [ ] Main menu and custom match screen
+- [x] Weapon loader from JSON, 10 weapons covering at least 5 projectile types
+- [x] Hitscan, bullet, bouncing grenade, rocket with splash, beam
+- [x] Health, damage, headshot multiplier, death, respawn at spawn points
+- [x] Pickups: health, ammo, weapon crates
+- [x] Bot AI: waypoint graph auto-built from the terrain, chase, strafe, shoot, retreat when low health
+- [x] 3 maps loaded from JSON (Foundry Ascent, Frostline Relay, Redstone Arches)
+- [x] 3 modes above, HUD (health, ammo, weapon bar, score, timer), scoreboard
+- [x] Main menu and custom match screen
+
+Beyond the plan, Milestone 1 also gained: thrusters, weapon and shield stations, four
+powerups, 2 to 4 teams with pickable colours, free-for-all Elimination, a start countdown,
+a death screen, and bot-behaviour tools (`map_check`, `bot_watch`).
+
+## Milestone 2 (next)
+- [ ] Map editor in-game, so anyone can build maps (with hand-placed jump links for bots)
+- [ ] Animations for fighters and weapons
+- [ ] Textures for terrain and decor
+- [ ] Sound: CC0 packs and generated effects, credited in CREDITS.md
+- [ ] Maybe: Capture the Flag and King of the Hill
 
 ## Suggested layout
 ```

@@ -125,10 +125,12 @@ cargo run --release --example bot_watch -- foundry_ascent 180 4
 
 ## Roadmap
 
-1. Two more maps: one built for 3 and 4 teams, one for 2 teams
-2. Possibly Capture the Flag and King of the Hill
-3. A map editor, so anyone can build maps
-4. Animations and textures, then sound
+Milestone 1 is done (v0.1.0). Next, Milestone 2:
+
+1. A map editor, so anyone can build maps
+2. Animations and textures
+3. Sound
+4. Possibly Capture the Flag and King of the Hill
 
 ## License
 
