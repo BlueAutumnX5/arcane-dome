@@ -235,7 +235,7 @@ impl App {
                 }
                 session::Outcome::Menu => Some(Screen::Menu),
             },
-            Screen::Editor(ed) => match ed.frame(dt) {
+            Screen::Editor(ed) => match ed.frame(dt, &mut self.ui) {
                 editor::Outcome::Continue => None,
                 editor::Outcome::Menu => Some(Screen::Menu),
             },

@@ -3,11 +3,12 @@
 #[allow(dead_code)]
 mod doc;
 
-use super::ui::{self, ACCENT};
+use super::ui::{self, ACCENT, Ui};
 use crate::data::{GameData, MapDef, ObjectKind, PickupKind, parse_map};
 use crate::render::{GameCamera, MapArt, TEAM_COLORS, draw_sky};
 use doc::{Doc, Layer};
 use macroquad::prelude::*;
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -17,6 +18,13 @@ const MIN_PPT: f32 = 6.0;
 const MAX_PPT: f32 = 96.0;
 /// Keyboard pan speed, in screen pixels per second.
 const PAN_SPEED: f32 = 900.0;
+/// Key help along the bottom, per tool.
+const HELP: [&str; 3] = [
+    "Click: select   Drag: move (Shift: free)   Del: delete   Right-drag/WASD: pan   Wheel: zoom   F: fit   G: grid   Ctrl+Z/Y: undo/redo   Ctrl+S: save",
+    "Click: add corner   Click first corner or Enter: finish   Backspace: undo corner   Shift: free   Esc: cancel",
+    "Click: place (drops onto the floor below)   Shift: free   Esc: back to Select",
+];
+
 /// Mouse travel, in pixels, before a click becomes a drag.
 const DRAG_START_PX: f32 = 4.0;
 /// How close, in pixels, a click must be to grab a shape's corner.
@@ -29,6 +37,64 @@ const NOTE_S: f32 = 3.0;
 pub enum Outcome {
     Continue,
     Menu,
+}
+
+/// Shape kinds, and the material a new shape of that kind starts with.
+const KINDS: [(&str, &str); 4] = [
+    ("solid", "rock"),
+    ("hatch", "wood"),
+    ("water", "water"),
+    ("hazard", "lava"),
+];
+const MATERIALS: [&str; 12] = [
+    "rock", "metal", "wood", "ice", "sand", "moss", "sludge", "glass", "lava", "spikes", "water",
+    "void",
+];
+/// Things the place tools put down: name, list, and starting fields.
+const PLACE: [(&str, Layer, &str); 8] = [
+    ("Spawn", Layer::Spawns, "{}"),
+    (
+        "Health",
+        Layer::Pickups,
+        r#"{"type": "health", "respawn_s": 25}"#,
+    ),
+    (
+        "Ammo",
+        Layer::Pickups,
+        r#"{"type": "ammo", "respawn_s": 15}"#,
+    ),
+    (
+        "Weapon",
+        Layer::Pickups,
+        r#"{"type": "weapon", "respawn_s": 25}"#,
+    ),
+    (
+        "Thruster",
+        Layer::Objects,
+        r#"{"type": "thruster", "height_tiles": 8}"#,
+    ),
+    (
+        "Weapon Station",
+        Layer::Objects,
+        r#"{"type": "weapon_station"}"#,
+    ),
+    (
+        "Shield Station",
+        Layer::Objects,
+        r#"{"type": "shield_station"}"#,
+    ),
+    ("Powerup", Layer::Objects, r#"{"type": "powerup_spot"}"#),
+];
+/// How far below the cursor a placed thing looks for a floor to stand on.
+const FLOOR_REACH: f32 = 6.0;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Tool {
+    Select,
+    /// Click corners; click the first corner again or press Enter to finish.
+    Draw,
+    /// Index into PLACE.
+    Place(usize),
 }
 
 /// What is selected.
@@ -77,6 +143,12 @@ pub struct Editor {
     time: f32,
     sel: Option<Sel>,
     drag: Option<Drag>,
+    tool: Tool,
+    /// Corners of the shape being drawn.
+    pending: Vec<Vec2>,
+    /// Kind (index into KINDS) and material for the next drawn shape.
+    new_kind: usize,
+    new_material: usize,
 }
 
 impl Editor {
@@ -105,6 +177,10 @@ impl Editor {
             time: 0.0,
             sel: None,
             drag: None,
+            tool: Tool::Select,
+            pending: Vec::new(),
+            new_kind: 0,
+            new_material: 0,
         };
         ed.rebuild();
         ed.fit();
@@ -149,21 +225,24 @@ impl Editor {
         self.note = Some((msg, 0.0));
     }
 
-    /// Show the whole map.
+    /// Show the whole map, clear of the top bar and the toolbar.
     fn fit(&mut self) {
         let size = self.doc.size();
-        let screen = vec2(screen_width(), screen_height() - self.bar_height());
-        self.cam.ppt = (screen.x / (size.x + 2.0))
-            .min(screen.y / (size.y + 2.0))
+        let left = 170.0 * ui::scale();
+        let top = self.bar_height();
+        let room = vec2(screen_width() - left, screen_height() - top);
+        self.cam.ppt = (room.x / (size.x + 1.0))
+            .min(room.y / (size.y + 1.0))
             .clamp(MIN_PPT, MAX_PPT);
-        self.cam.pos = size * 0.5 - vec2(0.0, self.bar_height() * 0.5 / self.cam.ppt);
+        // Centre the map in the free area, not the whole screen.
+        self.cam.pos = size * 0.5 - vec2(left, top) * 0.5 / self.cam.ppt;
     }
 
     fn bar_height(&self) -> f32 {
         34.0 * ui::scale()
     }
 
-    pub fn frame(&mut self, dt: f32) -> Outcome {
+    pub fn frame(&mut self, dt: f32, ui: &mut Ui) -> Outcome {
         self.time += dt;
         if let Some((_, age)) = &mut self.note {
             *age += dt;
@@ -173,8 +252,17 @@ impl Editor {
         }
         let mouse: Vec2 = mouse_position().into();
         if is_key_pressed(KeyCode::Escape) {
-            return Outcome::Menu;
+            // Step back one level: the shape being drawn, then the tool,
+            // then the editor.
+            if !self.pending.is_empty() {
+                self.pending.clear();
+            } else if self.tool != Tool::Select {
+                self.tool = Tool::Select;
+            } else {
+                return Outcome::Menu;
+            }
         }
+        self.tool_keys();
         self.camera_controls(mouse, dt);
         if is_key_pressed(KeyCode::G) {
             self.grid = !self.grid;
@@ -191,13 +279,189 @@ impl Editor {
             self.drag = None;
             self.rebuild();
         }
-        self.select_and_drag(mouse);
-        if is_key_pressed(KeyCode::Delete) || is_key_pressed(KeyCode::Backspace) {
-            self.delete_selected();
+        let over_ui = self.over_ui(mouse);
+        match self.tool {
+            Tool::Select => {
+                if !over_ui || self.drag.is_some() {
+                    self.select_and_drag(mouse);
+                }
+                if is_key_pressed(KeyCode::Delete) || is_key_pressed(KeyCode::Backspace) {
+                    self.delete_selected();
+                }
+            }
+            Tool::Draw => self.draw_tool(mouse, over_ui),
+            Tool::Place(k) => {
+                if !over_ui && is_mouse_button_pressed(MouseButton::Left) {
+                    self.place(k, mouse);
+                }
+            }
         }
         self.last_mouse = mouse;
         self.draw(mouse);
+        self.toolbar();
+        self.properties(ui);
         Outcome::Continue
+    }
+
+    /// Number keys pick tools: 1 select, 2 draw, 3 to 0 the place tools.
+    fn tool_keys(&mut self) {
+        const KEYS: [KeyCode; 10] = [
+            KeyCode::Key1,
+            KeyCode::Key2,
+            KeyCode::Key3,
+            KeyCode::Key4,
+            KeyCode::Key5,
+            KeyCode::Key6,
+            KeyCode::Key7,
+            KeyCode::Key8,
+            KeyCode::Key9,
+            KeyCode::Key0,
+        ];
+        for (i, key) in KEYS.into_iter().enumerate() {
+            if is_key_pressed(key) {
+                self.set_tool(tool_at(i));
+            }
+        }
+    }
+
+    fn set_tool(&mut self, tool: Tool) {
+        self.tool = tool;
+        self.pending.clear();
+        self.drag = None;
+        if tool != Tool::Select {
+            self.sel = None;
+        }
+    }
+
+    /// The screen rects of the toolbar buttons and the properties panel.
+    fn toolbar_rects(&self) -> Vec<Rect> {
+        let s = ui::scale();
+        let (w, h, gap) = (150.0 * s, 24.0 * s, 4.0 * s);
+        let top = self.bar_height() + 10.0 * s;
+        (0..PLACE.len() + 2)
+            .map(|i| Rect::new(10.0 * s, top + i as f32 * (h + gap), w, h))
+            .collect()
+    }
+
+    fn panel_rect(&self, rows: usize) -> Rect {
+        let s = ui::scale();
+        let h = (rows as f32 * 30.0 + 40.0) * s;
+        Rect::new(10.0 * s, screen_height() - 30.0 * s - h, 300.0 * s, h)
+    }
+
+    fn over_ui(&self, mouse: Vec2) -> bool {
+        mouse.y <= self.bar_height() || self.toolbar_rects().iter().any(|r| r.contains(mouse)) || {
+            let rows = self.property_rows();
+            rows > 0 && self.panel_rect(rows).contains(mouse)
+        }
+    }
+
+    fn toolbar(&mut self) {
+        let s = ui::scale();
+        for (i, r) in self.toolbar_rects().into_iter().enumerate() {
+            let tool = tool_at(i);
+            let on = self.tool == tool;
+            let hot = r.contains(mouse_position().into());
+            let fill = if on {
+                with_alpha(ACCENT, 0.85)
+            } else if hot {
+                Color::new(1.0, 1.0, 1.0, 0.18)
+            } else {
+                Color::new(0.03, 0.07, 0.09, 0.85)
+            };
+            draw_rectangle(r.x, r.y, r.w, r.h, fill);
+            draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, with_alpha(ACCENT, 0.5));
+            let key = (i + 1) % 10;
+            let text = if on {
+                Color::new(0.03, 0.07, 0.09, 1.0)
+            } else {
+                WHITE
+            };
+            ui::text_left(
+                &format!("{key}  {}", tool_name(tool)),
+                r.x + 8.0 * s,
+                r.y + r.h * 0.7,
+                15.0 * s,
+                text,
+            );
+            if hot && is_mouse_button_pressed(MouseButton::Left) {
+                self.set_tool(tool);
+            }
+        }
+    }
+
+    /// Draw tool: left click adds a corner, clicking the first corner or
+    /// Enter closes the shape, Backspace takes back the last corner.
+    fn draw_tool(&mut self, mouse: Vec2, over_ui: bool) {
+        let free = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
+        let world = self.cam.screen_to_world(mouse);
+        let at = if free { world } else { snap(world) };
+        if !over_ui && is_mouse_button_pressed(MouseButton::Left) {
+            let closes = self.pending.len() >= 3
+                && self.pending[0].distance(world) * self.cam.ppt <= HANDLE_PX;
+            if closes {
+                self.finish_shape();
+            } else if self.pending.last() != Some(&at) {
+                self.pending.push(at);
+            }
+        }
+        if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter) {
+            self.finish_shape();
+        }
+        if is_key_pressed(KeyCode::Backspace) {
+            self.pending.pop();
+        }
+    }
+
+    fn finish_shape(&mut self) {
+        if self.pending.len() < 3 {
+            self.note = Some(("A shape needs at least 3 corners".into(), 0.0));
+            return;
+        }
+        let pts = std::mem::take(&mut self.pending);
+        self.doc.checkpoint();
+        let i = self
+            .doc
+            .add_shape(KINDS[self.new_kind].0, MATERIALS[self.new_material], &pts);
+        self.rebuild();
+        self.tool = Tool::Select;
+        self.sel = Some(Sel::Shape(i));
+    }
+
+    /// Put down a new thing at the cursor, standing on the floor below it.
+    fn place(&mut self, k: usize, mouse: Vec2) {
+        let (_, layer, fields) = PLACE[k];
+        let mut fields: Value = serde_json::from_str(fields).expect("PLACE fields are JSON");
+        if fields.get("type").and_then(Value::as_str) == Some("weapon") {
+            let w = self
+                .data
+                .weapons
+                .iter()
+                .find(|w| w.category != crate::data::Category::Starter);
+            fields["weapon_id"] = json!(w.map_or("", |w| w.id.as_str()));
+        }
+        let free = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
+        let world = self.cam.screen_to_world(mouse);
+        let at = if free { world } else { snap(world) };
+        let at = self.floor_below(at);
+        self.doc.checkpoint();
+        let i = self.doc.add_thing(layer, at, fields);
+        self.sel = Some(Sel::Thing(layer, i));
+        self.rebuild();
+    }
+
+    /// The floor under `p` (within reach), or `p` itself if there is none.
+    fn floor_below(&self, p: Vec2) -> Vec2 {
+        let Some(preview) = &self.preview else {
+            return p;
+        };
+        preview
+            .map
+            .terrain
+            .cast(p - vec2(0.0, 0.01), vec2(0.0, 1.0), FLOOR_REACH, |e| {
+                e.walkable()
+            })
+            .map_or(p, |(t, _)| vec2(p.x, p.y - 0.01 + t))
     }
 
     fn select_and_drag(&mut self, mouse: Vec2) {
@@ -306,6 +570,136 @@ impl Editor {
         self.rebuild();
     }
 
+    /// How many rows the properties panel has right now (0 hides it).
+    fn property_rows(&self) -> usize {
+        match (self.tool, self.sel) {
+            (Tool::Draw, _) => 2,
+            (Tool::Select, Some(Sel::Shape(_) | Sel::Point(..))) => 2,
+            (Tool::Select, Some(Sel::Thing(layer, i))) => {
+                thing_props(self.doc.thing(layer, i), layer).len()
+            }
+            _ => 0,
+        }
+    }
+
+    /// Settings for the selected shape or thing, or for the next shape drawn.
+    fn properties(&mut self, ui: &mut Ui) {
+        let rows = self.property_rows();
+        if rows == 0 {
+            return;
+        }
+        let s = ui::scale();
+        let r = self.panel_rect(rows);
+        ui::panel(r, None);
+        let row = |n: usize| {
+            Rect::new(
+                r.x + 8.0 * s,
+                r.y + (34.0 + n as f32 * 30.0) * s,
+                r.w - 16.0 * s,
+                26.0 * s,
+            )
+        };
+        let title_y = r.y + 22.0 * s;
+        match (self.tool, self.sel) {
+            (Tool::Draw, _) => {
+                ui::text_left("New shape", r.x + 12.0 * s, title_y, 16.0 * s, ACCENT);
+                let d = ui.stepper(
+                    "ed_kind",
+                    "Kind",
+                    KINDS[self.new_kind].0,
+                    row(0),
+                    false,
+                    true,
+                );
+                if d != 0 {
+                    self.new_kind = step(self.new_kind, d, KINDS.len());
+                    let m = KINDS[self.new_kind].1;
+                    self.new_material = MATERIALS.iter().position(|&x| x == m).unwrap_or(0);
+                }
+                let d = ui.stepper(
+                    "ed_mat",
+                    "Material",
+                    MATERIALS[self.new_material],
+                    row(1),
+                    false,
+                    true,
+                );
+                if d != 0 {
+                    self.new_material = step(self.new_material, d, MATERIALS.len());
+                }
+            }
+            (_, Some(Sel::Shape(i) | Sel::Point(i, _))) => {
+                ui::text_left(
+                    &format!("Shape {}", i + 1),
+                    r.x + 12.0 * s,
+                    title_y,
+                    16.0 * s,
+                    ACCENT,
+                );
+                let shape = self.doc.shape(i).clone();
+                let kind = shape
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("solid")
+                    .to_owned();
+                let mat = shape
+                    .get("material")
+                    .and_then(Value::as_str)
+                    .unwrap_or("rock")
+                    .to_owned();
+                let d = ui.stepper("ed_kind", "Kind", &kind, row(0), false, true);
+                if d != 0 {
+                    let k = KINDS.iter().position(|(n, _)| *n == kind).unwrap_or(0);
+                    let k = step(k, d, KINDS.len());
+                    self.doc.checkpoint();
+                    self.doc.set_shape_field(i, "kind", Some(json!(KINDS[k].0)));
+                    self.rebuild();
+                }
+                let d = ui.stepper("ed_mat", "Material", &mat, row(1), false, true);
+                if d != 0 {
+                    let m = MATERIALS.iter().position(|n| *n == mat).unwrap_or(0);
+                    let m = step(m, d, MATERIALS.len());
+                    self.doc.checkpoint();
+                    self.doc
+                        .set_shape_field(i, "material", Some(json!(MATERIALS[m])));
+                    self.rebuild();
+                }
+            }
+            (_, Some(Sel::Thing(layer, i))) => {
+                let t = self.doc.thing(layer, i).clone();
+                let title = match layer {
+                    Layer::Spawns => "Spawn".to_owned(),
+                    Layer::Pickups => tool_name(Tool::Place(match pickup_kind(&t) {
+                        Some(PickupKind::Health) => 1,
+                        Some(PickupKind::Ammo) => 2,
+                        _ => 3,
+                    }))
+                    .to_owned(),
+                    Layer::Objects => object_kind(&t).map_or("?", object_name).to_owned(),
+                };
+                ui::text_left(&title, r.x + 12.0 * s, title_y, 16.0 * s, ACCENT);
+                for (n, prop) in thing_props(&t, layer).into_iter().enumerate() {
+                    let value = prop.show(&t, &self.data);
+                    let d = ui.stepper(
+                        &format!("ed_prop{n}"),
+                        prop.label(),
+                        &value,
+                        row(n),
+                        false,
+                        true,
+                    );
+                    if d != 0 {
+                        let (field, v) = prop.step(&t, d, &self.data);
+                        self.doc.checkpoint();
+                        self.doc.set_thing_field(layer, i, field, v);
+                        self.rebuild();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn camera_controls(&mut self, mouse: Vec2, dt: f32) {
         if is_mouse_button_down(MouseButton::Right) || is_mouse_button_down(MouseButton::Middle) {
             self.cam.pos -= (mouse - self.last_mouse) / self.cam.ppt;
@@ -368,6 +762,7 @@ impl Editor {
         draw_rectangle_lines(0.0, 0.0, size.x, size.y, 0.08, ACCENT);
         self.draw_things();
         self.draw_selection();
+        self.draw_pending(mouse);
         set_default_camera();
         self.draw_labels();
         self.draw_bar(mouse);
@@ -457,6 +852,28 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// The shape being drawn, with a line to where the next corner would go.
+    fn draw_pending(&self, mouse: Vec2) {
+        if self.tool != Tool::Draw {
+            return;
+        }
+        let px = 1.0 / self.cam.ppt;
+        let free = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
+        let world = self.cam.screen_to_world(mouse);
+        let at = if free { world } else { snap(world) };
+        let color = Color::new(1.0, 0.9, 0.35, 1.0);
+        for w in self.pending.windows(2) {
+            draw_line(w[0].x, w[0].y, w[1].x, w[1].y, 2.0 * px, color);
+        }
+        if let Some(last) = self.pending.last() {
+            draw_line(last.x, last.y, at.x, at.y, 1.5 * px, with_alpha(color, 0.6));
+        }
+        for p in &self.pending {
+            draw_circle(p.x, p.y, 4.0 * px, color);
+        }
+        draw_circle_lines(at.x, at.y, 5.0 * px, 1.5 * px, color);
     }
 
     fn draw_selection(&self) {
@@ -579,12 +996,147 @@ impl Editor {
             ui::text_center(msg, screen_width() * 0.5, h + 24.0 * s, 16.0 * s, ACCENT);
         }
         ui::text_center(
-            "Right-drag or WASD: move   Wheel: zoom   F: fit   Click: select   Drag: move (Shift: free)   Del: delete   G: grid   Ctrl+Z/Y: undo/redo   Ctrl+S: save draft   Esc: back",
+            HELP[match self.tool {
+                Tool::Select => 0,
+                Tool::Draw => 1,
+                Tool::Place(_) => 2,
+            }],
             screen_width() * 0.5,
             screen_height() - 12.0 * s,
             14.0 * s,
             Color::new(1.0, 1.0, 1.0, 0.55),
         );
+    }
+}
+
+fn tool_at(i: usize) -> Tool {
+    match i {
+        0 => Tool::Select,
+        1 => Tool::Draw,
+        n => Tool::Place(n - 2),
+    }
+}
+
+fn tool_name(t: Tool) -> &'static str {
+    match t {
+        Tool::Select => "Select",
+        Tool::Draw => "Draw Shape",
+        Tool::Place(k) => PLACE[k].0,
+    }
+}
+
+/// Move an index by `d`, wrapping around `n`.
+fn step(i: usize, d: i32, n: usize) -> usize {
+    (i as i32 + d).rem_euclid(n as i32) as usize
+}
+
+/// An editable setting of a placed thing.
+#[derive(Clone, Copy)]
+enum Prop {
+    Team,
+    Weapon,
+    Height,
+    Shield,
+    Powerup,
+}
+
+fn thing_props(t: &Value, layer: Layer) -> Vec<Prop> {
+    match layer {
+        Layer::Spawns => vec![Prop::Team],
+        Layer::Pickups if pickup_kind(t) == Some(PickupKind::Weapon) => vec![Prop::Weapon],
+        Layer::Pickups => vec![],
+        Layer::Objects => match object_kind(t) {
+            Some(ObjectKind::Thruster) => vec![Prop::Height],
+            Some(ObjectKind::ShieldStation) => vec![Prop::Shield],
+            Some(ObjectKind::PowerupSpot) => vec![Prop::Powerup],
+            _ => vec![],
+        },
+    }
+}
+
+impl Prop {
+    fn label(self) -> &'static str {
+        match self {
+            Prop::Team => "Team",
+            Prop::Weapon => "Weapon",
+            Prop::Height => "Height",
+            Prop::Shield => "Shield",
+            Prop::Powerup => "Powerup",
+        }
+    }
+
+    fn show(self, t: &Value, data: &GameData) -> String {
+        match self {
+            Prop::Team => spawn_team(t).map_or("Any".into(), |n| {
+                crate::sim::TEAM_NAMES[n as usize % 4].to_owned()
+            }),
+            Prop::Weapon => {
+                let id = t.get("weapon_id").and_then(Value::as_str).unwrap_or("");
+                data.weapons
+                    .iter()
+                    .find(|w| w.id == id)
+                    .map_or(id.to_owned(), |w| w.short_name())
+            }
+            Prop::Height => format!(
+                "{} tiles",
+                t.get("height_tiles").and_then(Value::as_f64).unwrap_or(8.0)
+            ),
+            Prop::Shield => format!(
+                "{}",
+                t.get("shield").and_then(Value::as_f64).unwrap_or(50.0)
+            ),
+            Prop::Powerup => t
+                .get("powerup")
+                .and_then(Value::as_str)
+                .and_then(|id| data.powerups.powerups.iter().find(|p| p.id == id))
+                .map_or("Random".into(), |p| p.name.clone()),
+        }
+    }
+
+    /// The field and its new value after one step left (-1) or right (+1).
+    fn step(self, t: &Value, d: i32, data: &GameData) -> (&'static str, Option<Value>) {
+        match self {
+            Prop::Team => {
+                // Any, then teams 0 to 3.
+                let now = spawn_team(t).map_or(0, |n| n as usize + 1);
+                let next = step(now, d, 5);
+                ("team", (next > 0).then(|| json!(next - 1)))
+            }
+            Prop::Weapon => {
+                let ids: Vec<&str> = data
+                    .weapons
+                    .iter()
+                    .filter(|w| w.category != crate::data::Category::Starter)
+                    .map(|w| w.id.as_str())
+                    .collect();
+                let id = t.get("weapon_id").and_then(Value::as_str).unwrap_or("");
+                let now = ids.iter().position(|&x| x == id).unwrap_or(0);
+                ("weapon_id", Some(json!(ids[step(now, d, ids.len())])))
+            }
+            Prop::Height => {
+                let h = t.get("height_tiles").and_then(Value::as_f64).unwrap_or(8.0);
+                ("height_tiles", Some(json!((h + d as f64).clamp(2.0, 40.0))))
+            }
+            Prop::Shield => {
+                let now = t.get("shield").and_then(Value::as_f64).unwrap_or(50.0);
+                ("shield", Some(json!(if now >= 100.0 { 50 } else { 100 })))
+            }
+            Prop::Powerup => {
+                // Random, then each powerup.
+                let ids: Vec<&str> = data
+                    .powerups
+                    .powerups
+                    .iter()
+                    .map(|p| p.id.as_str())
+                    .collect();
+                let id = t.get("powerup").and_then(Value::as_str);
+                let now = id
+                    .and_then(|id| ids.iter().position(|&x| x == id))
+                    .map_or(0, |n| n + 1);
+                let next = step(now, d, ids.len() + 1);
+                ("powerup", (next > 0).then(|| json!(ids[next - 1])))
+            }
+        }
     }
 }
 
