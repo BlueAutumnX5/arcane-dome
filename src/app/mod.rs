@@ -1,5 +1,6 @@
 //! Window, menus and the real-time loop that feeds the fixed-step sim.
 
+mod editor;
 mod session;
 mod ui;
 

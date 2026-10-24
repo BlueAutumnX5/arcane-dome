@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 macroquad = "0.4.16"
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
 serde_path_to_error = "0.1.20"
 
 # Optimize dependencies even in dev builds so the game runs smoothly while iterating.
