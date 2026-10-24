@@ -11,13 +11,13 @@ weapons, maps and modes all defined in JSON.
 
 ## Whats already in the game
 
-- **2 maps**:
+- **3 maps**:
   - Foundry Ascent: a steel mill around a lava pit, with a climbable tower and
-    a thruster shaft.
+    a thruster shaft. 2 to 4 teams.
   - Frostline Relay: a frozen mountain relay station built for 3 and 4 teams,
     with cliffs, a valley, an ice island and a relay shaft to the tower roof.
-
-  More are on the way.
+  - Redstone Arches: a desert canyon built for 2 teams, under a giant stone
+    arch you can walk across.
 - **2 modes**, Deathmatch and Elimination, each played free-for-all or with
   2 to 4 teams (Blue, Red, Green, Yellow; each team picks its colour). Every
   match and round starts with a 3 second countdown.
