@@ -937,6 +937,13 @@ impl App {
                 if let (Screen::Game(g), Some(at)) = (&mut self.screen, at) {
                     g.debug_place_player(at);
                 }
+                // ARCANE_SHOT_HP=1 sets the player's health (blood overlay).
+                let hp = std::env::var("ARCANE_SHOT_HP")
+                    .ok()
+                    .and_then(|v| v.parse().ok());
+                if let (Screen::Game(g), Some(hp)) = (&mut self.screen, hp) {
+                    g.debug_set_health(hp);
+                }
                 // ARCANE_SHOT_KILL=1 shows the death screen.
                 if let (Screen::Game(g), Ok(_)) =
                     (&mut self.screen, std::env::var("ARCANE_SHOT_KILL"))
@@ -952,7 +959,7 @@ impl App {
 /// Optional screenshot hook for checking visuals without a person at the keyboard:
 /// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|game[:map_id[@x,y]] ARCANE_SHOT_AFTER=2`,
 /// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_COLORS=3,0,2,1
-/// ARCANE_SHOT_TAB=1` (scoreboard).
+/// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`.
 mod debug {
     pub struct Shot {
         pub path: String,

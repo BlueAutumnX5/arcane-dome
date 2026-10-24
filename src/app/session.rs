@@ -75,6 +75,11 @@ impl Session {
         })
     }
 
+    /// Debug screenshots: set the player's health.
+    pub fn debug_set_health(&mut self, hp: f32) {
+        self.world.fighters[self.player].health = hp;
+    }
+
     /// Debug screenshots: kill the player, to show the death screen.
     pub fn debug_kill_player(&mut self) {
         let p = self.player;

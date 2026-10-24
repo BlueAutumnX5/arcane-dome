@@ -20,11 +20,16 @@ fn text_center(t: &str, cx: f32, y: f32, size: f32, color: Color) {
 /// Seconds before respawning when "Respawn in N" appears.
 const RESPAWN_SHOWN_S: f32 = 3.0;
 
-/// The death screen: a red vignette and splatter that land over the first
-/// moments after dying. Drawn in code; the pattern is fixed per death.
-fn draw_death_splatter(world: &World, fighter: usize, dead_for: f32) {
+/// Opacity of the blood at 1 HP (it fades in from full health).
+const HURT_BLOOD: f32 = 0.25;
+
+/// A red vignette and splatter, drawn in code. `life` picks the pattern.
+/// `dead_for`: seconds since dying, to animate the splats landing and the
+/// runs creeping down; `None` draws them all at once, still.
+fn draw_splatter(fighter: usize, life: u32, strength: f32, dead_for: Option<f32>) {
     let (sw, sh) = (screen_width(), screen_height());
-    let fade = (dead_for / 0.35).clamp(0.0, 1.0);
+    let fade = strength * dead_for.map_or(1.0, |t| (t / 0.35).clamp(0.0, 1.0));
+    let dead_for = dead_for.unwrap_or(10.0);
     // Vignette: red bands thickening toward the edges.
     for k in 0..6 {
         let t = (k + 1) as f32 / 6.0;
@@ -37,9 +42,8 @@ fn draw_death_splatter(world: &World, fighter: usize, dead_for: f32) {
     }
     draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.45, 0.0, 0.0, 0.18 * fade));
     // Splats: a blob, a few droplets and a run or two, mostly near the edges.
-    let deaths = world.fighters[fighter].deaths;
     let mut seed =
-        (fighter as u32 + 1).wrapping_mul(0x9E37_79B9) ^ deaths.wrapping_mul(0x85EB_CA6B);
+        (fighter as u32 + 1).wrapping_mul(0x9E37_79B9) ^ (life + 1).wrapping_mul(0x85EB_CA6B);
     let mut rand = move || {
         seed ^= seed << 13;
         seed ^= seed >> 17;
@@ -175,8 +179,15 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
     let sh = screen_height();
     let f = &world.fighters[player];
 
+    // Blood: builds up as health drops (static, up to a quarter strength at
+    // 1 HP), then plays out in full when the fighter dies. One pattern per
+    // life, so the death splatter grows out of the stains already there.
     if !f.alive && world.phase == Phase::Playing {
-        draw_death_splatter(world, f.id, world.time - f.died_at);
+        let life = f.deaths.saturating_sub(1);
+        draw_splatter(f.id, life, 1.0, Some(world.time - f.died_at));
+    } else if f.alive && f.health < MAX_HEALTH {
+        let hurt = ((MAX_HEALTH - f.health) / (MAX_HEALTH - 1.0)).clamp(0.0, 1.0);
+        draw_splatter(f.id, f.deaths, HURT_BLOOD * hurt, None);
     }
 
     if effects.hurt > 0.0 {
