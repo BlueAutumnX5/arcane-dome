@@ -17,6 +17,10 @@ const MIN_PPT: f32 = 6.0;
 const MAX_PPT: f32 = 96.0;
 /// Keyboard pan speed, in screen pixels per second.
 const PAN_SPEED: f32 = 900.0;
+/// Mouse travel, in pixels, before a click becomes a drag.
+const DRAG_START_PX: f32 = 4.0;
+/// How close, in pixels, a click must be to grab a shape's corner.
+const HANDLE_PX: f32 = 8.0;
 /// Zoom (pixels per tile) from which markers get their names.
 const LABEL_PPT: f32 = 26.0;
 /// How long a note like "Saved draft" stays up, in seconds.
@@ -25,6 +29,25 @@ const NOTE_S: f32 = 3.0;
 pub enum Outcome {
     Continue,
     Menu,
+}
+
+/// What is selected.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Sel {
+    Thing(Layer, usize),
+    Shape(usize),
+    /// One corner of a shape.
+    Point(usize, usize),
+}
+
+/// A left-button drag of the selection.
+struct Drag {
+    /// Where the mouse grabbed it, in world space.
+    grab: Vec2,
+    /// The selection's points when grabbed.
+    before: Vec<Vec2>,
+    /// Moved far enough to count as an edit (a plain click only selects).
+    moved: bool,
 }
 
 /// The map as the game sees it, rebuilt after every edit.
@@ -52,6 +75,8 @@ pub struct Editor {
     last_mouse: Vec2,
     grid: bool,
     time: f32,
+    sel: Option<Sel>,
+    drag: Option<Drag>,
 }
 
 impl Editor {
@@ -78,6 +103,8 @@ impl Editor {
             last_mouse: mouse_position().into(),
             grid: true,
             time: 0.0,
+            sel: None,
+            drag: None,
         };
         ed.rebuild();
         ed.fit();
@@ -159,11 +186,124 @@ impl Editor {
         if ctrl && is_key_pressed(KeyCode::Z) && self.doc.undo()
             || ctrl && is_key_pressed(KeyCode::Y) && self.doc.redo()
         {
+            // Indices may point past the end after undo.
+            self.sel = None;
+            self.drag = None;
             self.rebuild();
+        }
+        self.select_and_drag(mouse);
+        if is_key_pressed(KeyCode::Delete) || is_key_pressed(KeyCode::Backspace) {
+            self.delete_selected();
         }
         self.last_mouse = mouse;
         self.draw(mouse);
         Outcome::Continue
+    }
+
+    fn select_and_drag(&mut self, mouse: Vec2) {
+        let world = self.cam.screen_to_world(mouse);
+        if is_mouse_button_pressed(MouseButton::Left) && mouse.y > self.bar_height() {
+            self.sel = self.hit(world);
+            self.drag = self.sel.map(|sel| Drag {
+                grab: world,
+                before: self.sel_points(sel),
+                moved: false,
+            });
+        }
+        if is_mouse_button_released(MouseButton::Left) {
+            if self.drag.take().is_some_and(|d| d.moved) {
+                self.rebuild();
+            }
+            return;
+        }
+        let (Some(sel), Some(mut drag)) = (self.sel, self.drag.take()) else {
+            return;
+        };
+        let delta = world - drag.grab;
+        if !drag.moved && delta.length() * self.cam.ppt >= DRAG_START_PX {
+            self.doc.checkpoint();
+            drag.moved = true;
+        }
+        if drag.moved {
+            // Snap the first point to the grid and move the rest with it, so
+            // a shape keeps its form. Shift places freely.
+            let free = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
+            let anchor = drag.before[0] + delta;
+            let anchor = if free { anchor } else { snap(anchor) };
+            let d = anchor - drag.before[0];
+            let moved: Vec<Vec2> = drag.before.iter().map(|&p| p + d).collect();
+            match sel {
+                Sel::Thing(layer, i) => self.doc.set_thing_pos(layer, i, moved[0]),
+                Sel::Shape(i) => self.doc.set_shape_points(i, &moved),
+                Sel::Point(i, j) => {
+                    let mut pts = self.doc.shape_points(i);
+                    pts[j] = moved[0];
+                    self.doc.set_shape_points(i, &pts);
+                }
+            }
+        }
+        self.drag = Some(drag);
+    }
+
+    /// The points a selection moves.
+    fn sel_points(&self, sel: Sel) -> Vec<Vec2> {
+        match sel {
+            Sel::Thing(layer, i) => vec![self.doc.thing_pos(layer, i)],
+            Sel::Shape(i) => self.doc.shape_points(i),
+            Sel::Point(i, j) => vec![self.doc.shape_points(i)[j]],
+        }
+    }
+
+    /// What is under the cursor: a corner of the selected shape first, then
+    /// markers, then shapes (the one drawn last wins).
+    fn hit(&self, world: Vec2) -> Option<Sel> {
+        if let Some(Sel::Shape(i) | Sel::Point(i, _)) = self.sel {
+            let reach = HANDLE_PX / self.cam.ppt;
+            let pts = self.doc.shape_points(i);
+            if let Some(j) = pts.iter().position(|p| p.distance(world) <= reach) {
+                return Some(Sel::Point(i, j));
+            }
+        }
+        for layer in Layer::ALL.into_iter().rev() {
+            for i in (0..self.doc.count(layer)).rev() {
+                if marker_rect(layer, self.doc.thing_pos(layer, i)).contains(world) {
+                    return Some(Sel::Thing(layer, i));
+                }
+            }
+        }
+        (0..self.doc.shape_count())
+            .rev()
+            .find(|&i| inside(&self.doc.shape_points(i), world))
+            .map(Sel::Shape)
+    }
+
+    fn delete_selected(&mut self) {
+        let Some(sel) = self.sel else {
+            return;
+        };
+        match sel {
+            Sel::Thing(layer, i) => {
+                self.doc.checkpoint();
+                self.doc.remove_thing(layer, i);
+            }
+            Sel::Shape(i) => {
+                self.doc.checkpoint();
+                self.doc.remove_shape(i);
+            }
+            Sel::Point(i, j) => {
+                let mut pts = self.doc.shape_points(i);
+                if pts.len() <= 3 {
+                    self.note = Some(("A shape needs at least 3 corners".into(), 0.0));
+                    return;
+                }
+                self.doc.checkpoint();
+                pts.remove(j);
+                self.doc.set_shape_points(i, &pts);
+            }
+        }
+        self.sel = None;
+        self.drag = None;
+        self.rebuild();
     }
 
     fn camera_controls(&mut self, mouse: Vec2, dt: f32) {
@@ -227,6 +367,7 @@ impl Editor {
         }
         draw_rectangle_lines(0.0, 0.0, size.x, size.y, 0.08, ACCENT);
         self.draw_things();
+        self.draw_selection();
         set_default_camera();
         self.draw_labels();
         self.draw_bar(mouse);
@@ -313,6 +454,37 @@ impl Editor {
                     let c = Color::new(0.4, 0.85, 1.0, 1.0);
                     draw_rectangle(p.x - 0.5, p.y - 1.0, 1.0, 1.0, with_alpha(c, 0.35));
                     draw_rectangle_lines(p.x - 0.5, p.y - 1.0, 1.0, 1.0, 0.07, c);
+                }
+            }
+        }
+    }
+
+    fn draw_selection(&self) {
+        let Some(sel) = self.sel else {
+            return;
+        };
+        let px = 1.0 / self.cam.ppt;
+        match sel {
+            Sel::Thing(layer, i) => {
+                let r = marker_rect(layer, self.doc.thing_pos(layer, i));
+                draw_rectangle_lines(r.x, r.y, r.w, r.h, 3.0 * px, ACCENT);
+            }
+            Sel::Shape(i) | Sel::Point(i, _) => {
+                let pts = self.doc.shape_points(i);
+                for (k, a) in pts.iter().enumerate() {
+                    let b = pts[(k + 1) % pts.len()];
+                    draw_line(a.x, a.y, b.x, b.y, 2.0 * px, ACCENT);
+                }
+                let h = 4.0 * px;
+                for (k, p) in pts.iter().enumerate() {
+                    let picked = sel == Sel::Point(i, k);
+                    let fill = if picked {
+                        WHITE
+                    } else {
+                        Color::new(0.05, 0.1, 0.12, 1.0)
+                    };
+                    draw_rectangle(p.x - h, p.y - h, 2.0 * h, 2.0 * h, fill);
+                    draw_rectangle_lines(p.x - h, p.y - h, 2.0 * h, 2.0 * h, 1.5 * px, ACCENT);
                 }
             }
         }
@@ -407,13 +579,34 @@ impl Editor {
             ui::text_center(msg, screen_width() * 0.5, h + 24.0 * s, 16.0 * s, ACCENT);
         }
         ui::text_center(
-            "Right-drag or WASD: move   Wheel: zoom   F: fit   G: grid   Ctrl+Z/Y: undo/redo   Ctrl+S: save draft   Esc: back",
+            "Right-drag or WASD: move   Wheel: zoom   F: fit   Click: select   Drag: move (Shift: free)   Del: delete   G: grid   Ctrl+Z/Y: undo/redo   Ctrl+S: save draft   Esc: back",
             screen_width() * 0.5,
             screen_height() - 12.0 * s,
             14.0 * s,
             Color::new(1.0, 1.0, 1.0, 0.55),
         );
     }
+}
+
+/// The clickable area of a marker whose feet are at `p`.
+fn marker_rect(layer: Layer, p: Vec2) -> Rect {
+    match layer {
+        Layer::Spawns => Rect::new(p.x - 0.45, p.y - 2.55, 0.9, 2.55),
+        Layer::Pickups => Rect::new(p.x - 0.45, p.y - 0.85, 0.9, 0.85),
+        Layer::Objects => Rect::new(p.x - 0.85, p.y - 1.1, 1.7, 1.4),
+    }
+}
+
+/// Is `p` inside the polygon (even-odd rule)?
+fn inside(poly: &[Vec2], p: Vec2) -> bool {
+    let mut odd = false;
+    for (k, a) in poly.iter().enumerate() {
+        let b = poly[(k + 1) % poly.len()];
+        if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x) {
+            odd = !odd;
+        }
+    }
+    odd
 }
 
 fn object_name(k: ObjectKind) -> &'static str {
@@ -447,4 +640,32 @@ fn pickup_kind(t: &serde_json::Value) -> Option<PickupKind> {
 
 fn object_kind(t: &serde_json::Value) -> Option<ObjectKind> {
     serde_json::from_value(t.get("type")?.clone()).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clicks_land_inside_shapes_of_any_form() {
+        // An L shape: the notch must not count as inside.
+        let l = [
+            vec2(0.0, 0.0),
+            vec2(4.0, 0.0),
+            vec2(4.0, 1.0),
+            vec2(1.0, 1.0),
+            vec2(1.0, 4.0),
+            vec2(0.0, 4.0),
+        ];
+        assert!(inside(&l, vec2(0.5, 3.0)));
+        assert!(inside(&l, vec2(3.0, 0.5)));
+        assert!(!inside(&l, vec2(3.0, 3.0)));
+        assert!(!inside(&l, vec2(-1.0, 0.5)));
+    }
+
+    #[test]
+    fn snapping_rounds_to_half_tiles() {
+        assert_eq!(snap(vec2(3.26, 7.74)), vec2(3.5, 7.5));
+        assert_eq!(snap(vec2(-0.2, 0.24)), vec2(0.0, 0.0));
+    }
 }
