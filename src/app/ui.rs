@@ -43,8 +43,24 @@ fn lerp_color(a: Color, b: Color, t: f32) -> Color {
     )
 }
 
+thread_local! {
+    /// Screenshot runs can move a pretend mouse (see `set_fake_mouse`).
+    static FAKE_MOUSE: std::cell::Cell<Option<Vec2>> = const { std::cell::Cell::new(None) };
+}
+
+/// Make the menus see the mouse at `p` (screenshot runs only).
+pub fn set_fake_mouse(p: Option<Vec2>) {
+    FAKE_MOUSE.with(|m| m.set(p));
+}
+
+fn mouse() -> Vec2 {
+    FAKE_MOUSE
+        .with(|m| m.get())
+        .unwrap_or_else(|| mouse_position().into())
+}
+
 fn hovered(r: Rect) -> bool {
-    r.contains(mouse_position().into())
+    r.contains(mouse())
 }
 
 pub fn text_center(t: &str, cx: f32, y: f32, size: f32, color: Color) {
@@ -169,8 +185,10 @@ impl Ui {
         let Some(tip) = &self.tip else {
             return;
         };
-        if let Some(anchor) = tip.soon {
-            balloon(anchor, &tip.text, tip.age);
+        if tip.soon.is_some() {
+            // The Coming Soon balloon is switched off: hovering it right
+            // after launch broke the font texture and ran memory away.
+            // Back on once that is found and fixed.
             return;
         }
         if tip.age < TIP_DELAY {
@@ -186,7 +204,7 @@ impl Ui {
             .fold(0.0, f32::max)
             + 2.0 * pad;
         let h = lines.len() as f32 * (size + 3.0 * s) + 2.0 * pad - 3.0 * s;
-        let (mx, my) = mouse_position();
+        let Vec2 { x: mx, y: my } = mouse();
         // Below and right of the cursor, kept on screen.
         let x = (mx + 14.0 * s)
             .min(screen_width() - w - 4.0 * s)
@@ -477,6 +495,7 @@ fn round_rect(x: f32, y: f32, w: f32, h: f32, rad: f32, color: Color) {
 
 /// A speech balloon saying "Coming Soon!" (and `text`) beside `anchor`,
 /// its tail pointing at it. Pops in over `age`.
+#[allow(dead_code)]
 fn balloon(anchor: Rect, text: &str, age: f32) {
     let s = scale();
     let pop = (age * 7.0).min(1.0);

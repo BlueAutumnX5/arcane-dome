@@ -389,6 +389,16 @@ pub async fn run() {
     let mut frames = 0u32;
     loop {
         frames += 1;
+        // ARCANE_SHOT_SWEEP=1 moves a pretend mouse down the right-hand
+        // menu buttons in the first 2 s.
+        if shot.is_some() && std::env::var_os("ARCANE_SHOT_SWEEP").is_some() {
+            let t = ((get_time() - start) / 2.0).min(1.0) as f32;
+            let s = ui::scale();
+            ui::set_fake_mouse(Some(vec2(
+                screen_width() - 200.0 * s,
+                screen_height() * (0.4 + 0.3 * t) + 18.0 * s,
+            )));
+        }
         if resize && get_time() - start < 3.0 {
             let k = (frames % 40) as f32;
             request_new_screen_size(900.0 + k * 13.0, 520.0 + k * 7.0);
@@ -1561,7 +1571,8 @@ impl App {
 /// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|settings|changes|editor[:map_id]|game[:map_id[@x,y]]|slide:<scene>|tour:<scene>,<scene>,... ARCANE_SHOT_AFTER=2`,
 /// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_COLORS=3,0,2,1
 /// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw`, `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`,
-/// `ARCANE_SHOT_SIZE=<w>x<h>` (window size), `ARCANE_SHOT_RESIZE=1` (keep resizing for 3 s).
+/// `ARCANE_SHOT_SIZE=<w>x<h>` (window size), `ARCANE_SHOT_RESIZE=1` (keep resizing for 3 s),
+/// `ARCANE_SHOT_SWEEP=1` (pretend mouse down the right-hand menu buttons).
 mod debug {
     pub struct Shot {
         pub path: String,
