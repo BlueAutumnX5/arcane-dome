@@ -246,7 +246,17 @@ fn grab_screen() -> Texture2D {
     // A texture of our own: a render target's texture dies with the target.
     let tex = Texture2D::from_rgba8(w, h, &vec![0; w as usize * h as usize * 4]);
     tex.grab_screen();
+    resync_texture_bindings();
     tex
+}
+
+/// Miniquad remembers which texture is bound so it can skip rebinding.
+/// `grab_screen` binds behind its back, and deleting a texture does not
+/// update that memory either; a stale entry later makes text sample
+/// "texture 0" and draw as black blocks. Unbind everything, through
+/// miniquad, so its memory and OpenGL agree again.
+fn resync_texture_bindings() {
+    unsafe { get_internal_gl().quad_context.commit_frame() };
 }
 
 /// Team settings offered for this map in this mode: 0 (teams off, every
@@ -358,26 +368,43 @@ pub async fn run() {
     app.reset_mode_defaults();
 
     let shot = debug::Shot::from_env();
-    // slide:<scene> starts on the menu and slides to the scene.
-    let mut slide_to = None;
+    // slide:<scene> starts on the menu and slides to the scene;
+    // tour:<scene>,<scene>,... slides through each in turn, 1.6 s apart.
+    let mut tour: Vec<String> = Vec::new();
     if let Some(s) = &shot {
-        match s.scene.strip_prefix("slide:") {
-            Some(to) => slide_to = Some(to.to_owned()),
-            None => app.apply_debug_scene(&s.scene),
+        if let Some(to) = s.scene.strip_prefix("slide:") {
+            tour.push(to.to_owned());
+        } else if let Some(list) = s.scene.strip_prefix("tour:") {
+            tour = list.split(',').map(str::to_owned).collect();
+        } else {
+            app.apply_debug_scene(&s.scene);
         }
     }
+    tour.reverse();
     let start = get_time();
+    let mut next_stop = 0.0;
+    // ARCANE_SHOT_RESIZE=1 keeps resizing the window for the first 3 s, like
+    // someone dragging its edge.
+    let resize = shot.is_some() && std::env::var_os("ARCANE_SHOT_RESIZE").is_some();
+    let mut frames = 0u32;
     loop {
+        frames += 1;
+        if resize && get_time() - start < 3.0 {
+            let k = (frames % 40) as f32;
+            request_new_screen_size(900.0 + k * 13.0, 520.0 + k * 7.0);
+        }
         app.frame();
-        if let Some(to) = slide_to.take() {
+        if !tour.is_empty() && get_time() - start >= next_stop {
+            let to = tour.pop().expect("tour stop");
             let from = grab_screen();
             app.apply_debug_scene(&to);
             app.slide = Some(Slide {
                 from,
                 to: None,
-                back: false,
+                back: to == "menu",
                 t: 0.0,
             });
+            next_stop += 1.6;
         }
         if let Some(s) = &shot
             && get_time() - start > s.after_s
@@ -420,6 +447,9 @@ impl App {
                 self.draw_fps();
                 return;
             }
+            // Over: free its pictures (see resync_texture_bindings).
+            drop(slide);
+            resync_texture_bindings();
         }
         if let Some(next) = self.screen_frame(dt) {
             set_default_camera();
@@ -1471,6 +1501,7 @@ impl App {
             }
         }
         match scene {
+            "menu" => self.screen = Screen::Menu,
             "custom" | "setup" => self.screen = Screen::Setup,
             "howto" => self.screen = Screen::Info(Info::HowTo),
             "weapons" => self.screen = Screen::Info(Info::Weapons),
@@ -1527,9 +1558,10 @@ impl App {
 }
 
 /// Optional screenshot hook for checking visuals without a person at the keyboard:
-/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|settings|changes|editor[:map_id]|game[:map_id[@x,y]]|slide:<scene> ARCANE_SHOT_AFTER=2`,
+/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|settings|changes|editor[:map_id]|game[:map_id[@x,y]]|slide:<scene>|tour:<scene>,<scene>,... ARCANE_SHOT_AFTER=2`,
 /// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_COLORS=3,0,2,1
-/// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw`, `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`.
+/// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw`, `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`,
+/// `ARCANE_SHOT_SIZE=<w>x<h>` (window size), `ARCANE_SHOT_RESIZE=1` (keep resizing for 3 s).
 mod debug {
     pub struct Shot {
         pub path: String,
