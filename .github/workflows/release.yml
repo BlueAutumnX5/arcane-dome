@@ -49,7 +49,7 @@ jobs:
           dir="arcane-dome-${GITHUB_REF_NAME}-${{ matrix.name }}"
           mkdir -p "dist/$dir"
           cp "target/release/${{ matrix.exe }}" "dist/$dir/"
-          cp -r assets README.md LICENSE CREDITS.md "dist/$dir/"
+          cp -r assets README.md LICENSE CREDITS.md CHANGELOG.md "dist/$dir/"
           cd dist
           if [ "$RUNNER_OS" = "Windows" ]; then
             7z a "$dir.zip" "$dir" > /dev/null

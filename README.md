@@ -32,6 +32,12 @@ weapons, maps and modes all defined in JSON.
 - **Map gadgets**: thrusters (stand on the pad and press jump), weapon
   stations, shield stations, and powerup spots (Divine Shield, Rapid Fire,
   Critical Strike, Shadowstep).
+- **Map editor (preview)**: draw terrain, place spawns, pickups and gadgets,
+  undo and redo, save drafts, open any map or start a new one. Every button
+  explains itself when you rest the mouse on it, and Instructions (F1) covers
+  the rest. Playing your own maps comes next.
+- **Settings**: fullscreen, menu slides, blood effects and an FPS counter,
+  remembered between runs. View Changes on the main menu shows what is new.
 - Placeholder art: shapes and colours drawn in code. No sound yet.
 
 ## Controls
@@ -48,6 +54,7 @@ weapons, maps and modes all defined in JSON.
 | Use Shadowstep | F |
 | Scoreboard | Hold Tab |
 | Pause | P or Esc |
+| Fullscreen | F11 |
 
 ## Inspiration and credits
 
@@ -128,9 +135,10 @@ cargo run --release --example bot_watch -- foundry_ascent 180 4
 
 ## Roadmap
 
-Milestone 1 is done (v0.1.0). Next, Milestone 2:
+Milestone 1 is done (v0.1.0). Milestone 2:
 
-1. A map editor, so anyone can build maps
+1. A map editor, so anyone can build maps (preview in v0.1.2; checking,
+   test-playing and publishing maps come next)
 2. Animations and textures
 3. Sound
 4. Possibly Capture the Flag and King of the Hill

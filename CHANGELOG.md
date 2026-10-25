@@ -1,6 +1,6 @@
 # Changes
 
-## Next version (in progress)
+## v0.1.2
 
 - Map editor: draw terrain shapes, place spawns, pickups and gadgets, undo and redo, save drafts, open any map or start a new one
 - Every editor action has a button with its shortcut, and every button explains itself when you rest the mouse on it
