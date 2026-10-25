@@ -6,7 +6,7 @@ mod settings;
 mod ui;
 
 use crate::data::{GameData, ProjectileKind, find_assets_dir};
-use crate::render::TEAM_COLORS;
+use crate::render::{TEAM_COLORS, resync_texture_bindings, use_screen};
 use crate::sim::{Difficulty, ElimStyle, MAX_TEAMS, MatchConfig, TEAM_NAMES};
 use editor::Editor;
 use macroquad::prelude::*;
@@ -250,15 +250,6 @@ fn grab_screen() -> Texture2D {
     tex
 }
 
-/// Miniquad remembers which texture is bound so it can skip rebinding.
-/// `grab_screen` binds behind its back, and deleting a texture does not
-/// update that memory either; a stale entry later makes text sample
-/// "texture 0" and draw as black blocks. Unbind everything, through
-/// miniquad, so its memory and OpenGL agree again.
-fn resync_texture_bindings() {
-    unsafe { get_internal_gl().quad_context.commit_frame() };
-}
-
 /// Team settings offered for this map in this mode: 0 (teams off, every
 /// mode has it), then the team counts both the map and the mode support.
 fn allowed_team_counts(map: &crate::data::MapDef, mode: &crate::data::ModeDef) -> Vec<usize> {
@@ -448,7 +439,7 @@ impl App {
             if slide.to.is_none() {
                 // Draw the new screen once, out of sight, for its picture.
                 self.screen_frame(dt);
-                set_default_camera();
+                use_screen();
                 slide.to = Some(grab_screen());
             }
             if slide.t < SLIDE_S {
@@ -462,7 +453,7 @@ impl App {
             resync_texture_bindings();
         }
         if let Some(next) = self.screen_frame(dt) {
-            set_default_camera();
+            use_screen();
             if self.settings.slides && self.screen.slides() && next.slides() {
                 self.slide = Some(Slide {
                     from: grab_screen(),
@@ -473,7 +464,7 @@ impl App {
             }
             self.screen = next;
         } else {
-            set_default_camera();
+            use_screen();
             self.ui.draw_tip();
         }
         self.draw_fps();

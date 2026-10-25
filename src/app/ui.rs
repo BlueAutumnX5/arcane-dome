@@ -185,10 +185,8 @@ impl Ui {
         let Some(tip) = &self.tip else {
             return;
         };
-        if tip.soon.is_some() {
-            // The Coming Soon balloon is switched off: hovering it right
-            // after launch broke the font texture and ran memory away.
-            // Back on once that is found and fixed.
+        if let Some(anchor) = tip.soon {
+            balloon(anchor, &tip.text, tip.age);
             return;
         }
         if tip.age < TIP_DELAY {
@@ -495,7 +493,6 @@ fn round_rect(x: f32, y: f32, w: f32, h: f32, rad: f32, color: Color) {
 
 /// A speech balloon saying "Coming Soon!" (and `text`) beside `anchor`,
 /// its tail pointing at it. Pops in over `age`.
-#[allow(dead_code)]
 fn balloon(anchor: Rect, text: &str, age: f32) {
     let s = scale();
     let pop = (age * 7.0).min(1.0);

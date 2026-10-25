@@ -54,6 +54,30 @@ pub fn category_color(c: Category) -> Color {
     }
 }
 
+/// Switch to a camera. Macroquad draws everything queued so far when the
+/// camera changes, and that leaves miniquad noting the font texture as
+/// bound. If new text then outgrows the font texture, it is deleted and
+/// remade under the same id, miniquad skips binding it, and its pixels
+/// never arrive: every letter draws as a black block. Clearing the note
+/// after each switch prevents that.
+pub fn use_camera(camera: &dyn Camera) {
+    set_camera(camera);
+    resync_texture_bindings();
+}
+
+/// Back to plain screen pixels (see `use_camera`).
+pub fn use_screen() {
+    set_default_camera();
+    resync_texture_bindings();
+}
+
+/// Unbind every texture through miniquad, so its note of what is bound
+/// matches OpenGL again (also needed after `Texture2D::grab_screen`, which
+/// binds behind its back).
+pub fn resync_texture_bindings() {
+    unsafe { get_internal_gl().quad_context.commit_frame() };
+}
+
 /// Follows a point with look-ahead toward the mouse, clamped to the map.
 pub struct GameCamera {
     pub pos: Vec2,
@@ -132,7 +156,7 @@ impl MapThumb {
         let tex = &self.target.texture;
         let (w, h) = (tex.width(), tex.height());
         let ppt = w / map.width;
-        set_camera(&Camera2D {
+        use_camera(&Camera2D {
             target: vec2(w, h) * 0.5,
             zoom: vec2(2.0 / w, 2.0 / h),
             render_target: Some(self.target.clone()),
@@ -140,7 +164,7 @@ impl MapThumb {
         });
         clear_background(BLACK);
         terrain::draw_sky_sized(map, w, h, map.width * 0.5, ppt, 0.0);
-        set_camera(&Camera2D {
+        use_camera(&Camera2D {
             target: vec2(map.width, map.height) * 0.5,
             zoom: vec2(2.0 * ppt / w, 2.0 * ppt / h),
             render_target: Some(self.target.clone()),
@@ -153,7 +177,7 @@ impl MapThumb {
             0.0,
         );
         self.art.draw_front(map, 0.0);
-        set_default_camera();
+        use_screen();
         tex
     }
 }
@@ -175,7 +199,7 @@ pub fn draw_world(
 ) {
     let map = &world.map;
     terrain::draw_sky(map, cam.pos.x, cam.ppt, world.time);
-    set_camera(&cam.camera2d());
+    use_camera(&cam.camera2d());
 
     let half = vec2(screen_width(), screen_height()) / cam.ppt * 0.5;
     let (view_min, view_max) = (cam.pos - half - Vec2::ONE, cam.pos + half + Vec2::ONE);
@@ -237,7 +261,7 @@ pub fn draw_world(
     // Water and front props drawn over everything inside them.
     art.draw_front(map, world.time);
 
-    set_default_camera();
+    use_screen();
     draw_labels(world, cam, player);
     gadgets::draw_object_labels(world, cam);
 }

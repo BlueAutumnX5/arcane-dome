@@ -12,6 +12,7 @@
 - Settings: fullscreen, menu slides, blood effects, FPS counter (saved between runs)
 - F11 switches fullscreen on and off
 - Nameplates: the bar over each fighter is their health in their team colour, with the name on it; yours has a bright frame
+- Fixed: text could turn into black blocks (and eat memory) when new text sizes appeared, e.g. hovering a menu button
 
 ## v0.1.1
 

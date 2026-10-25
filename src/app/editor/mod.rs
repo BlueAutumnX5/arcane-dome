@@ -5,7 +5,7 @@ mod doc;
 
 use super::ui::{self, ACCENT, Ui};
 use crate::data::{GameData, MapDef, ObjectKind, PickupKind, parse_map};
-use crate::render::{GameCamera, MapArt, TEAM_COLORS, draw_sky};
+use crate::render::{GameCamera, MapArt, TEAM_COLORS, draw_sky, use_camera, use_screen};
 use doc::{Doc, Layer};
 use macroquad::prelude::*;
 use serde_json::{Value, json};
@@ -1479,7 +1479,7 @@ impl Editor {
         if let Some(p) = &self.preview {
             draw_sky(&p.map, self.cam.pos.x, self.cam.ppt, self.time);
         }
-        set_camera(&self.cam.camera2d());
+        use_camera(&self.cam.camera2d());
         // Dim everything outside the map.
         let out = Color::new(0.0, 0.0, 0.0, 0.55);
         let big = 1000.0;
@@ -1502,7 +1502,7 @@ impl Editor {
         self.draw_things();
         self.draw_selection();
         self.draw_pending(mouse);
-        set_default_camera();
+        use_screen();
         self.draw_labels();
         self.draw_bar(mouse);
     }
