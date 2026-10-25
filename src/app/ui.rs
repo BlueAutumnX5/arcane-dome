@@ -17,6 +17,8 @@ const TAB_EASE: f32 = 14.0;
 /// Easing rate for tab text colour, fast so it flips before the fill.
 const TAB_TEXT_EASE: f32 = 45.0;
 const PANEL: Color = Color::new(0.04, 0.09, 0.11, 0.78);
+/// How long the mouse rests on something before its description pops up.
+const TIP_DELAY: f32 = 0.45;
 
 pub fn scale() -> f32 {
     (screen_height() / 720.0).max(0.6)
@@ -105,11 +107,87 @@ fn stroke_poly(points: &[Vec2], thickness: f32, color: Color) {
 pub struct Ui {
     hover: HashMap<String, f32>,
     dt: f32,
+    /// The description under the mouse, and whether something asked for it
+    /// this frame (if not, the mouse has left it).
+    tip: Option<Tip>,
+    tip_seen: bool,
+}
+
+struct Tip {
+    id: String,
+    text: String,
+    /// How long the mouse has rested on it.
+    age: f32,
 }
 
 impl Ui {
     pub fn begin(&mut self, dt: f32) {
         self.dt = dt;
+        self.tip_seen = false;
+    }
+
+    /// Pop up `text` when the mouse rests on `r`. Call each frame.
+    pub fn hint(&mut self, id: &str, r: Rect, text: &str) {
+        if !hovered(r) {
+            return;
+        }
+        self.tip_seen = true;
+        match &mut self.tip {
+            Some(tip) if tip.id == id => tip.age += self.dt,
+            _ => {
+                self.tip = Some(Tip {
+                    id: id.to_owned(),
+                    text: text.to_owned(),
+                    age: 0.0,
+                })
+            }
+        }
+    }
+
+    /// Draw the description asked for this frame, if any. Call last.
+    pub fn draw_tip(&mut self) {
+        if !self.tip_seen {
+            self.tip = None;
+        }
+        let Some(tip) = &self.tip else {
+            return;
+        };
+        if tip.age < TIP_DELAY {
+            return;
+        }
+        let s = scale();
+        let size = 15.0 * s;
+        let pad = 8.0 * s;
+        let lines = wrap(&tip.text, 280.0 * s, size);
+        let w = lines
+            .iter()
+            .map(|l| measure_text(l, None, size as u16, 1.0).width)
+            .fold(0.0, f32::max)
+            + 2.0 * pad;
+        let h = lines.len() as f32 * (size + 3.0 * s) + 2.0 * pad - 3.0 * s;
+        let (mx, my) = mouse_position();
+        // Below and right of the cursor, kept on screen.
+        let x = (mx + 14.0 * s)
+            .min(screen_width() - w - 4.0 * s)
+            .max(4.0 * s);
+        let y = if my + 22.0 * s + h > screen_height() {
+            my - h - 8.0 * s
+        } else {
+            my + 22.0 * s
+        };
+        draw_rectangle(x, y, w, h, Color::new(0.02, 0.05, 0.06, 0.95));
+        draw_rectangle_lines(
+            x,
+            y,
+            w,
+            h,
+            1.5,
+            Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.7),
+        );
+        for (i, line) in lines.iter().enumerate() {
+            let ly = y + pad + size * 0.8 + i as f32 * (size + 3.0 * s);
+            text_left(line, x + pad, ly, size, WHITE);
+        }
     }
 
     /// Ease an animation value toward `target` at `rate` and return it smoothed.
@@ -189,6 +267,66 @@ impl Ui {
             Side::Right => text_right(label, x + w - inset - stripe - 12.0 * s, ty, size, color),
         }
         hot && is_mouse_button_pressed(MouseButton::Left)
+    }
+
+    /// A flat rectangular button in the menu style: hovering eases the fill
+    /// to white and flips the text dark, like a tab but without the slide.
+    /// `on` lights it in the accent colour (the tool in use). Returns true
+    /// when clicked.
+    pub fn button(&mut self, id: &str, label: &str, r: Rect, on: bool, enabled: bool) -> bool {
+        let s = scale();
+        let hot = enabled && hovered(r);
+        let t = self.animate(id, if hot || on { 1.0 } else { 0.0 }, TAB_EASE);
+        let text_t = self.animate(
+            &format!("{id}#text"),
+            if hot || on { 1.0 } else { 0.0 },
+            TAB_TEXT_EASE,
+        );
+        let lit = if on && !hot { ACCENT } else { TAB_HOVER };
+        draw_rectangle(r.x, r.y, r.w, r.h, lerp_color(TAB_FILL, lit, t));
+        draw_rectangle_lines(
+            r.x,
+            r.y,
+            r.w,
+            r.h,
+            1.5,
+            Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.35 + 0.4 * (1.0 - t)),
+        );
+        let a = if enabled { 1.0 } else { 0.35 };
+        let stripe = 3.0 * s;
+        let inset = 4.0 * s;
+        let mut stripe_col = lerp_color(ACCENT, TEXT_DARK, text_t);
+        stripe_col.a *= a;
+        draw_rectangle(
+            r.x + inset,
+            r.y + inset,
+            stripe,
+            r.h - 2.0 * inset,
+            stripe_col,
+        );
+        let mut color = lerp_color(WHITE, TEXT_DARK, text_t);
+        color.a *= a;
+        text_left(
+            label,
+            r.x + inset + stripe + 8.0 * s,
+            r.y + r.h * 0.68,
+            r.h * 0.56,
+            color,
+        );
+        hot && is_mouse_button_pressed(MouseButton::Left)
+    }
+
+    /// A button that switches something on and off, with a light at its
+    /// right end. Returns true when clicked.
+    pub fn toggle(&mut self, id: &str, label: &str, r: Rect, value: bool, enabled: bool) -> bool {
+        let clicked = self.button(id, label, r, false, enabled);
+        let k = r.h * 0.4;
+        let (x, y) = (r.x + r.w - k - r.h * 0.3, r.y + (r.h - k) / 2.0);
+        if value {
+            draw_rectangle(x, y, k, k, ACCENT);
+        }
+        draw_rectangle_lines(x, y, k, k, 1.5, Color::new(0.5, 0.6, 0.62, 1.0));
+        clicked
     }
 
     /// A clickable colour square with a frame that lights up on hover.

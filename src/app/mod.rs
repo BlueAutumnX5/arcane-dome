@@ -64,6 +64,8 @@ fn time_or_off(t: f32) -> String {
     }
 }
 const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+/// How long a slide from one menu screen to the next takes, in seconds.
+const SLIDE_S: f32 = 1.2;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Info {
@@ -79,6 +81,71 @@ enum Screen {
     Game(Box<Session>),
     Editor(Box<Editor>),
     Error(String),
+}
+
+impl Screen {
+    /// Menu pages slide into each other; matches and errors cut straight in.
+    fn slides(&self) -> bool {
+        matches!(
+            self,
+            Screen::Menu | Screen::Setup | Screen::Info(_) | Screen::Editor(_)
+        )
+    }
+}
+
+/// A slide between two screens: both are pictures pushed sideways
+/// together, fast at first and easing to a stop. Nothing takes input until
+/// it ends.
+struct Slide {
+    from: Texture2D,
+    /// The new screen, drawn once on the frame after the switch (so the
+    /// click that started the slide does not reach it).
+    to: Option<Texture2D>,
+    /// Going back to the main menu moves the other way.
+    back: bool,
+    t: f32,
+}
+
+impl Slide {
+    fn draw(&self) {
+        let (sw, sh) = (screen_width(), screen_height());
+        let k = (self.t / SLIDE_S).clamp(0.0, 1.0);
+        let eased = 1.0 - (1.0 - k).powi(4);
+        let dir = if self.back { 1.0 } else { -1.0 };
+        clear_background(BLACK);
+        let shown = [(Some(&self.from), 0.0), (self.to.as_ref(), -dir)];
+        for (tex, start) in shown {
+            if let Some(tex) = tex {
+                let x = (start + dir * eased) * sw;
+                draw_texture_ex(
+                    tex,
+                    x,
+                    0.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(vec2(sw, sh)),
+                        flip_y: true,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// What is on screen right now, as a texture.
+fn grab_screen() -> Texture2D {
+    // Draw everything queued so far before copying.
+    unsafe { get_internal_gl().flush() };
+    let dpi = screen_dpi_scale();
+    let (w, h) = (
+        (screen_width() * dpi) as u16,
+        (screen_height() * dpi) as u16,
+    );
+    // A texture of our own: a render target's texture dies with the target.
+    let tex = Texture2D::from_rgba8(w, h, &vec![0; w as usize * h as usize * 4]);
+    tex.grab_screen();
+    tex
 }
 
 /// Team settings offered for this map in this mode: 0 (teams off, every
@@ -130,11 +197,13 @@ struct App {
     /// The assets folder, where the editor reads and writes maps.
     assets: Option<std::path::PathBuf>,
     screen: Screen,
+    slide: Option<Slide>,
     setup: Setup,
     ui: Ui,
     seed: u64,
     time: f32,
     quit: bool,
+    fullscreen: bool,
     /// Rendered map pictures for the setup screen, by map id.
     thumbs: std::collections::HashMap<String, crate::render::MapThumb>,
 }
@@ -155,6 +224,7 @@ pub async fn run() {
         },
         data: data.ok(),
         assets,
+        slide: None,
         setup: Setup {
             map: 0,
             mode: 0,
@@ -178,17 +248,33 @@ pub async fn run() {
         seed: macroquad::miniquad::date::now() as u64,
         time: 0.0,
         quit: false,
+        fullscreen: false,
         thumbs: Default::default(),
     };
     app.reset_mode_defaults();
 
     let shot = debug::Shot::from_env();
+    // slide:<scene> starts on the menu and slides to the scene.
+    let mut slide_to = None;
     if let Some(s) = &shot {
-        app.apply_debug_scene(&s.scene);
+        match s.scene.strip_prefix("slide:") {
+            Some(to) => slide_to = Some(to.to_owned()),
+            None => app.apply_debug_scene(&s.scene),
+        }
     }
     let start = get_time();
     loop {
         app.frame();
+        if let Some(to) = slide_to.take() {
+            let from = grab_screen();
+            app.apply_debug_scene(&to);
+            app.slide = Some(Slide {
+                from,
+                to: None,
+                back: false,
+                t: 0.0,
+            });
+        }
         if let Some(s) = &shot
             && get_time() - start > s.after_s
         {
@@ -211,7 +297,44 @@ impl App {
         let dt = get_frame_time().min(0.25);
         self.time += dt;
         self.ui.begin(dt);
-        let next = match &mut self.screen {
+        if is_key_pressed(KeyCode::F11) {
+            self.fullscreen = !self.fullscreen;
+            set_fullscreen(self.fullscreen);
+        }
+        if let Some(mut slide) = self.slide.take() {
+            slide.t += dt;
+            if slide.to.is_none() {
+                // Draw the new screen once, out of sight, for its picture.
+                self.screen_frame(dt);
+                set_default_camera();
+                slide.to = Some(grab_screen());
+            }
+            if slide.t < SLIDE_S {
+                slide.draw();
+                self.slide = Some(slide);
+                return;
+            }
+        }
+        if let Some(next) = self.screen_frame(dt) {
+            set_default_camera();
+            if self.screen.slides() && next.slides() {
+                self.slide = Some(Slide {
+                    from: grab_screen(),
+                    to: None,
+                    back: matches!(next, Screen::Menu),
+                    t: 0.0,
+                });
+            }
+            self.screen = next;
+        } else {
+            set_default_camera();
+            self.ui.draw_tip();
+        }
+    }
+
+    /// Run and draw the current screen; returns the screen to switch to.
+    fn screen_frame(&mut self, dt: f32) -> Option<Screen> {
+        match &mut self.screen {
             Screen::Error(msg) => {
                 let msg = msg.clone();
                 self.error_screen(&msg);
@@ -239,9 +362,6 @@ impl App {
                 editor::Outcome::Continue => None,
                 editor::Outcome::Menu => Some(Screen::Menu),
             },
-        };
-        if let Some(s) = next {
-            self.screen = s;
         }
     }
 
@@ -349,6 +469,11 @@ impl App {
         let lx = 60.0 * s;
         let rx = sw - 60.0 * s - bw;
         let mut next = None;
+        self.ui.hint(
+            "m_quick",
+            Rect::new(lx, y0, bw, bh),
+            "Jump straight into a deathmatch on a random map against 5 bots.",
+        );
         if self.ui.tab(
             "m_quick",
             "Quick Match",
@@ -358,6 +483,11 @@ impl App {
         ) {
             next = Some(self.quick_match());
         }
+        self.ui.hint(
+            "m_setup",
+            Rect::new(lx, y0 + gap, bw, bh),
+            "Pick the map, match type, limits, teams and bots, then start.",
+        );
         if self.ui.tab(
             "m_setup",
             "Match Setup",
@@ -367,6 +497,7 @@ impl App {
         ) {
             next = Some(Screen::Setup);
         }
+        self.ui.hint("m_editor", Rect::new(lx, y0 + gap * 2.0, bw, bh), "Build your own maps, or change the ones in the game. Opens the map picked in Match Setup.");
         if self.ui.tab(
             "m_editor",
             "Map Editor",
@@ -376,6 +507,11 @@ impl App {
         ) {
             next = Some(self.open_editor());
         }
+        self.ui.hint(
+            "m_quit",
+            Rect::new(lx, y0 + gap * 3.0, bw, bh),
+            "Close the game.",
+        );
         if self.ui.tab(
             "m_quit",
             "Quit",
@@ -385,6 +521,11 @@ impl App {
         ) {
             self.quit = true;
         }
+        self.ui.hint(
+            "m_howto",
+            Rect::new(rx, y0, bw, bh),
+            "Controls and how a match works.",
+        );
         if self.ui.tab(
             "m_howto",
             "How to Play",
@@ -394,6 +535,11 @@ impl App {
         ) {
             next = Some(Screen::Info(Info::HowTo));
         }
+        self.ui.hint(
+            "m_weapons",
+            Rect::new(rx, y0 + gap, bw, bh),
+            "Every weapon and what it does.",
+        );
         if self.ui.tab(
             "m_weapons",
             "Weapon Info",
@@ -403,6 +549,11 @@ impl App {
         ) {
             next = Some(Screen::Info(Info::Weapons));
         }
+        self.ui.hint(
+            "m_about",
+            Rect::new(rx, y0 + gap * 2.0, bw, bh),
+            "Credits and where this game comes from.",
+        );
         if self.ui.tab(
             "m_about",
             "About",
@@ -941,6 +1092,7 @@ impl App {
                     "1 - 0, Q / E or mouse wheel  switch weapons",
                     "F  use Shadowstep (when you hold one)",
                     "Tab  scoreboard    P or Esc  pause",
+                    "F11  fullscreen on / off",
                 ] {
                     line(t, WHITE);
                 }
@@ -1106,6 +1258,12 @@ impl App {
                     self.setup.map = i;
                 }
                 self.screen = self.open_editor();
+                // ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw opens a window.
+                if let (Screen::Editor(ed), Ok(what)) =
+                    (&mut self.screen, std::env::var("ARCANE_SHOT_EDITOR"))
+                {
+                    ed.debug_show(&what);
+                }
             }
             s if s.starts_with("game") => {
                 let mut cfg = self.setup_config();
@@ -1142,9 +1300,9 @@ impl App {
 }
 
 /// Optional screenshot hook for checking visuals without a person at the keyboard:
-/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|editor[:map_id]|game[:map_id[@x,y]] ARCANE_SHOT_AFTER=2`,
+/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|editor[:map_id]|game[:map_id[@x,y]]|slide:<scene> ARCANE_SHOT_AFTER=2`,
 /// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_COLORS=3,0,2,1
-/// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`.
+/// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw`, `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`.
 mod debug {
     pub struct Shot {
         pub path: String,
