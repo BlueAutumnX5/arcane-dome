@@ -198,7 +198,8 @@ pub fn draw_crosshair(
     }
 }
 
-pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
+/// `blood: false` leaves out the splatter (the red hit flash stays).
+pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     let s = ui_scale();
     let sw = screen_width();
     let sh = screen_height();
@@ -207,10 +208,10 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize) {
     // Blood: builds up as health drops (static, up to a quarter strength at
     // 1 HP), then plays out in full when the fighter dies. One pattern per
     // life, so the death splatter grows out of the stains already there.
-    if !f.alive && world.phase == Phase::Playing {
+    if blood && !f.alive && world.phase == Phase::Playing {
         let life = f.deaths.saturating_sub(1);
         draw_splatter(f.id, life, 1.0, Some(world.time - f.died_at));
-    } else if f.alive && f.health < MAX_HEALTH {
+    } else if blood && f.alive && f.health < MAX_HEALTH {
         let hurt = ((MAX_HEALTH - f.health) / (MAX_HEALTH - 1.0)).clamp(0.0, 1.0);
         draw_splatter(f.id, f.deaths, HURT_BLOOD * hurt, None);
     }

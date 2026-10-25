@@ -39,6 +39,8 @@ pub struct Session {
     paused: bool,
     edges: Edges,
     over_for: f32,
+    /// Blood effects on screen (a player setting).
+    pub blood: bool,
 }
 
 const SLOT_KEYS: [KeyCode; 10] = [
@@ -72,6 +74,7 @@ impl Session {
             paused: false,
             edges: Edges::default(),
             over_for: 0.0,
+            blood: true,
         })
     }
 
@@ -132,7 +135,7 @@ impl Session {
             Some(self.player),
             &self.art,
         );
-        render::draw_hud(&self.world, &self.effects, self.player);
+        render::draw_hud(&self.world, &self.effects, self.player, self.blood);
         if !self.paused && !over {
             render::draw_crosshair(&self.world, &self.cam, &self.effects, self.player, mouse);
         }

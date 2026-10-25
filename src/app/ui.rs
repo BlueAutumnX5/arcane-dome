@@ -17,6 +17,9 @@ const TAB_EASE: f32 = 14.0;
 /// Easing rate for tab text colour, fast so it flips before the fill.
 const TAB_TEXT_EASE: f32 = 45.0;
 const PANEL: Color = Color::new(0.04, 0.09, 0.11, 0.78);
+const LOCKED_FILL: Color = Color::new(0.06, 0.09, 0.1, 0.55);
+const LOCKED_EDGE: Color = Color::new(0.45, 0.5, 0.52, 0.35);
+const BALLOON: Color = Color::new(1.0, 0.86, 0.38, 1.0);
 /// How long the mouse rests on something before its description pops up.
 const TIP_DELAY: f32 = 0.45;
 
@@ -118,6 +121,9 @@ struct Tip {
     text: String,
     /// How long the mouse has rested on it.
     age: f32,
+    /// A "Coming Soon!" balloon pointing at this button, instead of a plain
+    /// description at the mouse.
+    soon: Option<Rect>,
 }
 
 impl Ui {
@@ -128,6 +134,16 @@ impl Ui {
 
     /// Pop up `text` when the mouse rests on `r`. Call each frame.
     pub fn hint(&mut self, id: &str, r: Rect, text: &str) {
+        self.tip_at(id, r, text, None);
+    }
+
+    /// A "Coming Soon!" balloon with `text` under it, beside `r`, while the
+    /// mouse is on it.
+    pub fn soon(&mut self, id: &str, r: Rect, text: &str) {
+        self.tip_at(id, r, text, Some(r));
+    }
+
+    fn tip_at(&mut self, id: &str, r: Rect, text: &str, soon: Option<Rect>) {
         if !hovered(r) {
             return;
         }
@@ -139,6 +155,7 @@ impl Ui {
                     id: id.to_owned(),
                     text: text.to_owned(),
                     age: 0.0,
+                    soon,
                 })
             }
         }
@@ -152,6 +169,10 @@ impl Ui {
         let Some(tip) = &self.tip else {
             return;
         };
+        if let Some(anchor) = tip.soon {
+            balloon(anchor, &tip.text, tip.age);
+            return;
+        }
         if tip.age < TIP_DELAY {
             return;
         }
@@ -200,8 +221,26 @@ impl Ui {
 
     /// An angled tab button. Returns true when clicked.
     pub fn tab(&mut self, id: &str, label: &str, r: Rect, side: Side, focused: bool) -> bool {
+        self.tab_ex(id, label, r, side, focused, true)
+    }
+
+    /// A greyed-out tab for something not built yet: it never lights up or
+    /// slides. Pair it with `soon` for the balloon.
+    pub fn tab_locked(&mut self, id: &str, label: &str, r: Rect, side: Side) {
+        self.tab_ex(id, label, r, side, false, false);
+    }
+
+    fn tab_ex(
+        &mut self,
+        id: &str,
+        label: &str,
+        r: Rect,
+        side: Side,
+        focused: bool,
+        enabled: bool,
+    ) -> bool {
         let s = scale();
-        let hot = hovered(r);
+        let hot = enabled && hovered(r);
         let target = if hot || focused { 1.0 } else { 0.0 };
         // Fill and slide ease together; the text flips colour much faster,
         // so it changes before the fill has finished (both ways).
@@ -229,12 +268,16 @@ impl Ui {
                 Side::Right => vec2(x + w - p.x, y + p.y),
             })
             .collect();
-        fill_poly(&pts, lerp_color(TAB_FILL, TAB_HOVER, t));
-        stroke_poly(
-            &pts,
-            1.5,
-            Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.35 + 0.4 * (1.0 - t)),
-        );
+        let (fill, edge) = if enabled {
+            (
+                lerp_color(TAB_FILL, TAB_HOVER, t),
+                Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.35 + 0.4 * (1.0 - t)),
+            )
+        } else {
+            (LOCKED_FILL, LOCKED_EDGE)
+        };
+        fill_poly(&pts, fill);
+        stroke_poly(&pts, 1.5, edge);
         // Stripe along the outer edge of the body.
         let stripe = 3.0 * s;
         let inset = 5.0 * s;
@@ -242,7 +285,11 @@ impl Ui {
             Side::Left => x + inset,
             Side::Right => x + w - inset - stripe,
         };
-        let stripe_col = lerp_color(ACCENT, TEXT_DARK, text_t);
+        let stripe_col = if enabled {
+            lerp_color(ACCENT, TEXT_DARK, text_t)
+        } else {
+            LOCKED_EDGE
+        };
         draw_rectangle(sx, y + 4.0 * s, stripe, h - cut - 2.0 * s, stripe_col);
 
         // Guide line running back toward the screen center.
@@ -256,11 +303,20 @@ impl Ui {
             lx1,
             y + h,
             1.5,
-            Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.35),
+            Color::new(
+                ACCENT.r,
+                ACCENT.g,
+                ACCENT.b,
+                if enabled { 0.35 } else { 0.12 },
+            ),
         );
 
         let size = h * 0.56;
-        let color = lerp_color(WHITE, TEXT_DARK, text_t);
+        let color = if enabled {
+            lerp_color(WHITE, TEXT_DARK, text_t)
+        } else {
+            Color::new(1.0, 1.0, 1.0, 0.32)
+        };
         let ty = y + h * 0.7;
         match side {
             Side::Left => text_left(label, x + inset + stripe + 12.0 * s, ty, size, color),
@@ -419,6 +475,73 @@ impl Ui {
             }
         }
         delta
+    }
+}
+
+/// Rectangle with round corners.
+fn round_rect(x: f32, y: f32, w: f32, h: f32, rad: f32, color: Color) {
+    draw_rectangle(x + rad, y, w - 2.0 * rad, h, color);
+    draw_rectangle(x, y + rad, rad, h - 2.0 * rad, color);
+    draw_rectangle(x + w - rad, y + rad, rad, h - 2.0 * rad, color);
+    for (cx, cy) in [
+        (x + rad, y + rad),
+        (x + w - rad, y + rad),
+        (x + rad, y + h - rad),
+        (x + w - rad, y + h - rad),
+    ] {
+        draw_circle(cx, cy, rad, color);
+    }
+}
+
+/// A speech balloon saying "Coming Soon!" (and `text`) beside `anchor`,
+/// its tail pointing at it. Pops in over `age`.
+fn balloon(anchor: Rect, text: &str, age: f32) {
+    let s = scale();
+    let pop = (age * 7.0).min(1.0);
+    let (title, body) = (21.0 * s, 14.0 * s);
+    let pad = 10.0 * s;
+    let lines = wrap(text, 250.0 * s, body);
+    let title_w = measure_text("Coming Soon!", None, title as u16, 1.0).width;
+    let w = lines
+        .iter()
+        .map(|l| measure_text(l, None, body as u16, 1.0).width)
+        .fold(title_w, f32::max)
+        + 2.0 * pad;
+    let h = title + 6.0 * s + lines.len() as f32 * (body + 3.0 * s) + 2.0 * pad;
+    // Beside the button, toward the middle of the screen.
+    let right = anchor.x + anchor.w / 2.0 < screen_width() / 2.0;
+    let gap = 16.0 * s;
+    let x = if right {
+        anchor.x + anchor.w + gap
+    } else {
+        anchor.x - gap - w
+    };
+    let cy = anchor.y + anchor.h / 2.0;
+    let y = (cy - h / 2.0 - 4.0 * s * (1.0 - pop)).clamp(4.0, screen_height() - h - 4.0);
+    let fill = Color::new(BALLOON.r, BALLOON.g, BALLOON.b, pop);
+    let (edge, tip) = if right {
+        (x, x - gap + 4.0 * s)
+    } else {
+        (x + w, x + w + gap - 4.0 * s)
+    };
+    draw_triangle(
+        vec2(edge, cy - 7.0 * s),
+        vec2(edge, cy + 7.0 * s),
+        vec2(tip, cy),
+        fill,
+    );
+    round_rect(x, y, w, h, 8.0 * s, fill);
+    let ink = Color::new(TEXT_DARK.r, TEXT_DARK.g, TEXT_DARK.b, pop);
+    draw_text("Coming Soon!", x + pad, y + pad + title * 0.8, title, ink);
+    for (i, line) in lines.iter().enumerate() {
+        let ly = y + pad + title + 6.0 * s + body * 0.8 + i as f32 * (body + 3.0 * s);
+        draw_text(
+            line,
+            x + pad,
+            ly,
+            body,
+            Color::new(ink.r, ink.g, ink.b, 0.8 * pop),
+        );
     }
 }
 

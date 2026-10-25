@@ -2,6 +2,7 @@
 
 mod editor;
 mod session;
+mod settings;
 mod ui;
 
 use crate::data::{GameData, ProjectileKind, find_assets_dir};
@@ -10,6 +11,7 @@ use crate::sim::{Difficulty, ElimStyle, MAX_TEAMS, MatchConfig, TEAM_NAMES};
 use editor::Editor;
 use macroquad::prelude::*;
 use session::Session;
+use settings::Settings;
 use std::sync::Arc;
 use ui::{ACCENT, Side, Ui};
 
@@ -74,10 +76,104 @@ enum Info {
     About,
 }
 
+/// What the version history page shows.
+const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
+
+/// Should the game open fullscreen? (The saved setting; screenshot runs
+/// always get a window.)
+pub fn start_fullscreen() -> bool {
+    std::env::var_os("ARCANE_SHOT").is_none() && Settings::load().fullscreen
+}
+
+/// Where a main menu button goes.
+#[derive(Clone, Copy)]
+enum Go {
+    QuickMatch,
+    Editor,
+    Info(Info),
+    Settings,
+    Changes,
+    Quit,
+}
+
+/// Main menu buttons: id, label, description, and where it goes (None:
+/// not built yet, greyed out with a Coming Soon balloon).
+type MenuItem = (&'static str, &'static str, &'static str, Option<Go>);
+
+const MENU_LEFT: [MenuItem; 6] = [
+    (
+        "m_campaign",
+        "Campaign",
+        "Missions against bots, one arena after another.",
+        None,
+    ),
+    (
+        "m_quick",
+        "Quick Match",
+        "Pick the map, match type, limits, teams and bots, then play.",
+        Some(Go::QuickMatch),
+    ),
+    (
+        "m_editor",
+        "Map Editor",
+        "Build your own maps, or change the ones in the game. Opens the map picked in Quick Match.",
+        Some(Go::Editor),
+    ),
+    (
+        "m_armory",
+        "Armory",
+        "Look over your weapons and gear, and pick what you take into battle.",
+        None,
+    ),
+    (
+        "m_achievements",
+        "Achievements",
+        "Goals to chase across your matches, and the ones you have reached.",
+        None,
+    ),
+    ("m_quit", "Quit", "Close the game.", Some(Go::Quit)),
+];
+
+const MENU_RIGHT: [MenuItem; 5] = [
+    (
+        "m_profile",
+        "Profile",
+        "Your name, your fighter's personality (what they say in battle), your stats and your look.",
+        None,
+    ),
+    (
+        "m_howto",
+        "How to Play",
+        "Controls and how a match works.",
+        Some(Go::Info(Info::HowTo)),
+    ),
+    (
+        "m_weapons",
+        "Weapon Info",
+        "Every weapon and what it does.",
+        Some(Go::Info(Info::Weapons)),
+    ),
+    (
+        "m_settings",
+        "Settings",
+        "Fullscreen, menu slides, blood effects and the FPS counter.",
+        Some(Go::Settings),
+    ),
+    (
+        "m_about",
+        "About",
+        "Who made this game and where it comes from.",
+        Some(Go::Info(Info::About)),
+    ),
+];
+
 enum Screen {
     Menu,
     Setup,
     Info(Info),
+    Settings,
+    /// The version history (CHANGELOG.md).
+    Changes,
     Game(Box<Session>),
     Editor(Box<Editor>),
     Error(String),
@@ -88,7 +184,12 @@ impl Screen {
     fn slides(&self) -> bool {
         matches!(
             self,
-            Screen::Menu | Screen::Setup | Screen::Info(_) | Screen::Editor(_)
+            Screen::Menu
+                | Screen::Setup
+                | Screen::Info(_)
+                | Screen::Settings
+                | Screen::Changes
+                | Screen::Editor(_)
         )
     }
 }
@@ -203,7 +304,9 @@ struct App {
     seed: u64,
     time: f32,
     quit: bool,
-    fullscreen: bool,
+    settings: Settings,
+    /// How far the version history is scrolled, in pixels.
+    changes_scroll: f32,
     /// Rendered map pictures for the setup screen, by map id.
     thumbs: std::collections::HashMap<String, crate::render::MapThumb>,
 }
@@ -248,7 +351,8 @@ pub async fn run() {
         seed: macroquad::miniquad::date::now() as u64,
         time: 0.0,
         quit: false,
-        fullscreen: false,
+        settings: Settings::load(),
+        changes_scroll: 0.0,
         thumbs: Default::default(),
     };
     app.reset_mode_defaults();
@@ -298,8 +402,9 @@ impl App {
         self.time += dt;
         self.ui.begin(dt);
         if is_key_pressed(KeyCode::F11) {
-            self.fullscreen = !self.fullscreen;
-            set_fullscreen(self.fullscreen);
+            self.settings.fullscreen = !self.settings.fullscreen;
+            set_fullscreen(self.settings.fullscreen);
+            self.settings.save();
         }
         if let Some(mut slide) = self.slide.take() {
             slide.t += dt;
@@ -312,12 +417,13 @@ impl App {
             if slide.t < SLIDE_S {
                 slide.draw();
                 self.slide = Some(slide);
+                self.draw_fps();
                 return;
             }
         }
         if let Some(next) = self.screen_frame(dt) {
             set_default_camera();
-            if self.screen.slides() && next.slides() {
+            if self.settings.slides && self.screen.slides() && next.slides() {
                 self.slide = Some(Slide {
                     from: grab_screen(),
                     to: None,
@@ -329,6 +435,20 @@ impl App {
         } else {
             set_default_camera();
             self.ui.draw_tip();
+        }
+        self.draw_fps();
+    }
+
+    fn draw_fps(&self) {
+        if self.settings.show_fps {
+            let s = ui::scale();
+            ui::text_left(
+                &format!("{} FPS", get_fps()),
+                8.0 * s,
+                16.0 * s,
+                15.0 * s,
+                Color::new(1.0, 1.0, 0.6, 0.9),
+            );
         }
     }
 
@@ -342,6 +462,8 @@ impl App {
             }
             Screen::Menu => self.main_menu(),
             Screen::Setup => self.setup_screen(),
+            Screen::Settings => self.settings_screen(),
+            Screen::Changes => self.changes_screen(),
             Screen::Info(page) => {
                 let page = *page;
                 self.info_screen(page)
@@ -379,7 +501,10 @@ impl App {
 
     fn start(&self, cfg: MatchConfig) -> Screen {
         match Session::new(self.data(), cfg) {
-            Ok(s) => Screen::Game(Box::new(s)),
+            Ok(mut s) => {
+                s.blood = self.settings.blood;
+                Screen::Game(Box::new(s))
+            }
             Err(e) => Screen::Error(e),
         }
     }
@@ -395,21 +520,6 @@ impl App {
             Ok(ed) => Screen::Editor(Box::new(ed)),
             Err(e) => Screen::Error(e),
         }
-    }
-
-    fn quick_match(&mut self) -> Screen {
-        let data = self.data();
-        let map = data.maps[self.next_seed() as usize % data.maps.len()]
-            .id
-            .clone();
-        let cfg = MatchConfig {
-            map_id: map,
-            mode_id: "deathmatch".into(),
-            bots: 5,
-            seed: self.next_seed(),
-            ..Default::default()
-        };
-        self.start(cfg)
     }
 
     fn error_screen(&mut self, msg: &str) {
@@ -463,125 +573,238 @@ impl App {
         );
 
         let bw = 300.0 * s;
-        let bh = 40.0 * s;
-        let gap = 54.0 * s;
-        let y0 = sh * 0.42;
+        let bh = 38.0 * s;
+        let gap = 50.0 * s;
+        let y0 = sh * 0.4;
         let lx = 60.0 * s;
         let rx = sw - 60.0 * s - bw;
-        let mut next = None;
-        self.ui.hint(
-            "m_quick",
-            Rect::new(lx, y0, bw, bh),
-            "Jump straight into a deathmatch on a random map against 5 bots.",
-        );
-        if self.ui.tab(
-            "m_quick",
-            "Quick Match",
-            Rect::new(lx, y0, bw, bh),
-            Side::Left,
-            false,
-        ) {
-            next = Some(self.quick_match());
-        }
-        self.ui.hint(
-            "m_setup",
-            Rect::new(lx, y0 + gap, bw, bh),
-            "Pick the map, match type, limits, teams and bots, then start.",
-        );
-        if self.ui.tab(
-            "m_setup",
-            "Match Setup",
-            Rect::new(lx, y0 + gap, bw, bh),
-            Side::Left,
-            false,
-        ) {
-            next = Some(Screen::Setup);
-        }
-        self.ui.hint("m_editor", Rect::new(lx, y0 + gap * 2.0, bw, bh), "Build your own maps, or change the ones in the game. Opens the map picked in Match Setup.");
-        if self.ui.tab(
-            "m_editor",
-            "Map Editor",
-            Rect::new(lx, y0 + gap * 2.0, bw, bh),
-            Side::Left,
-            false,
-        ) {
-            next = Some(self.open_editor());
-        }
-        self.ui.hint(
-            "m_quit",
-            Rect::new(lx, y0 + gap * 3.0, bw, bh),
-            "Close the game.",
-        );
-        if self.ui.tab(
-            "m_quit",
-            "Quit",
-            Rect::new(lx, y0 + gap * 3.0, bw, bh),
-            Side::Left,
-            false,
-        ) {
-            self.quit = true;
-        }
-        self.ui.hint(
-            "m_howto",
-            Rect::new(rx, y0, bw, bh),
-            "Controls and how a match works.",
-        );
-        if self.ui.tab(
-            "m_howto",
-            "How to Play",
-            Rect::new(rx, y0, bw, bh),
-            Side::Right,
-            false,
-        ) {
-            next = Some(Screen::Info(Info::HowTo));
-        }
-        self.ui.hint(
-            "m_weapons",
-            Rect::new(rx, y0 + gap, bw, bh),
-            "Every weapon and what it does.",
-        );
-        if self.ui.tab(
-            "m_weapons",
-            "Weapon Info",
-            Rect::new(rx, y0 + gap, bw, bh),
-            Side::Right,
-            false,
-        ) {
-            next = Some(Screen::Info(Info::Weapons));
-        }
-        self.ui.hint(
-            "m_about",
-            Rect::new(rx, y0 + gap * 2.0, bw, bh),
-            "Credits and where this game comes from.",
-        );
-        if self.ui.tab(
-            "m_about",
-            "About",
-            Rect::new(rx, y0 + gap * 2.0, bw, bh),
-            Side::Right,
-            false,
-        ) {
-            next = Some(Screen::Info(Info::About));
-        }
-        if is_key_pressed(KeyCode::Enter) {
-            next = Some(self.quick_match());
+        let mut go = None;
+        let columns = [
+            (&MENU_LEFT[..], lx, Side::Left),
+            (&MENU_RIGHT[..], rx, Side::Right),
+        ];
+        for (items, x, side) in columns {
+            for (i, &(id, label, tip, to)) in items.iter().enumerate() {
+                let r = Rect::new(x, y0 + gap * i as f32, bw, bh);
+                match to {
+                    Some(to) => {
+                        self.ui.hint(id, r, tip);
+                        if self.ui.tab(id, label, r, side, false) {
+                            go = Some(to);
+                        }
+                    }
+                    None => {
+                        self.ui.soon(id, r, tip);
+                        self.ui.tab_locked(id, label, r, side);
+                    }
+                }
+            }
         }
 
+        // Bottom right: the version, and the version history under it.
+        let cw = 170.0 * s;
+        let changes = Rect::new(sw - 60.0 * s - cw, sh - 66.0 * s, cw, 28.0 * s);
         ui::text_right(
             VERSION,
-            sw - 30.0 * s,
-            sh - 30.0 * s,
+            changes.x + changes.w - 14.0 * s,
+            changes.y - 10.0 * s,
             16.0 * s,
             Color::new(1.0, 1.0, 1.0, 0.5),
+        );
+        self.ui.hint(
+            "m_changes",
+            changes,
+            "What is new in each version of the game.",
+        );
+        if self
+            .ui
+            .tab("m_changes", "View Changes", changes, Side::Right, false)
+        {
+            go = Some(Go::Changes);
+        }
+        if is_key_pressed(KeyCode::Enter) {
+            go = Some(Go::QuickMatch);
+        }
+
+        ui::text_center(
+            "Made by BlueAutumnX5",
+            sw / 2.0,
+            sh - 50.0 * s,
+            17.0 * s,
+            Color::new(1.0, 1.0, 1.0, 0.7),
         );
         ui::text_center(
             "Fan project inspired by the Raze series by JuiceTin and AddisonR. Not affiliated.",
             sw / 2.0,
-            sh - 30.0 * s,
+            sh - 28.0 * s,
             16.0 * s,
             Color::new(1.0, 1.0, 1.0, 0.45),
         );
-        next
+        match go? {
+            Go::QuickMatch => Some(Screen::Setup),
+            Go::Editor => Some(self.open_editor()),
+            Go::Info(page) => Some(Screen::Info(page)),
+            Go::Settings => Some(Screen::Settings),
+            Go::Changes => {
+                self.changes_scroll = 0.0;
+                Some(Screen::Changes)
+            }
+            Go::Quit => {
+                self.quit = true;
+                None
+            }
+        }
+    }
+
+    /// Settings: each row switches between On and Off, saved right away.
+    fn settings_screen(&mut self) -> Option<Screen> {
+        ui::backdrop(self.time);
+        let s = ui::scale();
+        let (sw, sh) = (screen_width(), screen_height());
+        ui::text_center("SETTINGS", sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
+        let w = (640.0 * s).min(sw - 80.0 * s);
+        let r = Rect::new((sw - w) / 2.0, 90.0 * s, w, 208.0 * s);
+        ui::panel(r, None);
+        let st = &self.settings;
+        let rows = [
+            (
+                "Fullscreen (F11)",
+                st.fullscreen,
+                "Fill the whole screen. F11 switches it any time, in menus or in a match.",
+            ),
+            (
+                "Menu Slides",
+                st.slides,
+                "Menu pages slide into each other. Off: they switch at once.",
+            ),
+            (
+                "Blood Effects",
+                st.blood,
+                "Blood on the screen as you get hurt, and on the death screen. The red hit flash stays either way.",
+            ),
+            (
+                "FPS Counter",
+                st.show_fps,
+                "Show frames per second in the top left corner.",
+            ),
+        ];
+        let mut flip = None;
+        for (i, (label, on, tip)) in rows.into_iter().enumerate() {
+            let row = Rect::new(
+                r.x + 20.0 * s,
+                r.y + 22.0 * s + i as f32 * 44.0 * s,
+                r.w - 40.0 * s,
+                34.0 * s,
+            );
+            let id = format!("set_{i}");
+            self.ui.hint(&id, row, tip);
+            if self.ui.stepper(&id, label, &on_off(on), row, false, true) != 0 {
+                flip = Some(i);
+            }
+        }
+        if let Some(i) = flip {
+            let st = &mut self.settings;
+            match i {
+                0 => {
+                    st.fullscreen = !st.fullscreen;
+                    set_fullscreen(st.fullscreen);
+                }
+                1 => st.slides = !st.slides,
+                2 => st.blood = !st.blood,
+                _ => st.show_fps = !st.show_fps,
+            }
+            st.save();
+        }
+        ui::text_center(
+            "Changes are saved right away.",
+            sw / 2.0,
+            r.y + r.h + 28.0 * s,
+            16.0 * s,
+            Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.8),
+        );
+        let bw = 240.0 * s;
+        if self.ui.tab(
+            "set_back",
+            "Back",
+            Rect::new(50.0 * s, sh - 76.0 * s, bw, 42.0 * s),
+            Side::Left,
+            false,
+        ) || is_key_pressed(KeyCode::Escape)
+        {
+            return Some(Screen::Menu);
+        }
+        None
+    }
+
+    /// The version history from CHANGELOG.md; the mouse wheel scrolls it.
+    fn changes_screen(&mut self) -> Option<Screen> {
+        ui::backdrop(self.time);
+        let s = ui::scale();
+        let (sw, sh) = (screen_width(), screen_height());
+        ui::text_center("CHANGES", sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
+        let r = Rect::new(60.0 * s, 80.0 * s, sw - 120.0 * s, sh - 180.0 * s);
+        ui::panel(r, None);
+        let (head, body) = (24.0 * s, 18.0 * s);
+        let width = r.w - 60.0 * s;
+        // Lay out every line first: (text, size, colour, indent).
+        let mut lines: Vec<(String, f32, Color, f32)> = Vec::new();
+        for raw in CHANGELOG.lines() {
+            if let Some(h) = raw.strip_prefix("## ") {
+                if !lines.is_empty() {
+                    lines.push((String::new(), body * 0.6, WHITE, 0.0));
+                }
+                lines.push((h.to_owned(), head, ACCENT, 0.0));
+            } else if let Some(item) = raw.strip_prefix("- ") {
+                for (k, part) in ui::wrap(item, width - 24.0 * s, body)
+                    .into_iter()
+                    .enumerate()
+                {
+                    let text = if k == 0 { format!("- {part}") } else { part };
+                    let indent = if k == 0 { 0.0 } else { 16.0 * s };
+                    lines.push((text, body, Color::new(1.0, 1.0, 1.0, 0.85), indent));
+                }
+            }
+        }
+        let total: f32 = lines.iter().map(|l| l.1 + 8.0 * s).sum();
+        let room = r.h - 40.0 * s;
+        let most = (total - room).max(0.0);
+        self.changes_scroll =
+            (self.changes_scroll - mouse_wheel().1.signum() * 40.0 * s).clamp(0.0, most);
+        if is_key_down(KeyCode::Down) {
+            self.changes_scroll = (self.changes_scroll + 8.0 * s).min(most);
+        }
+        if is_key_down(KeyCode::Up) {
+            self.changes_scroll = (self.changes_scroll - 8.0 * s).max(0.0);
+        }
+        let mut y = r.y + 30.0 * s - self.changes_scroll;
+        for (text, size, color, indent) in &lines {
+            y += size + 8.0 * s;
+            // Only lines fully inside the panel.
+            if y - size >= r.y + 6.0 * s && y <= r.y + r.h - 10.0 * s {
+                ui::text_left(text, r.x + 30.0 * s + indent, y - 8.0 * s, *size, *color);
+            }
+        }
+        if most > 0.0 {
+            ui::text_right(
+                "Mouse wheel to scroll",
+                r.x + r.w - 16.0 * s,
+                r.y + r.h + 22.0 * s,
+                15.0 * s,
+                Color::new(1.0, 1.0, 1.0, 0.5),
+            );
+        }
+        let bw = 240.0 * s;
+        if self.ui.tab(
+            "ch_back",
+            "Back",
+            Rect::new(50.0 * s, sh - 76.0 * s, bw, 42.0 * s),
+            Side::Left,
+            false,
+        ) || is_key_pressed(KeyCode::Escape)
+        {
+            return Some(Screen::Menu);
+        }
+        None
     }
 
     fn modes_for_map(&self) -> Vec<usize> {
@@ -671,7 +894,7 @@ impl App {
         let data = self.data();
         let s = ui::scale();
         let (sw, sh) = (screen_width(), screen_height());
-        ui::text_center("MATCH SETUP", sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
+        ui::text_center("QUICK MATCH", sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
 
         let modes = self.modes_for_map();
         let mode = data.modes[modes[self.setup.mode.min(modes.len() - 1)]].clone();
@@ -1173,6 +1396,8 @@ impl App {
                 for t in [
                     "Arcane Dome is a free, open-source fan project made with Rust and Macroquad.",
                     "",
+                    "Made by BlueAutumnX5.",
+                    "",
                     "It is inspired by the Raze series by JuiceTin and AddisonR.",
                     "It is not affiliated with or endorsed by them, and it uses none of their art,",
                     "sounds, code, names or map layouts.",
@@ -1250,6 +1475,8 @@ impl App {
             "howto" => self.screen = Screen::Info(Info::HowTo),
             "weapons" => self.screen = Screen::Info(Info::Weapons),
             "about" => self.screen = Screen::Info(Info::About),
+            "settings" => self.screen = Screen::Settings,
+            "changes" => self.screen = Screen::Changes,
             // editor[:map] opens the editor on a map.
             s if s.starts_with("editor") => {
                 if let Some(id) = s.strip_prefix("editor:")
@@ -1300,7 +1527,7 @@ impl App {
 }
 
 /// Optional screenshot hook for checking visuals without a person at the keyboard:
-/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|editor[:map_id]|game[:map_id[@x,y]]|slide:<scene> ARCANE_SHOT_AFTER=2`,
+/// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|settings|changes|editor[:map_id]|game[:map_id[@x,y]]|slide:<scene> ARCANE_SHOT_AFTER=2`,
 /// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_COLORS=3,0,2,1
 /// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw`, `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`.
 mod debug {
