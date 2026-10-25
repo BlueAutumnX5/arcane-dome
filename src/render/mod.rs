@@ -11,7 +11,7 @@ pub use effects::Effects;
 pub use hud::{draw_crosshair, draw_hud, draw_scoreboard};
 
 use crate::data::{Category, MapDef, PickupKind, ProjectileKind};
-use crate::sim::{Fighter, HEAD_HEIGHT, MAX_TEAMS, World};
+use crate::sim::{Fighter, HEAD_HEIGHT, MAX_HEALTH, MAX_SHIELD, MAX_TEAMS, World};
 use macroquad::prelude::*;
 
 /// The team palette (Blue, Red, Green, Yellow); a team's colour is picked in
@@ -242,6 +242,72 @@ pub fn draw_world(
     gadgets::draw_object_labels(world, cam);
 }
 
+/// Nameplate size at 720p, in pixels; long names widen it.
+const PLATE_W: f32 = 104.0;
+const PLATE_H: f32 = 12.0;
+
+/// A fighter's nameplate, its bottom centre at `at`: the bar is its health,
+/// filled in its team colour, with the name on it. The player's own plate
+/// is solid with a bright frame; everyone else's is see-through. Shield
+/// shows as a pale strip along the top. (Room is left below for an
+/// abilities bar.)
+fn draw_plate(f: &Fighter, at: Vec2, own: bool, s: f32) {
+    let size = if own { 13.0 } else { 12.0 } * s;
+    let text_w = measure_text(&f.name, None, size as u16, 1.0).width;
+    let w = (PLATE_W * s).max(text_w + 16.0 * s);
+    let h = PLATE_H * s;
+    let r = Rect::new(at.x - w / 2.0, at.y - h, w, h);
+    let c = fighter_color(f);
+    let a = if own { 1.0 } else { 0.6 };
+    let shade = |k: f32, alpha: f32| Color::new(c.r * k, c.g * k, c.b * k, alpha);
+    let health = (f.health / MAX_HEALTH).clamp(0.0, 1.0);
+    // The lost part stays as a dark band of the same colour.
+    draw_rectangle(r.x, r.y, r.w, r.h, shade(0.22, 0.8 * a));
+    draw_rectangle(r.x, r.y, r.w * health, r.h, shade(0.78, a));
+    draw_rectangle(
+        r.x,
+        r.y,
+        r.w * health,
+        r.h * 0.45,
+        Color::new(1.0, 1.0, 1.0, 0.13 * a),
+    );
+    if f.shield > 0.0 {
+        let k = (f.shield / MAX_SHIELD).clamp(0.0, 1.0);
+        draw_rectangle(
+            r.x,
+            r.y,
+            r.w * k,
+            2.5 * s,
+            Color::new(0.85, 0.96, 1.0, 0.95 * a),
+        );
+    }
+    if own {
+        let m = 2.0 * s;
+        draw_rectangle_lines(
+            r.x - m,
+            r.y - m,
+            r.w + 2.0 * m,
+            r.h + 2.0 * m,
+            2.0 * s,
+            Color::new(0.92, 0.96, 1.0, 0.95),
+        );
+    }
+    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, Color::new(0.0, 0.0, 0.0, 0.5 * a));
+    // Name, drawn twice a pixel apart to read as bold.
+    let x = at.x - text_w / 2.0;
+    let y = r.y + h * 0.76;
+    let ink = Color::new(1.0, 1.0, 1.0, if own { 1.0 } else { 0.9 });
+    draw_text(
+        &f.name,
+        x + 1.0,
+        y + 1.5,
+        size,
+        Color::new(0.0, 0.0, 0.0, 0.6),
+    );
+    draw_text(&f.name, x, y, size, ink);
+    draw_text(&f.name, x + 0.8, y, size, ink);
+}
+
 fn draw_pickups(world: &World) {
     let bob = (world.time * 3.0).sin() * 0.08;
     for p in &world.pickups {
@@ -381,40 +447,12 @@ fn draw_fighter(world: &World, f: &Fighter, is_player: bool) {
     );
 }
 
-/// Names and health bars above other fighters, weapon names over crates.
+/// Nameplates over fighters, weapon names over crates.
 fn draw_labels(world: &World, cam: &GameCamera, player: Option<usize>) {
     let s = (screen_height() / 720.0).max(0.6);
-    for f in world
-        .fighters
-        .iter()
-        .filter(|f| f.alive && Some(f.id) != player)
-    {
+    for f in world.fighters.iter().filter(|f| f.alive) {
         let top = cam.world_to_screen(vec2(f.feet.x, f.aabb().min.y));
-        let w = 34.0 * s;
-        let y = top.y - 10.0 * s;
-        draw_rectangle(
-            top.x - w / 2.0,
-            y,
-            w,
-            4.0 * s,
-            Color::new(0.0, 0.0, 0.0, 0.6),
-        );
-        draw_rectangle(
-            top.x - w / 2.0,
-            y,
-            w * (f.health / 100.0).clamp(0.0, 1.0),
-            4.0 * s,
-            fighter_color(f),
-        );
-        let size = (14.0 * s) as u16;
-        let dims = measure_text(&f.name, None, size, 1.0);
-        draw_text(
-            &f.name,
-            top.x - dims.width / 2.0,
-            y - 4.0 * s,
-            size as f32,
-            Color::new(1.0, 1.0, 1.0, 0.85),
-        );
+        draw_plate(f, top - vec2(0.0, 8.0 * s), Some(f.id) == player, s);
     }
     for p in world.pickups.iter().filter(|p| p.active) {
         if let Some(w) = p.weapon {

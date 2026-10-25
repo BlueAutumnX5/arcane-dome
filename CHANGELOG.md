@@ -11,6 +11,7 @@
 - New main menu: Quick Match (the old Match Setup), Settings, View Changes, and a first look at what is coming
 - Settings: fullscreen, menu slides, blood effects, FPS counter (saved between runs)
 - F11 switches fullscreen on and off
+- Nameplates: the bar over each fighter is their health in their team colour, with the name on it; yours has a bright frame
 
 ## v0.1.1
 

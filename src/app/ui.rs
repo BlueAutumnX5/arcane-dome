@@ -253,11 +253,12 @@ impl Ui {
         let slant = h * 0.35;
 
         // Shape for a left tab (diagonal cut at the outer bottom corner,
-        // slanted inner end); mirrored for the right side.
+        // inner end slanting out toward the bottom); mirrored for the right
+        // side.
         let local = [
             vec2(0.0, 0.0),
-            vec2(w, 0.0),
-            vec2(w - slant, h),
+            vec2(w - slant, 0.0),
+            vec2(w, h),
             vec2(cut, h),
             vec2(0.0, h - cut),
         ];
@@ -291,25 +292,6 @@ impl Ui {
             LOCKED_EDGE
         };
         draw_rectangle(sx, y + 4.0 * s, stripe, h - cut - 2.0 * s, stripe_col);
-
-        // Guide line running back toward the screen center.
-        let (lx0, lx1) = match side {
-            Side::Left => (x + w - slant, x + w + 40.0 * s),
-            Side::Right => (x + slant - 40.0 * s, x + slant),
-        };
-        draw_line(
-            lx0,
-            y + h,
-            lx1,
-            y + h,
-            1.5,
-            Color::new(
-                ACCENT.r,
-                ACCENT.g,
-                ACCENT.b,
-                if enabled { 0.35 } else { 0.12 },
-            ),
-        );
 
         let size = h * 0.56;
         let color = if enabled {
