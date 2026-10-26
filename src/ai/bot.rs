@@ -51,6 +51,9 @@ struct Params {
     lead: f32,
     /// Random hop chance per second while fighting.
     jumpy: f32,
+    /// In a fight, the chance each footwork change is holding still rather
+    /// than strafing.
+    hold_chance: f32,
     /// 0 aims at the chest, 1 at the head.
     head_bias: f32,
     /// Half-width of the view cone, in degrees. Enemies outside it are unseen.
@@ -82,17 +85,18 @@ struct Params {
 fn params(d: Difficulty) -> Params {
     match d {
         Difficulty::Easy => Params {
-            reaction: (0.9, 1.4),
+            reaction: (0.7, 1.1),
             aim_error_deg: 14.0,
             lead: 0.0,
             jumpy: 0.05,
+            hold_chance: 0.6,
             head_bias: 0.0,
-            fov_half_deg: 50.0,
-            turn_rate: 2.5,
+            fov_half_deg: 56.0,
+            turn_rate: 3.2,
             hear_range: 3.0,
             burst: (0.5, 0.8),
             travel: (2.0, 4.5),
-            break_away: 0.45,
+            break_away: 0.3,
             misjudge_chance: 0.9,
             misjudge: (0.25, 0.5),
             correct: 0.45,
@@ -104,6 +108,7 @@ fn params(d: Difficulty) -> Params {
             aim_error_deg: 8.0,
             lead: 0.45,
             jumpy: 0.15,
+            hold_chance: 0.4,
             head_bias: 0.15,
             fov_half_deg: 60.0,
             turn_rate: 4.5,
@@ -122,6 +127,7 @@ fn params(d: Difficulty) -> Params {
             aim_error_deg: 4.0,
             lead: 0.85,
             jumpy: 0.35,
+            hold_chance: 0.4,
             head_bias: 0.4,
             fov_half_deg: 70.0,
             turn_rate: 8.0,
@@ -1021,7 +1027,7 @@ impl Brain {
         // Alternate between strafing and holding still (sometimes crouched).
         self.stance_timer -= DT;
         if self.stance_timer <= 0.0 {
-            if self.rng.chance(0.4) {
+            if self.rng.chance(self.p.hold_chance) {
                 self.stance = Stance::Hold {
                     crouch: self.rng.chance(0.4),
                 };
@@ -1375,9 +1381,20 @@ mod tests {
         let (w, nav) = duel(Difficulty::Easy);
         let mut b = Brain::new(1, 1, Difficulty::Easy);
         b.aim_angle = PI; // facing the player
-        watch(&mut b, &w, &nav, 0.8);
-        assert_eq!(b.target, None, "easy bots need at least 0.9 s to react");
-        watch(&mut b, &w, &nav, 0.7);
+        watch(&mut b, &w, &nav, 0.6);
+        assert_eq!(b.target, None, "easy bots need at least 0.7 s to react");
+        watch(&mut b, &w, &nav, 0.6);
         assert_eq!(b.target, Some(0));
+    }
+
+    #[test]
+    fn harder_bots_see_wider_react_faster_and_hold_less() {
+        let [e, n, h] = Difficulty::ALL.map(params);
+        for (lo, hi) in [(&e, &n), (&n, &h)] {
+            assert!(lo.fov_half_deg < hi.fov_half_deg);
+            assert!(lo.reaction.0 > hi.reaction.0 && lo.reaction.1 > hi.reaction.1);
+            assert!(lo.turn_rate < hi.turn_rate);
+            assert!(lo.hold_chance >= hi.hold_chance);
+        }
     }
 }
