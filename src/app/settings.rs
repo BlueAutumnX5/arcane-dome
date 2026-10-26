@@ -1,11 +1,14 @@
 //! Player settings, kept between runs in the user's config folder.
 
+use crate::i18n::Lang;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// Starts as the system's language, if the game speaks it.
+    pub language: Lang,
     pub fullscreen: bool,
     /// Menu pages slide into each other (off: they switch at once).
     pub slides: bool,
@@ -17,6 +20,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            language: Lang::from_system(),
             fullscreen: false,
             slides: true,
             blood: true,

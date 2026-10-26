@@ -6,6 +6,7 @@ use crate::data::{
     Category, GameData, MapDef, ModeDef, ObjectKind, PickupDef, PickupKind, ProjectileKind,
     SpawnDef,
 };
+use crate::i18n::tn;
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
 
@@ -22,9 +23,9 @@ impl Difficulty {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Easy => "Easy",
-            Self::Normal => "Normal",
-            Self::Hard => "Hard",
+            Self::Easy => tn("Easy"),
+            Self::Normal => tn("Normal"),
+            Self::Hard => tn("Hard"),
         }
     }
 }
@@ -48,7 +49,7 @@ pub const GO_SHOWN_S: f32 = 1.0;
 pub const MAX_TEAMS: usize = 4;
 /// Team names, by team number.
 /// Team colour names, by palette index (the colour a team picked).
-pub const TEAM_NAMES: [&str; MAX_TEAMS] = ["Blue", "Red", "Green", "Yellow"];
+pub const TEAM_NAMES: [&str; MAX_TEAMS] = [tn("Blue"), tn("Red"), tn("Green"), tn("Yellow")];
 
 /// Everything chosen on the custom match screen.
 #[derive(Debug, Clone, PartialEq)]
@@ -118,7 +119,7 @@ impl Default for MatchConfig {
             seed: 1,
             countdown_s: 3.0,
             include_player: true,
-            player_name: "You".into(),
+            player_name: tn("You").into(),
         }
     }
 }

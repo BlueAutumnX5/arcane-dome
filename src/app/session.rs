@@ -5,6 +5,7 @@ use super::touch::{self, Button, TouchControls};
 use super::ui::{self, Side, Ui};
 use crate::ai::BotSet;
 use crate::data::GameData;
+use crate::i18n::{t, tn};
 use crate::render::{self, Effects, GameCamera, MapArt};
 use crate::sim::{DT, Input, MatchConfig, Phase, World};
 use macroquad::prelude::*;
@@ -89,7 +90,7 @@ impl Session {
             edges: Edges::default(),
             over_for: 0.0,
             blood: true,
-            exit_label: "Main Menu",
+            exit_label: tn("Main Menu"),
             touch: crate::platform::touch().then(TouchControls::default),
         })
     }
@@ -326,14 +327,14 @@ impl Session {
         let sw = screen_width();
         let sh = screen_height();
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.6));
-        ui::text_center("PAUSED", sw / 2.0, sh * 0.26, 56.0 * s, WHITE);
+        ui::text_center(t("PAUSED"), sw / 2.0, sh * 0.26, 56.0 * s, WHITE);
         let bw = 280.0 * s;
         let bh = 42.0 * s;
         let x = 70.0 * s;
         let y0 = sh * 0.36;
         if ui.tab(
             "pause_resume",
-            "Resume",
+            t("Resume"),
             Rect::new(x, y0, bw, bh),
             Side::Left,
             false,
@@ -342,7 +343,7 @@ impl Session {
         }
         if ui.tab(
             "pause_restart",
-            "Restart",
+            t("Restart"),
             Rect::new(x, y0 + 54.0 * s, bw, bh),
             Side::Left,
             false,
@@ -351,7 +352,7 @@ impl Session {
         }
         if ui.tab(
             "pause_menu",
-            self.exit_label,
+            t(self.exit_label),
             Rect::new(x, y0 + 108.0 * s, bw, bh),
             Side::Left,
             false,
@@ -359,17 +360,26 @@ impl Session {
             return Outcome::Menu;
         }
         let help = if self.touch.is_some() {
-            "Left stick: walk, push up to jump (again for a double jump), down to crouch.   Right stick: aim, push past the ring to fire."
+            t(
+                "Left stick: walk, push up to jump (again for a double jump), down to crouch.   Right stick: aim, push past the ring to fire.",
+            )
         } else {
-            "Move A/D  Jump W/Space (twice to double jump)  Crouch S  Fire mouse  Reload R  Shadowstep F  Weapons 1-0 / Q E / wheel  Scores Tab"
+            t(
+                "Move A/D  Jump W/Space (twice to double jump)  Crouch S  Fire mouse  Reload R  Shadowstep F  Weapons 1-0 / Q E / wheel  Scores Tab",
+            )
         };
-        ui::text_center(
-            help,
-            sw / 2.0,
-            sh - 30.0 * s,
-            16.0 * s,
-            Color::new(1.0, 1.0, 1.0, 0.7),
-        );
+        // Wrapped to fit, bottom line at the usual place.
+        let size = 16.0 * s;
+        let lines = ui::wrap(help, sw - 60.0 * s, size);
+        for (i, line) in lines.iter().rev().enumerate() {
+            ui::text_center(
+                line,
+                sw / 2.0,
+                sh - 30.0 * s - i as f32 * (size + 6.0 * s),
+                size,
+                Color::new(1.0, 1.0, 1.0, 0.7),
+            );
+        }
         Outcome::Continue
     }
 
@@ -385,7 +395,7 @@ impl Session {
         let y = sh - 80.0 * s;
         if ui.tab(
             "end_menu",
-            self.exit_label,
+            t(self.exit_label),
             Rect::new(50.0 * s, y, bw, bh),
             Side::Left,
             false,
@@ -395,7 +405,7 @@ impl Session {
         }
         if ui.tab(
             "end_rematch",
-            "Rematch",
+            t("Rematch"),
             Rect::new(sw - 50.0 * s - bw, y, bw, bh),
             Side::Right,
             false,

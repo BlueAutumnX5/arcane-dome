@@ -7,6 +7,7 @@
 //! double jump), down crouches or drops through a hatch. Aim stick: the
 //! direction aims; pushing past the inner ring fires.
 
+use crate::i18n::{t, tf};
 use crate::sim::World;
 use macroquad::prelude::*;
 
@@ -347,7 +348,7 @@ impl TouchControls {
                     if current {
                         draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 2.0 * s, cc);
                     }
-                    label(&d.short_name(), *rect, 16.0 * s, cc);
+                    label(t(&d.short_name()), *rect, 16.0 * s, cc);
                 }
                 _ => {
                     let fill = if down {
@@ -390,10 +391,10 @@ impl TouchControls {
                                 );
                             }
                         }
-                        Button::Reload => label("Reload", *rect, 20.0 * s, white),
-                        Button::Switch => label("Switch", *rect, 20.0 * s, white),
+                        Button::Reload => label(t("Reload"), *rect, 20.0 * s, white),
+                        Button::Switch => label(t("Switch"), *rect, 20.0 * s, white),
                         Button::Ability => label(
-                            &format!("Step x{}", f.teleport_charges),
+                            &tf("Step x{}", &[&f.teleport_charges]),
                             *rect,
                             20.0 * s,
                             Color::new(0.75, 0.6, 1.0, 1.0),

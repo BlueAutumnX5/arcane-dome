@@ -1,4 +1,5 @@
 use crate::data::ProjectileKind;
+use crate::i18n::{t, tn};
 use crate::sim::{Event, World};
 use macroquad::prelude::*;
 
@@ -101,25 +102,25 @@ impl Effects {
                 } => {
                     let name = |i: usize| {
                         let f = &world.fighters[i];
-                        (f.name.clone(), super::fighter_color(f))
+                        (t(&f.name).to_owned(), super::fighter_color(f))
                     };
                     let plain = Color::new(1.0, 1.0, 1.0, 0.85);
                     let mut parts = Vec::new();
                     match killer {
                         Some(k) => {
-                            let w = weapon
+                            let w = t(weapon
                                 .map(|w| world.data.weapons[w].name.as_str())
-                                .unwrap_or("hazard");
+                                .unwrap_or(tn("hazard")));
                             parts.push(name(*k));
                             parts.push((format!("[{w}]"), plain));
                             parts.push(name(*victim));
                             if *headshot {
-                                parts.push(("(headshot)".into(), plain));
+                                parts.push((t("(headshot)").into(), plain));
                             }
                         }
                         None => {
                             parts.push(name(*victim));
-                            parts.push(("died".into(), plain));
+                            parts.push((t("died").into(), plain));
                         }
                     }
                     let mine = player.is_some() && (*killer == player || Some(*victim) == player);

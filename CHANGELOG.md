@@ -2,6 +2,7 @@
 
 ## Next version (in progress)
 
+- Bahasa Indonesia: pick it under Settings > Language (the game starts in it if your computer or phone is set to Indonesian). Menus, the match, weapons, maps and modes are all translated; the map editor and this page stay in English for now
 - Android version (Android 9 and newer), with touch controls:
   - Left stick walks; push it up to jump (again for the double jump), down to crouch or drop
   - Right stick aims; push it past the red ring to fire

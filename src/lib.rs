@@ -4,6 +4,7 @@ pub mod ai;
 pub mod app;
 pub mod data;
 pub mod geo;
+pub mod i18n;
 pub mod platform;
 pub mod render;
 pub mod sim;

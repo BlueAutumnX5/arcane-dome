@@ -1,5 +1,6 @@
 use super::{Effects, GameCamera, RED, TEAM_COLORS, category_color, fighter_color};
 use crate::data::ProjectileKind;
+use crate::i18n::{t, tf};
 use crate::sim::{GO_SHOWN_S, MAX_HEALTH, MAX_SHIELD, Phase, World};
 use macroquad::prelude::*;
 
@@ -118,24 +119,46 @@ fn segments_center(parts: &[(String, Color)], cx: f32, y: f32, size: f32, gap: f
     }
 }
 
-fn text_right(t: &str, rx: f32, y: f32, size: f32, color: Color) {
-    let d = measure_text(t, None, size as u16, 1.0);
-    text(t, rx - d.width, y, size, color);
+fn text_right(s: &str, rx: f32, y: f32, size: f32, color: Color) {
+    let d = measure_text(s, None, size as u16, 1.0);
+    text(s, rx - d.width, y, size, color);
 }
 
 /// "to 25", or "no limit" when the score limit is off.
 fn limit_text(limit: Option<u32>) -> String {
-    limit.map_or("no limit".into(), |l| format!("to {l}"))
+    limit.map_or(t("no limit").into(), |l| tf("to {}", &[&l]))
 }
 
 /// The name of the Elimination style being played.
 fn style_text(world: &World) -> String {
     match world.style {
-        crate::sim::ElimStyle::Attrition => "Attrition".into(),
-        crate::sim::ElimStyle::LastManStanding => "Last Man Standing".into(),
-        crate::sim::ElimStyle::Rounds => {
-            format!("Round {}/{}", world.round, world.mode.rounds.unwrap_or(1))
-        }
+        crate::sim::ElimStyle::Attrition => t("Attrition").into(),
+        crate::sim::ElimStyle::LastManStanding => t("Last Man Standing").into(),
+        crate::sim::ElimStyle::Rounds => round_text(world),
+    }
+}
+
+/// "Round 2/5".
+fn round_text(world: &World) -> String {
+    tf(
+        "Round {}/{}",
+        &[&world.round, &world.mode.rounds.unwrap_or(1)],
+    )
+}
+
+/// A side's name: its team colour or the fighter's name, in the current
+/// language.
+fn side_name(world: &World, side: usize) -> String {
+    t(&world.side_name(side)).to_owned()
+}
+
+/// "Team Deathmatch", "Elimination" and the like.
+fn match_name(world: &World) -> String {
+    let mode = t(&world.mode.display_name()).to_owned();
+    if world.mode.is_team() {
+        tf("Team {}", &[&mode])
+    } else {
+        mode
     }
 }
 
@@ -271,7 +294,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             super::gadgets::SHIELD_COLOR,
         );
         text(
-            &format!("Shield {:.0}", f.shield),
+            &tf("Shield {}", &[&format!("{:.0}", f.shield)]),
             hx + hw + 8.0 * s,
             sy + 8.0 * s,
             16.0 * s,
@@ -287,7 +310,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             let y = hy - stack * (34.0 + row * 24.0) * s;
             draw_rectangle(hx, y, 14.0 * s, 14.0 * s, c);
             text(
-                &format!("{}  {:.0}s", p.name, b.time_left.ceil()),
+                &format!("{}  {:.0}s", t(&p.name), b.time_left.ceil()),
                 hx + 22.0 * s,
                 y + 13.0 * s,
                 18.0 * s,
@@ -306,7 +329,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         draw_rectangle(hx, y, 14.0 * s, 14.0 * s, c);
         let key = if touch { "" } else { "  [F]" };
         text(
-            &format!("{} x{}{key}", p.name, f.teleport_charges),
+            &format!("{} x{}{key}", t(&p.name), f.teleport_charges),
             hx + 22.0 * s,
             y + 13.0 * s,
             18.0 * s,
@@ -327,11 +350,11 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     if touch {
         // Above the touch weapon bar (46 high, 10 from the bottom).
         let y = sh - 66.0 * s;
-        let name = measure_text(&def.name, None, (22.0 * s) as u16, 1.0).width;
+        let name = measure_text(t(&def.name), None, (22.0 * s) as u16, 1.0).width;
         let count = measure_text(&ammo, None, (26.0 * s) as u16, 1.0).width;
         let gap = 16.0 * s;
         let x = sw / 2.0 - (name + gap + count) / 2.0;
-        text(&def.name, x, y, 22.0 * s, category_color(def.category));
+        text(t(&def.name), x, y, 22.0 * s, category_color(def.category));
         text(&ammo, x + name + gap, y, 26.0 * s, WHITE);
         if f.is_reloading() {
             let total = def.reload_time_s.max(0.01);
@@ -346,7 +369,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     let rx = sw - 20.0 * s;
     if !touch {
         text_right(
-            &def.name,
+            t(&def.name),
             rx,
             sh - 52.0 * s,
             22.0 * s,
@@ -366,7 +389,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             Color::new(0.0, 0.0, 0.0, 0.5),
         );
         draw_rectangle(rx - w, sh - 78.0 * s, w * p, 5.0 * s, WHITE);
-        text_right("RELOADING", rx, sh - 84.0 * s, 16.0 * s, WHITE);
+        text_right(t("RELOADING"), rx, sh - 84.0 * s, 16.0 * s, WHITE);
     }
 
     // Weapon bar, bottom center.
@@ -409,7 +432,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             14.0 * s,
             Color::new(1.0, 1.0, 1.0, alpha * 0.7),
         );
-        let name = d.short_name();
+        let name = t(&d.short_name()).to_owned();
         let size = 14.0 * s;
         let dims = measure_text(&name, None, size as u16, 1.0);
         text(
@@ -442,20 +465,16 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         };
         let mut parts: Vec<(String, Color)> = (0..world.num_sides())
             .map(|t| {
+                let name = side_name(world, t);
                 let label = if mode.respawn {
-                    format!("{} {}", world.side_name(t), world.scores[t])
+                    format!("{} {}", name, world.scores[t])
                 } else if world.uses_lives() {
                     match world.lives_limit {
-                        Some(_) => format!("{} {} lives", world.side_name(t), world.side_lives(t)),
-                        None => format!("{} {}", world.side_name(t), world.scores[t]),
+                        Some(_) => tf("{} {} lives", &[&name, &world.side_lives(t)]),
+                        None => format!("{} {}", name, world.scores[t]),
                     }
                 } else {
-                    format!(
-                        "{} {} ({} up)",
-                        world.side_name(t),
-                        world.round_wins[t],
-                        alive(t)
-                    )
+                    tf("{} {} ({} up)", &[&name, &world.round_wins[t], &alive(t)])
                 };
                 (label, TEAM_COLORS[world.team_color(t)])
             })
@@ -465,7 +484,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         } else if world.uses_lives() {
             style_text(world)
         } else {
-            format!("Round {}/{}", world.round, mode.rounds.unwrap_or(1))
+            round_text(world)
         };
         parts.push((goal, Color::new(1.0, 1.0, 1.0, 0.75)));
         segments_center(&parts, cx, 58.0 * s, 20.0 * s, 22.0 * s);
@@ -477,28 +496,31 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             .filter(|&s| !world.fighters[s].out)
             .count();
         match world.lives_limit {
-            Some(_) => format!(
+            Some(_) => tf(
                 "Lives {}    {} still in    {}",
-                world.lives_left[player],
-                left,
-                style_text(world)
+                &[&world.lives_left[player], &left, &style_text(world)],
             ),
-            None => format!("Kills {}    {}", world.scores[player], style_text(world)),
+            None => tf(
+                "Kills {}    {}",
+                &[&world.scores[player], &style_text(world)],
+            ),
         }
     } else if !mode.respawn {
-        format!("Round {}/{}", world.round, mode.rounds.unwrap_or(1))
+        round_text(world)
     } else {
         let mine = world.scores[world.side_of(player)];
         let (leader, best) = (0..world.num_sides())
             .map(|s| (s, world.scores[s]))
             .max_by_key(|&(s, v)| (v, std::cmp::Reverse(s)))
             .unwrap_or((0, 0));
-        format!(
+        tf(
             "You {}    Leader {} {}    {}",
-            mine,
-            world.side_name(leader),
-            best,
-            limit_text(mode.score_limit)
+            &[
+                &mine,
+                &side_name(world, leader),
+                &best,
+                &limit_text(mode.score_limit),
+            ],
         )
     };
     text_center(
@@ -547,7 +569,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             (n.to_string(), k, WHITE)
         } else {
             let k = 1.0 + world.countdown / GO_SHOWN_S;
-            ("GO!".to_owned(), k, Color::new(0.55, 1.0, 0.6, 1.0))
+            (t("GO!").to_owned(), k, Color::new(0.55, 1.0, 0.6, 1.0))
         };
         let size = (90.0 + 60.0 * k) * s;
         let alpha = (0.35 + 0.65 * k).min(1.0);
@@ -563,9 +585,9 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         );
         if world.countdown > 0.0 {
             let sub = if world.round > 1 {
-                format!("Round {}", world.round)
+                tf("Round {}", &[&world.round])
             } else {
-                "Get ready".to_owned()
+                t("Get ready").to_owned()
             };
             text_center(
                 &sub,
@@ -581,29 +603,29 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     match world.phase {
         Phase::MatchOver { winner } => {
             let msg = match winner {
-                Some(w) if world.side_of(player) == w => "VICTORY".to_owned(),
-                Some(w) => format!("{} WINS", world.side_name(w).to_uppercase()),
-                None => "DRAW".to_owned(),
+                Some(w) if world.side_of(player) == w => t("VICTORY").to_owned(),
+                Some(w) => tf("{} WINS", &[&side_name(world, w).to_uppercase()]),
+                None => t("DRAW").to_owned(),
             };
             text_center(&msg, cx, sh * 0.22, 56.0 * s, side_color(world, winner));
         }
         Phase::RoundOver { winner, .. } => {
             let msg = match winner {
-                Some(w) => format!("{} takes the round", world.side_name(w)),
-                None => "Round drawn".to_owned(),
+                Some(w) => tf("{} takes the round", &[&side_name(world, w)]),
+                None => t("Round drawn").to_owned(),
             };
             text_center(&msg, cx, sh * 0.3, 40.0 * s, side_color(world, winner));
         }
         Phase::Playing if !f.alive => {
             // The countdown shows only for the last few seconds.
             let msg = if f.out {
-                Some("Out of lives - spectating".to_owned())
+                Some(t("Out of lives - spectating").to_owned())
             } else if !world.respawns() {
-                Some("Eliminated - waiting for the next round".to_owned())
+                Some(t("Eliminated - waiting for the next round").to_owned())
             } else if f.respawn_timer <= RESPAWN_SHOWN_S {
-                Some(format!(
+                Some(tf(
                     "Respawn in {}",
-                    f.respawn_timer.max(0.0).ceil() as i32
+                    &[&(f.respawn_timer.max(0.0).ceil() as i32)],
                 ))
             } else {
                 None
@@ -624,9 +646,9 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         Phase::Playing => {
             if def.projectile.kind == ProjectileKind::Beam && slot.mag == 0 && !f.is_reloading() {
                 let msg = if touch {
-                    "Tap Reload"
+                    t("Tap Reload")
                 } else {
-                    "Press R to reload"
+                    t("Press R to reload")
                 };
                 text_center(msg, cx, sh * 0.62, 20.0 * s, WHITE);
             }
@@ -695,7 +717,7 @@ fn score_row(
     } else {
         Color::new(1.0, 1.0, 1.0, 0.5)
     };
-    text(&f.name, x + 30.0 * s, ry, 20.0 * s, name_col);
+    text(t(&f.name), x + 30.0 * s, ry, 20.0 * s, name_col);
     text(&f.kills.to_string(), cols[0], ry, 20.0 * s, WHITE);
     text(&f.deaths.to_string(), cols[1], ry, 20.0 * s, WHITE);
     text(&score.to_string(), cols[2], ry, 20.0 * s, WHITE);
@@ -710,13 +732,13 @@ fn draw_ffa_scoreboard(world: &World, player: Option<usize>) {
     let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
     draw_rectangle(x, y, w, h, Color::new(0.05, 0.06, 0.09, 0.88));
     draw_rectangle_lines(x, y, w, h, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.2));
-    let title = format!("{}  -  {}", world.mode.match_name(), world.map.name);
+    let title = format!("{}  -  {}", match_name(world), t(&world.map.name));
     text_center(&title, sw / 2.0, y + 36.0 * s, 26.0 * s, WHITE);
     let cols = [x + w - 230.0 * s, x + w - 150.0 * s, x + w - 70.0 * s];
     let hy = y + 70.0 * s;
     let head = Color::new(1.0, 1.0, 1.0, 0.55);
-    text("NAME", x + 30.0 * s, hy, 16.0 * s, head);
-    for (label, cx) in ["KILLS", "DEATHS", "SCORE"].iter().zip(cols) {
+    text(t("NAME"), x + 30.0 * s, hy, 16.0 * s, head);
+    for (label, cx) in [t("KILLS"), t("DEATHS"), t("SCORE")].iter().zip(cols) {
         text(label, cx, hy, 16.0 * s, head);
     }
     for (row, &i) in order.iter().enumerate() {
@@ -744,29 +766,29 @@ fn draw_team_scoreboard(world: &World, player: Option<usize>) {
     let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
     draw_rectangle(x, y, w, h, Color::new(0.05, 0.06, 0.09, 0.88));
     draw_rectangle_lines(x, y, w, h, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.2));
-    let title = format!("{}  -  {}", world.mode.match_name(), world.map.name);
+    let title = format!("{}  -  {}", match_name(world), t(&world.map.name));
     text_center(&title, sw / 2.0, y + 38.0 * s, 26.0 * s, WHITE);
 
     let head = Color::new(1.0, 1.0, 1.0, 0.55);
-    for (t, list) in members.iter().enumerate() {
-        let px = x + gap + (t % 2) as f32 * (panel_w + gap);
-        let py = y + 56.0 * s + (t / 2) as f32 * (panel_h + gap);
-        let c = TEAM_COLORS[world.team_color(t)];
+    for (team, list) in members.iter().enumerate() {
+        let px = x + gap + (team % 2) as f32 * (panel_w + gap);
+        let py = y + 56.0 * s + (team / 2) as f32 * (panel_h + gap);
+        let c = TEAM_COLORS[world.team_color(team)];
         draw_rectangle(px, py, panel_w, panel_h, Color::new(c.r, c.g, c.b, 0.07));
         draw_rectangle(px, py, panel_w, 34.0 * s, Color::new(c.r, c.g, c.b, 0.2));
         draw_rectangle(px, py, 5.0 * s, panel_h, c);
         let total = if world.mode.respawn {
-            world.scores[t]
+            world.scores[team]
         } else if world.uses_lives() {
             match world.lives_limit {
-                Some(_) => world.side_lives(t) as i32,
-                None => world.scores[t],
+                Some(_) => world.side_lives(team) as i32,
+                None => world.scores[team],
             }
         } else {
-            world.round_wins[t] as i32
+            world.round_wins[team] as i32
         };
         text(
-            &format!("{} Team", world.side_name(t)),
+            &tf("{} Team", &[&side_name(world, team)]),
             px + 16.0 * s,
             py + 24.0 * s,
             22.0 * s,
@@ -785,8 +807,8 @@ fn draw_team_scoreboard(world: &World, player: Option<usize>) {
             px + panel_w - 46.0 * s,
         ];
         let hy = py + 54.0 * s;
-        text("NAME", px + 30.0 * s, hy, 14.0 * s, head);
-        for (label, cx) in ["K", "D", "PTS"].iter().zip(cols) {
+        text(t("NAME"), px + 30.0 * s, hy, 14.0 * s, head);
+        for (label, cx) in [t("K"), t("D"), t("PTS")].iter().zip(cols) {
             text(label, cx, hy, 14.0 * s, head);
         }
         for (row, &i) in list.iter().enumerate() {

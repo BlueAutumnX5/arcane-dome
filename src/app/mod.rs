@@ -7,6 +7,7 @@ mod touch;
 mod ui;
 
 use crate::data::{GameData, ProjectileKind, find_assets_dir};
+use crate::i18n::{t, tf, tn};
 use crate::render::{TEAM_COLORS, resync_texture_bindings, use_screen};
 use crate::sim::{Difficulty, ElimStyle, MAX_TEAMS, MatchConfig, TEAM_NAMES};
 use editor::Editor;
@@ -32,38 +33,42 @@ const STYLES: [ElimStyle; 3] = [
 
 fn style_name(st: ElimStyle) -> &'static str {
     match st {
-        ElimStyle::Rounds => "Rounds",
-        ElimStyle::LastManStanding => "Last Man Standing",
-        ElimStyle::Attrition => "Attrition",
+        ElimStyle::Rounds => t("Rounds"),
+        ElimStyle::LastManStanding => t("Last Man Standing"),
+        ElimStyle::Attrition => t("Attrition"),
     }
 }
 
 fn style_blurb(st: ElimStyle) -> &'static str {
     match st {
         ElimStyle::Rounds => {
-            "One life per round. The last side standing takes the round; win the most rounds."
+            t("One life per round. The last side standing takes the round; win the most rounds.")
         }
         ElimStyle::LastManStanding => {
-            "Everyone has their own lives. Out of lives, out of the match: the last one in wins."
+            t("Everyone has their own lives. Out of lives, out of the match: the last one in wins.")
         }
-        ElimStyle::Attrition => {
-            "Each team shares a pool of lives. When it runs dry nobody respawns: last team standing wins."
-        }
+        ElimStyle::Attrition => t(
+            "Each team shares a pool of lives. When it runs dry nobody respawns: last team standing wins.",
+        ),
     }
 }
 
 /// A count, or "Off" for 0.
 fn count_or_off(n: u32) -> String {
-    if n == 0 { "Off".into() } else { n.to_string() }
+    if n == 0 {
+        t("Off").into()
+    } else {
+        n.to_string()
+    }
 }
 
 /// A m:ss time, or "Off" for 0.
-fn time_or_off(t: f32) -> String {
-    let t = t as u32;
-    if t == 0 {
-        "Off".into()
+fn time_or_off(secs: f32) -> String {
+    let secs = secs as u32;
+    if secs == 0 {
+        t("Off").into()
     } else {
-        format!("{}:{:02}", t / 60, t % 60)
+        format!("{}:{:02}", secs / 60, secs % 60)
     }
 }
 const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
@@ -106,6 +111,16 @@ fn shot_size() -> (i32, i32) {
         .unwrap_or((1280, 720))
 }
 
+/// A row on the settings page.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettingRow {
+    Language,
+    Fullscreen,
+    Slides,
+    Blood,
+    Fps,
+}
+
 /// Where a main menu button goes.
 #[derive(Clone, Copy)]
 enum Go {
@@ -124,66 +139,70 @@ type MenuItem = (&'static str, &'static str, &'static str, Option<Go>);
 const MENU_LEFT: [MenuItem; 6] = [
     (
         "m_campaign",
-        "Campaign",
-        "Missions against bots, one arena after another.",
+        tn("Campaign"),
+        tn("Missions against bots, one arena after another."),
         None,
     ),
     (
         "m_quick",
-        "Quick Match",
-        "Pick the map, match type, limits, teams and bots, then play.",
+        tn("Quick Match"),
+        tn("Pick the map, match type, limits, teams and bots, then play."),
         Some(Go::QuickMatch),
     ),
     (
         "m_editor",
-        "Map Editor",
-        "Build your own maps, or change the ones in the game. Opens the map picked in Quick Match.",
+        tn("Map Editor"),
+        tn(
+            "Build your own maps, or change the ones in the game. Opens the map picked in Quick Match.",
+        ),
         Some(Go::Editor),
     ),
     (
         "m_armory",
-        "Armory",
-        "Look over your weapons and gear, and pick what you take into battle.",
+        tn("Armory"),
+        tn("Look over your weapons and gear, and pick what you take into battle."),
         None,
     ),
     (
         "m_achievements",
-        "Achievements",
-        "Goals to chase across your matches, and the ones you have reached.",
+        tn("Achievements"),
+        tn("Goals to chase across your matches, and the ones you have reached."),
         None,
     ),
-    ("m_quit", "Quit", "Close the game.", Some(Go::Quit)),
+    ("m_quit", tn("Quit"), tn("Close the game."), Some(Go::Quit)),
 ];
 
 const MENU_RIGHT: [MenuItem; 5] = [
     (
         "m_profile",
-        "Profile",
-        "Your name, your fighter's personality (what they say in battle), your stats and your look.",
+        tn("Profile"),
+        tn(
+            "Your name, your fighter's personality (what they say in battle), your stats and your look.",
+        ),
         None,
     ),
     (
         "m_howto",
-        "How to Play",
-        "Controls and how a match works.",
+        tn("How to Play"),
+        tn("Controls and how a match works."),
         Some(Go::Info(Info::HowTo)),
     ),
     (
         "m_weapons",
-        "Weapon Info",
-        "Every weapon and what it does.",
+        tn("Weapon Info"),
+        tn("Every weapon and what it does."),
         Some(Go::Info(Info::Weapons)),
     ),
     (
         "m_settings",
-        "Settings",
-        "Fullscreen, menu slides, blood effects and the FPS counter.",
+        tn("Settings"),
+        tn("Language, fullscreen, menu slides, blood effects and the FPS counter."),
         Some(Go::Settings),
     ),
     (
         "m_about",
-        "About",
-        "Who made this game and where it comes from.",
+        tn("About"),
+        tn("Who made this game and where it comes from."),
         Some(Go::Info(Info::About)),
     ),
 ];
@@ -276,7 +295,7 @@ fn grab_screen() -> Texture2D {
 /// A match started from the editor: leaving it goes back to the editor.
 fn test_match(mut s: Session, blood: bool) -> Session {
     s.blood = blood;
-    s.exit_label = "Back to Editor";
+    s.exit_label = tn("Back to Editor");
     s
 }
 
@@ -295,7 +314,11 @@ fn allowed_team_counts(map: &crate::data::MapDef, mode: &crate::data::ModeDef) -
 }
 
 fn teams_label(n: usize) -> String {
-    if n >= 2 { n.to_string() } else { "Off".into() }
+    if n >= 2 {
+        n.to_string()
+    } else {
+        t("Off").into()
+    }
 }
 
 /// Choices on the match setup screen.
@@ -348,6 +371,8 @@ struct App {
 }
 
 pub async fn run() {
+    let settings = Settings::load();
+    crate::i18n::set(settings.language);
     let assets = find_assets_dir();
     let data = match &assets {
         None => Err(
@@ -387,7 +412,7 @@ pub async fn run() {
         seed: macroquad::miniquad::date::now() as u64,
         time: 0.0,
         quit: false,
-        settings: Settings::load(),
+        settings,
         changes_scroll: 0.0,
         changes_drag: None,
         setup_scroll: Default::default(),
@@ -463,7 +488,7 @@ pub async fn run() {
 }
 
 fn on_off(b: bool) -> String {
-    if b { "On".into() } else { "Off".into() }
+    if b { t("On").into() } else { t("Off").into() }
 }
 
 impl App {
@@ -636,7 +661,7 @@ impl App {
         let data = self.data();
         let map = &data.maps[self.setup.map.min(data.maps.len() - 1)];
         let Some(assets) = &self.assets else {
-            return Screen::Error("Could not find the assets folder.".into());
+            return Screen::Error(t("Could not find the assets folder.").into());
         };
         match Editor::open(data.clone(), assets.clone(), &map.id) {
             Ok(ed) => Screen::Editor(Box::new(ed)),
@@ -648,7 +673,7 @@ impl App {
         clear_background(Color::from_rgba(30, 20, 24, 255));
         let s = ui::scale();
         ui::text_left(
-            "Game data has problems:",
+            t("Game data has problems:"),
             40.0 * s,
             60.0 * s,
             30.0 * s,
@@ -692,7 +717,7 @@ impl App {
         }
         ui::text_center("ARCANE DOME", sw / 2.0, sh * 0.25 - lift, 76.0 * s, WHITE);
         ui::text_center(
-            "platform arena shooter",
+            t("platform arena shooter"),
             sw / 2.0,
             sh * 0.25 - lift + 34.0 * s,
             22.0 * s,
@@ -718,20 +743,20 @@ impl App {
                         self.ui.balloon(
                             id,
                             r,
-                            "PC Only",
-                            "The map editor needs a mouse and keyboard, so for now it is only in the PC version.",
+                            t("PC Only"),
+                            t("The map editor needs a mouse and keyboard, so for now it is only in the PC version."),
                         );
-                        self.ui.tab_locked(id, label, r, side);
+                        self.ui.tab_locked(id, t(label), r, side);
                     }
                     Some(to) => {
-                        self.ui.hint(id, r, tip);
-                        if self.ui.tab(id, label, r, side, false) {
+                        self.ui.hint(id, r, t(tip));
+                        if self.ui.tab(id, t(label), r, side, false) {
                             go = Some(to);
                         }
                     }
                     None => {
-                        self.ui.soon(id, r, tip);
-                        self.ui.tab_locked(id, label, r, side);
+                        self.ui.soon(id, r, t(tip));
+                        self.ui.tab_locked(id, t(label), r, side);
                     }
                 }
             }
@@ -750,11 +775,11 @@ impl App {
         self.ui.hint(
             "m_changes",
             changes,
-            "What is new in each version of the game.",
+            t("What is new in each version of the game."),
         );
         if self
             .ui
-            .tab("m_changes", "View Changes", changes, Side::Right, false)
+            .tab("m_changes", t("View Changes"), changes, Side::Right, false)
         {
             go = Some(Go::Changes);
         }
@@ -763,14 +788,14 @@ impl App {
         }
 
         ui::text_center(
-            "Made by BlueAutumnX5",
+            t("Made by BlueAutumnX5"),
             sw / 2.0,
             sh - 50.0 * s,
             17.0 * s,
             Color::new(1.0, 1.0, 1.0, 0.7),
         );
         ui::text_center(
-            "Fan project inspired by the Raze series by JuiceTin and AddisonR. Not affiliated.",
+            t("Fan project inspired by the Raze series by JuiceTin and AddisonR. Not affiliated."),
             sw / 2.0,
             sh - 28.0 * s,
             16.0 * s,
@@ -800,69 +825,90 @@ impl App {
         ui::backdrop(self.time);
         let s = ui::scale();
         let (sw, sh) = (screen_width(), screen_height());
-        ui::text_center("SETTINGS", sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
+        ui::text_center(t("SETTINGS"), sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
+        let st = &self.settings;
+        let mut rows = vec![
+            (
+                SettingRow::Language,
+                t("Language"),
+                st.language.label().to_owned(),
+                t("Menus and matches in English or Bahasa Indonesia."),
+            ),
+            (
+                SettingRow::Fullscreen,
+                t("Fullscreen (F11)"),
+                on_off(st.fullscreen),
+                t("Fill the whole screen. F11 switches it any time, in menus or in a match."),
+            ),
+            (
+                SettingRow::Slides,
+                t("Menu Slides"),
+                on_off(st.slides),
+                t("Menu pages slide into each other. Off: they switch at once."),
+            ),
+            (
+                SettingRow::Blood,
+                t("Blood Effects"),
+                on_off(st.blood),
+                t(
+                    "Blood on the screen as you get hurt, and on the death screen. The red hit flash stays either way.",
+                ),
+            ),
+            (
+                SettingRow::Fps,
+                t("FPS Counter"),
+                on_off(st.show_fps),
+                t("Show frames per second in the top left corner."),
+            ),
+        ];
         // A phone is always fullscreen: no row for it.
-        let first = if cfg!(target_os = "android") { 1 } else { 0 };
+        if cfg!(target_os = "android") {
+            rows.retain(|r| r.0 != SettingRow::Fullscreen);
+        }
         let w = (640.0 * s).min(sw - 80.0 * s);
         let r = Rect::new(
             (sw - w) / 2.0,
             90.0 * s,
             w,
-            (208.0 - 44.0 * first as f32) * s,
+            (32.0 + 44.0 * rows.len() as f32) * s,
         );
         ui::panel(r, None);
-        let st = &self.settings;
-        let rows = [
-            (
-                "Fullscreen (F11)",
-                st.fullscreen,
-                "Fill the whole screen. F11 switches it any time, in menus or in a match.",
-            ),
-            (
-                "Menu Slides",
-                st.slides,
-                "Menu pages slide into each other. Off: they switch at once.",
-            ),
-            (
-                "Blood Effects",
-                st.blood,
-                "Blood on the screen as you get hurt, and on the death screen. The red hit flash stays either way.",
-            ),
-            (
-                "FPS Counter",
-                st.show_fps,
-                "Show frames per second in the top left corner.",
-            ),
-        ];
-        let mut flip = None;
-        for (i, (label, on, tip)) in rows.into_iter().enumerate().skip(first) {
+        let mut change = None;
+        for (i, (which, label, value, tip)) in rows.into_iter().enumerate() {
             let row = Rect::new(
                 r.x + 20.0 * s,
-                r.y + 22.0 * s + (i - first) as f32 * 44.0 * s,
+                r.y + 22.0 * s + i as f32 * 44.0 * s,
                 r.w - 40.0 * s,
                 34.0 * s,
             );
             let id = format!("set_{i}");
             self.ui.hint(&id, row, tip);
-            if self.ui.stepper(&id, label, &on_off(on), row, false, true) != 0 {
-                flip = Some(i);
+            let d = self.ui.stepper(&id, label, &value, row, false, true);
+            if d != 0 {
+                change = Some((which, d));
             }
         }
-        if let Some(i) = flip {
+        if let Some((which, d)) = change {
             let st = &mut self.settings;
-            match i {
-                0 => {
+            match which {
+                SettingRow::Language => {
+                    let all = crate::i18n::Lang::ALL;
+                    let at = all.iter().position(|&l| l == st.language).unwrap_or(0);
+                    st.language = all[(at as i32 + d).rem_euclid(all.len() as i32) as usize];
+                    crate::i18n::set(st.language);
+                }
+                SettingRow::Fullscreen => {
                     st.fullscreen = !st.fullscreen;
                     set_fullscreen(st.fullscreen);
                 }
-                1 => st.slides = !st.slides,
-                2 => st.blood = !st.blood,
-                _ => st.show_fps = !st.show_fps,
+                SettingRow::Slides => st.slides = !st.slides,
+                SettingRow::Blood => st.blood = !st.blood,
+                SettingRow::Fps => st.show_fps = !st.show_fps,
             }
             st.save();
         }
         ui::text_center(
-            "Changes are saved right away.",
+            t("Changes are saved right away."),
             sw / 2.0,
             r.y + r.h + 28.0 * s,
             16.0 * s,
@@ -871,7 +917,7 @@ impl App {
         let bw = 240.0 * s;
         if self.ui.tab(
             "set_back",
-            "Back",
+            t("Back"),
             Rect::new(50.0 * s, sh - 76.0 * s, bw, 42.0 * s),
             Side::Left,
             false,
@@ -887,7 +933,7 @@ impl App {
         ui::backdrop(self.time);
         let s = ui::scale();
         let (sw, sh) = (screen_width(), screen_height());
-        ui::text_center("CHANGES", sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
+        ui::text_center(t("CHANGES"), sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
         let r = Rect::new(60.0 * s, 80.0 * s, sw - 120.0 * s, sh - 180.0 * s);
         ui::panel(r, None);
         let (head, body) = (24.0 * s, 18.0 * s);
@@ -934,9 +980,9 @@ impl App {
         if most > 0.0 {
             ui::text_right(
                 if crate::platform::touch() {
-                    "Drag to scroll"
+                    t("Drag to scroll")
                 } else {
-                    "Mouse wheel to scroll"
+                    t("Mouse wheel to scroll")
                 },
                 r.x + r.w - 16.0 * s,
                 r.y + r.h + 22.0 * s,
@@ -947,7 +993,7 @@ impl App {
         let bw = 240.0 * s;
         if self.ui.tab(
             "ch_back",
-            "Back",
+            t("Back"),
             Rect::new(50.0 * s, sh - 76.0 * s, bw, 42.0 * s),
             Side::Left,
             false,
@@ -1049,7 +1095,7 @@ impl App {
         // units) that is taller than the screen, and the page scrolls.
         let sh = (720.0 * s).max(screen_h);
         self.setup_scroll.begin(sh);
-        ui::text_center("QUICK MATCH", sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
+        ui::text_center(t("QUICK MATCH"), sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
 
         let modes = self.modes_for_map();
         let mode = data.modes[modes[self.setup.mode.min(modes.len() - 1)]].clone();
@@ -1073,8 +1119,8 @@ impl App {
         let ny = pv.y + pv.h + 26.0 * s;
         let mut map_delta = self.ui.stepper(
             "s_map",
-            "Map",
-            &map.name,
+            t("Map"),
+            t(&map.name),
             Rect::new(pv.x, ny - 20.0 * s, pv.w, 28.0 * s),
             false,
             data.maps.len() > 1,
@@ -1087,7 +1133,7 @@ impl App {
         }
         let dsize = 16.0 * s;
         let mut y = ny + 22.0 * s;
-        for line in ui::wrap(&map.description, pv.w, dsize).iter().take(2) {
+        for line in ui::wrap(t(&map.description), pv.w, dsize).iter().take(2) {
             ui::text_left(line, pv.x, y, dsize, Color::new(1.0, 1.0, 1.0, 0.7));
             y += dsize + 4.0 * s;
         }
@@ -1097,8 +1143,8 @@ impl App {
         let row = |y: f32| Rect::new(pv.x, y, pv.w, rh);
         let d_mode = self.ui.stepper(
             "s_mode",
-            "Match Type",
-            &mode.display_name(),
+            t("Match Type"),
+            t(&mode.display_name()),
             row(y),
             false,
             true,
@@ -1108,13 +1154,18 @@ impl App {
         let style = STYLES[self.setup.elim_style];
         let mut d_style = 0;
         if !mode.respawn {
-            d_style = self
-                .ui
-                .stepper("s_style", "Style", style_name(style), row(y), false, true);
+            d_style = self.ui.stepper(
+                "s_style",
+                t("Style"),
+                style_name(style),
+                row(y),
+                false,
+                true,
+            );
             y += rh + 2.0 * s;
         }
         let blurb = if mode.respawn {
-            mode.description.as_str()
+            t(&mode.description)
         } else {
             style_blurb(style)
         };
@@ -1130,11 +1181,18 @@ impl App {
         }
         y += 10.0 * s;
         let (limit_label, limit_value) = match (mode.respawn, style) {
-            (true, _) => ("Score Limit", count_or_off(SCORE_LIMITS[self.setup.score])),
-            (false, ElimStyle::Rounds) => ("Rounds", ROUND_COUNTS[self.setup.rounds].to_string()),
-            (false, ElimStyle::LastManStanding) => ("Lives", count_or_off(LIVES[self.setup.lives])),
+            (true, _) => (
+                t("Score Limit"),
+                count_or_off(SCORE_LIMITS[self.setup.score]),
+            ),
+            (false, ElimStyle::Rounds) => {
+                (t("Rounds"), ROUND_COUNTS[self.setup.rounds].to_string())
+            }
+            (false, ElimStyle::LastManStanding) => {
+                (t("Lives"), count_or_off(LIVES[self.setup.lives]))
+            }
             (false, ElimStyle::Attrition) => (
-                "Team Lives",
+                t("Team Lives"),
                 count_or_off(TEAM_LIVES[self.setup.team_lives]),
             ),
         };
@@ -1143,9 +1201,9 @@ impl App {
             .stepper("s_limit", limit_label, &limit_value, row(y), false, true);
         y += rh + 4.0 * s;
         let tl = if !mode.respawn && style == ElimStyle::Rounds {
-            "Round Time"
+            t("Round Time")
         } else {
-            "Time Limit"
+            t("Time Limit")
         };
         let d_time = self.ui.stepper(
             "s_time",
@@ -1158,7 +1216,7 @@ impl App {
         y += rh + 4.0 * s;
         let d_pow = self.ui.stepper(
             "s_pow",
-            "Powerups",
+            t("Powerups"),
             &on_off(self.setup.powerups),
             row(y),
             false,
@@ -1167,7 +1225,7 @@ impl App {
         y += rh + 4.0 * s;
         let d_sta = self.ui.stepper(
             "s_sta",
-            "Stations",
+            t("Stations"),
             &on_off(self.setup.stations),
             row(y),
             false,
@@ -1176,7 +1234,7 @@ impl App {
         y += rh + 4.0 * s;
         let d_inf = self.ui.stepper(
             "s_inf",
-            "Infinite Clips",
+            t("Infinite Clips"),
             &on_off(self.setup.infinite_ammo),
             row(y),
             false,
@@ -1195,7 +1253,7 @@ impl App {
         let choices = allowed_team_counts(map, &mode);
         let d_teams = self.ui.stepper(
             "s_teams",
-            "Teams",
+            t("Teams"),
             &teams_label(self.setup.teams),
             Rect::new(rx, top, rw, 34.0 * s),
             false,
@@ -1203,24 +1261,24 @@ impl App {
         );
         if self.setup.teams >= 2 {
             let box_h = 86.0 * s;
-            for t in 0..self.setup.teams {
-                let y = top + 48.0 * s + t as f32 * (box_h + 10.0 * s);
-                let pick = self.setup.team_colors[t] as usize;
+            for team in 0..self.setup.teams {
+                let y = top + 48.0 * s + team as f32 * (box_h + 10.0 * s);
+                let pick = self.setup.team_colors[team] as usize;
                 let color = TEAM_COLORS[pick];
-                let bots = self.setup.team_bots[t];
+                let bots = self.setup.team_bots[team];
                 ui::panel(Rect::new(rx, y, rw, box_h), None);
                 draw_rectangle(rx, y, 6.0 * s, box_h, color);
                 // Click the swatch for the next colour.
                 let sw_r = Rect::new(rx + 18.0 * s, y + 10.0 * s, 20.0 * s, 20.0 * s);
-                if self.ui.swatch(&format!("s_t{t}_color"), sw_r, color) {
-                    recolor = Some(t);
+                if self.ui.swatch(&format!("s_t{team}_color"), sw_r, color) {
+                    recolor = Some(team);
                 }
-                let title = format!("{} Team", TEAM_NAMES[pick]);
+                let title = tf("{} Team", &[&t(TEAM_NAMES[pick])]);
                 ui::text_left(&title, rx + 48.0 * s, y + 26.0 * s, 22.0 * s, color);
-                let who = if t == 0 {
-                    format!("You + {bots} bots")
+                let who = if team == 0 {
+                    tf("You + {} bots", &[&bots])
                 } else {
-                    format!("{bots} bots")
+                    tf("{} bots", &[&bots])
                 };
                 ui::text_right(
                     &who,
@@ -1230,18 +1288,18 @@ impl App {
                     Color::new(1.0, 1.0, 1.0, 0.75),
                 );
                 let ry = y + 42.0 * s;
-                d_bots[t] = self.ui.stepper(
-                    &format!("s_t{t}_bots"),
-                    "Bots",
+                d_bots[team] = self.ui.stepper(
+                    &format!("s_t{team}_bots"),
+                    t("Bots"),
                     &bots.to_string(),
                     Rect::new(rx + 10.0 * s, ry, half, 32.0 * s),
                     false,
                     true,
                 );
-                d_skill[t] = self.ui.stepper(
-                    &format!("s_t{t}_skill"),
-                    "Skill",
-                    Difficulty::ALL[self.setup.team_skill[t]].label(),
+                d_skill[team] = self.ui.stepper(
+                    &format!("s_t{team}_skill"),
+                    t("Skill"),
+                    t(Difficulty::ALL[self.setup.team_skill[team]].label()),
                     Rect::new(rx + 20.0 * s + half, ry, half, 32.0 * s),
                     false,
                     true,
@@ -1254,8 +1312,8 @@ impl App {
             let color = TEAM_COLORS[1];
             ui::panel(Rect::new(rx, y, rw, box_h), None);
             draw_rectangle(rx, y, 6.0 * s, box_h, color);
-            ui::text_left("Opponents", rx + 18.0 * s, y + 26.0 * s, 22.0 * s, color);
-            let who = format!("You against {} bots", self.setup.ffa_bots);
+            ui::text_left(t("Opponents"), rx + 18.0 * s, y + 26.0 * s, 22.0 * s, color);
+            let who = tf("You against {} bots", &[&self.setup.ffa_bots]);
             ui::text_left(
                 &who,
                 rx + 18.0 * s,
@@ -1267,7 +1325,7 @@ impl App {
             let r2 = Rect::new(rx + 10.0 * s, y + 100.0 * s, rw - 20.0 * s, 32.0 * s);
             d_ffa_bots = self.ui.stepper(
                 "s_ffa_bots",
-                "Bots",
+                t("Bots"),
                 &self.setup.ffa_bots.to_string(),
                 r1,
                 false,
@@ -1275,8 +1333,8 @@ impl App {
             );
             d_ffa_skill = self.ui.stepper(
                 "s_ffa_skill",
-                "Difficulty",
-                Difficulty::ALL[self.setup.ffa_skill].label(),
+                t("Difficulty"),
+                t(Difficulty::ALL[self.setup.ffa_skill].label()),
                 r2,
                 false,
                 true,
@@ -1284,7 +1342,7 @@ impl App {
             total = 1 + self.setup.ffa_bots;
         }
         if let Some([lo, hi]) = map.recommended_players {
-            let note = format!("{total} players  (map suits {lo}-{hi})");
+            let note = tf("{} players  (map suits {}-{})", &[&total, &lo, &hi]);
             let warn = total < lo || total > hi;
             let col = if warn {
                 Color::new(1.0, 0.6, 0.4, 0.9)
@@ -1306,14 +1364,14 @@ impl App {
         if endless {
             let gold = Color::new(1.0, 0.82, 0.3, 0.95);
             ui::text_left(
-                "Endless match: no limit is on, so it never ends by itself.",
+                t("Endless match: no limit is on, so it never ends by itself."),
                 rx,
                 sh - 170.0 * s,
                 17.0 * s,
                 gold,
             );
             ui::text_left(
-                "Leave any time from the pause menu (P or Esc).",
+                t("Leave any time from the pause menu (P or Esc)."),
                 rx,
                 sh - 148.0 * s,
                 17.0 * s,
@@ -1423,7 +1481,7 @@ impl App {
         let by = sh - 76.0 * s;
         if self.ui.tab(
             "s_back",
-            "Back",
+            t("Back"),
             Rect::new(50.0 * s, by, bw, bh),
             Side::Left,
             false,
@@ -1433,7 +1491,7 @@ impl App {
         }
         if self.ui.tab(
             "s_start",
-            "Start",
+            t("Start"),
             Rect::new(sw - 50.0 * s - bw, by, bw, bh),
             Side::Right,
             false,
@@ -1454,9 +1512,9 @@ impl App {
         let sh = (720.0 * s).max(screen_h);
         self.info_scroll.begin(sh);
         let title = match page {
-            Info::HowTo => "HOW TO PLAY",
-            Info::Weapons => "WEAPON INFO",
-            Info::About => "ABOUT",
+            Info::HowTo => t("HOW TO PLAY"),
+            Info::Weapons => t("WEAPON INFO"),
+            Info::About => t("ABOUT"),
         };
         ui::text_center(title, sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
         let r = Rect::new(60.0 * s, 80.0 * s, sw - 120.0 * s, sh - 180.0 * s);
@@ -1473,58 +1531,69 @@ impl App {
             Info::HowTo => {
                 let keys: &[&str] = if crate::platform::touch() {
                     &[
-                        "Left stick  walk; push up to jump (again in the air to double jump)",
-                        "            push down to crouch, or to drop through a thin platform",
-                        "Right stick  aim; push past the red ring to fire",
-                        "Reload, Switch  the buttons above the right stick",
-                        "Weapons  tap one in the bar at the bottom",
-                        "Step  use Shadowstep (the button shows while you hold one)",
-                        "Top left  pause and scoreboard (Back also pauses)",
+                        tn("Left stick  walk; push up to jump (again in the air to double jump)"),
+                        tn("            push down to crouch, or to drop through a thin platform"),
+                        tn("Right stick  aim; push past the red ring to fire"),
+                        tn("Reload, Switch  the buttons above the right stick"),
+                        tn("Weapons  tap one in the bar at the bottom"),
+                        tn("Step  use Shadowstep (the button shows while you hold one)"),
+                        tn("Top left  pause and scoreboard (Back also pauses)"),
                     ]
                 } else {
                     &[
-                        "A / D  move        W or Space  jump (press again in the air to double jump)",
-                        "S  crouch          S + jump  drop through a thin platform",
-                        "Mouse  aim         Left click  fire        R  reload",
-                        "1 - 0, Q / E or mouse wheel  switch weapons",
-                        "F  use Shadowstep (when you hold one)",
-                        "Tab  scoreboard    P or Esc  pause",
-                        "F11  fullscreen on / off",
+                        tn(
+                            "A / D  move        W or Space  jump (press again in the air to double jump)",
+                        ),
+                        tn("S  crouch          S + jump  drop through a thin platform"),
+                        tn("Mouse  aim         Left click  fire        R  reload"),
+                        tn("1 - 0, Q / E or mouse wheel  switch weapons"),
+                        tn("F  use Shadowstep (when you hold one)"),
+                        tn("Tab  scoreboard    P or Esc  pause"),
+                        tn("F11  fullscreen on / off"),
                     ]
                 };
-                for t in keys {
-                    line(t, WHITE);
+                for k in keys {
+                    line(t(k), WHITE);
                 }
                 line("", WHITE);
-                for t in [
-                    "Thrusters launch you high into the air. Step on the glowing pad.",
-                    "Weapon stations deploy a random weapon every 30-45 seconds.",
-                    "Shield stations are rarer and give +50 or +100 shield. Shield soaks up part of each hit.",
-                    "Powerup spots (0-4 per map) each hold one fixed powerup: first at 45 s, then 2 min after pickup:",
+                for k in [
+                    tn("Thrusters launch you high into the air. Step on the glowing pad."),
+                    tn("Weapon stations deploy a random weapon every 30-45 seconds."),
+                    tn(
+                        "Shield stations are rarer and give +50 or +100 shield. Shield soaks up part of each hit.",
+                    ),
+                    tn(
+                        "Powerup spots (0-4 per map) each hold one fixed powerup: first at 45 s, then 2 min after pickup:",
+                    ),
                 ] {
-                    line(t, soft);
+                    line(t(k), soft);
                 }
                 for p in &data.powerups.powerups {
                     let c = Color::from_rgba(p.color[0], p.color[1], p.color[2], 255);
                     let what = if p.duration_s > 0.0 {
-                        format!("   {}  ({:.0} s)", p.name, p.duration_s)
+                        let secs = format!("{:.0}", p.duration_s);
+                        format!("   {}", tf("{}  ({} s)", &[&t(&p.name), &secs]))
+                    } else if crate::platform::touch() {
+                        format!("   {}", tf("{}  (one teleport, tap Step)", &[&t(&p.name)]))
                     } else {
-                        let key = if crate::platform::touch() {
-                            "tap Step"
-                        } else {
-                            "press F"
-                        };
-                        format!("   {}  (one teleport, {key})", p.name)
+                        format!("   {}", tf("{}  (one teleport, press F)", &[&t(&p.name)]))
                     };
                     line(&what, c);
                 }
             }
             Info::Weapons => {
                 let cols = [0.0, 0.26, 0.44, 0.56, 0.68, 0.8];
-                let head = ["Weapon", "Type", "Damage", "Rate/s", "Clip", "Range"];
+                let head = [
+                    tn("Weapon"),
+                    tn("Type"),
+                    tn("Damage"),
+                    tn("Rate/s"),
+                    tn("Clip"),
+                    tn("Range"),
+                ];
                 for (k, h) in head.iter().enumerate() {
                     ui::text_left(
-                        h,
+                        t(h),
                         x + cols[k] * (r.w - 48.0 * s),
                         y,
                         size,
@@ -1534,15 +1603,18 @@ impl App {
                 y += size + 10.0 * s;
                 for (i, w) in data.weapons.iter().enumerate() {
                     let kind = match w.projectile.kind {
-                        ProjectileKind::Hitscan => "Instant",
-                        ProjectileKind::Bullet => "Bullet",
-                        ProjectileKind::Grenade => "Grenade",
-                        ProjectileKind::Rocket => "Rocket",
-                        ProjectileKind::Beam => "Beam",
-                        ProjectileKind::MeleeArc => "Melee",
+                        ProjectileKind::Hitscan => t("Instant"),
+                        ProjectileKind::Bullet => t("Bullet"),
+                        ProjectileKind::Grenade => t("Grenade"),
+                        ProjectileKind::Rocket => t("Rocket"),
+                        ProjectileKind::Beam => t("Beam"),
+                        ProjectileKind::MeleeArc => t("Melee"),
                     };
                     let dmg = match &w.projectile.explosion {
-                        Some(e) => format!("{:.0} + {:.0} blast", w.damage, e.damage),
+                        Some(e) => tf(
+                            "{} + {} blast",
+                            &[&format!("{:.0}", w.damage), &format!("{:.0}", e.damage)],
+                        ),
                         None if w.total_pellets() > 1 => {
                             format!("{:.0} x{}", w.damage, w.total_pellets())
                         }
@@ -1554,7 +1626,7 @@ impl App {
                         format!("{} / {}", w.magazine, w.reserve_ammo)
                     };
                     let cells = [
-                        format!("{}  {}", if i == 9 { 0 } else { i + 1 }, w.name),
+                        format!("{}  {}", if i == 9 { 0 } else { i + 1 }, t(&w.name)),
                         kind.to_owned(),
                         dmg,
                         format!("{:.1}", w.fire_rate_rps),
@@ -1574,18 +1646,22 @@ impl App {
                 }
             }
             Info::About => {
-                for t in [
-                    "Arcane Dome is a free, open-source fan project made with Rust and Macroquad.",
+                for k in [
+                    tn(
+                        "Arcane Dome is a free, open-source fan project made with Rust and Macroquad.",
+                    ),
                     "",
-                    "Made by BlueAutumnX5.",
+                    tn("Made by BlueAutumnX5."),
                     "",
-                    "It is inspired by the Raze series by JuiceTin and AddisonR.",
-                    "It is not affiliated with or endorsed by them, and it uses none of their art,",
-                    "sounds, code, names or map layouts.",
+                    tn("It is inspired by the Raze series by JuiceTin and AddisonR."),
+                    tn(
+                        "It is not affiliated with or endorsed by them, and it uses none of their art,",
+                    ),
+                    tn("sounds, code, names or map layouts."),
                     "",
-                    "Code: MIT License. See CREDITS.md for libraries and assets.",
+                    tn("Code: MIT License. See CREDITS.md for libraries and assets."),
                 ] {
-                    line(t, soft);
+                    line(t(k), soft);
                 }
             }
         }
@@ -1594,7 +1670,7 @@ impl App {
         let bw = 240.0 * s;
         if self.ui.tab(
             "i_back",
-            "Back",
+            t("Back"),
             Rect::new(50.0 * s, sh - 76.0 * s, bw, 42.0 * s),
             Side::Left,
             false,

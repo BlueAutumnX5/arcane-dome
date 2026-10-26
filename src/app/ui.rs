@@ -5,6 +5,7 @@
 //! left, right tabs mirror that and move right); leaving eases it back.
 
 use crate::data::{MapDef, ObjectKind};
+use crate::i18n::t;
 use macroquad::prelude::*;
 use std::collections::HashMap;
 
@@ -274,7 +275,7 @@ impl Ui {
     /// A "Coming Soon!" balloon with `text` under it, beside `r`, while the
     /// mouse is on it.
     pub fn soon(&mut self, id: &str, r: Rect, text: &str) {
-        self.balloon(id, r, "Coming Soon!", text);
+        self.balloon(id, r, t("Coming Soon!"), text);
     }
 
     /// A balloon titled `title`, with `text` under it, beside `r`, while

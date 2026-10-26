@@ -11,6 +11,7 @@ pub use effects::Effects;
 pub use hud::{draw_crosshair, draw_hud, draw_scoreboard};
 
 use crate::data::{Category, MapDef, PickupKind, ProjectileKind};
+use crate::i18n::t;
 use crate::sim::{Fighter, HEAD_HEIGHT, MAX_HEALTH, MAX_SHIELD, MAX_TEAMS, World};
 use macroquad::prelude::*;
 
@@ -290,7 +291,7 @@ const PLATE_H: f32 = 12.0;
 /// abilities bar.)
 fn draw_plate(f: &Fighter, at: Vec2, own: bool, s: f32) {
     let size = if own { 13.0 } else { 12.0 } * s;
-    let text_w = measure_text(&f.name, None, size as u16, 1.0).width;
+    let text_w = measure_text(t(&f.name), None, size as u16, 1.0).width;
     let w = (PLATE_W * s).max(text_w + 16.0 * s);
     let h = PLATE_H * s;
     let r = Rect::new(at.x - w / 2.0, at.y - h, w, h);
@@ -335,14 +336,14 @@ fn draw_plate(f: &Fighter, at: Vec2, own: bool, s: f32) {
     let y = r.y + h * 0.76;
     let ink = Color::new(1.0, 1.0, 1.0, if own { 1.0 } else { 0.9 });
     draw_text(
-        &f.name,
+        t(&f.name),
         x + 1.0,
         y + 1.5,
         size,
         Color::new(0.0, 0.0, 0.0, 0.6),
     );
-    draw_text(&f.name, x, y, size, ink);
-    draw_text(&f.name, x + 0.8, y, size, ink);
+    draw_text(t(&f.name), x, y, size, ink);
+    draw_text(t(&f.name), x + 0.8, y, size, ink);
 }
 
 fn draw_pickups(world: &World) {
@@ -493,7 +494,7 @@ fn draw_labels(world: &World, cam: &GameCamera, player: Option<usize>) {
     }
     for p in world.pickups.iter().filter(|p| p.active) {
         if let Some(w) = p.weapon {
-            let name = &world.data.weapons[w].name;
+            let name = t(&world.data.weapons[w].name);
             let at = cam.world_to_screen(p.pos + vec2(0.0, -0.55));
             // Keep world labels out of the weapon bar strip.
             if at.y > screen_height() - 64.0 * s {

@@ -2,6 +2,7 @@
 
 use super::{GameCamera, category_color};
 use crate::data::ObjectKind;
+use crate::i18n::{t, tf};
 use crate::sim::{Fighter, ObjectState, World};
 use macroquad::prelude::*;
 
@@ -222,14 +223,15 @@ pub fn draw_object_labels(world: &World, cam: &GameCamera) {
     for o in &world.objects {
         let label = match (o.def.kind, o.ready) {
             (ObjectKind::WeaponStation, true) => {
-                o.weapon.map(|w| world.data.weapons[w].name.clone())
+                o.weapon.map(|w| t(&world.data.weapons[w].name).to_owned())
             }
-            (ObjectKind::ShieldStation, true) => {
-                Some(format!("+{:.0} Shield", o.def.shield_amount()))
-            }
+            (ObjectKind::ShieldStation, true) => Some(tf(
+                "+{} Shield",
+                &[&format!("{:.0}", o.def.shield_amount())],
+            )),
             (ObjectKind::PowerupSpot, true) => o
                 .powerup
-                .map(|p| world.data.powerups.powerups[p].name.clone()),
+                .map(|p| t(&world.data.powerups.powerups[p].name).to_owned()),
             (ObjectKind::PowerupSpot, false) => Some(match o.fixed_powerup {
                 Some(p) => format!(
                     "{}  {:.0}",

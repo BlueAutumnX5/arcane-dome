@@ -39,8 +39,11 @@ weapons, maps and modes all defined in JSON.
   maps through the "Arcane Dome Maps" folder in Documents (or drop a map file
   onto the editor). Every button explains itself when you rest the mouse on
   it, and Instructions (F1) covers the rest.
-- **Settings**: fullscreen, menu slides, blood effects and an FPS counter,
-  remembered between runs. View Changes on the main menu shows what is new.
+- **Settings**: language, fullscreen, menu slides, blood effects and an FPS
+  counter, remembered between runs. View Changes on the main menu shows what
+  is new.
+- **Languages**: English and Bahasa Indonesia (the map editor is English
+  only for now).
 - **Android** (9 and newer): the same game with touch controls. The map
   editor stays on the PC version for now.
 - Placeholder art: shapes and colours drawn in code. No sound yet.
@@ -122,6 +125,9 @@ controls on the desktop, to check their layout.
 
 ## Adding content
 
+- Translations: `assets/lang/id.json` maps each English text to its
+  Bahasa Indonesia version (`{}` marks a number or name). `cargo test` lists
+  anything missing.
 - Weapons: one JSON file per weapon in `assets/data/weapons/`
 - Maps: one JSON file per map in `assets/data/maps/`
 - Powerups: `assets/data/powerups.json`
