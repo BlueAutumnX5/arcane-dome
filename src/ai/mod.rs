@@ -2,10 +2,12 @@
 //! so the sim never needs to know who is a bot.
 
 mod bot;
+pub mod check;
 pub mod nav;
 
 use crate::sim::{Input, World};
 use bot::Brain;
+pub use check::{Problem, check_map};
 pub use nav::{EdgeKind, NavGraph};
 
 pub struct BotSet {
