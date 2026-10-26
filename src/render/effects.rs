@@ -1,6 +1,6 @@
 use crate::data::ProjectileKind;
-use crate::i18n::{t, tn};
-use crate::sim::{Event, World};
+use crate::i18n::{t, tf, tn};
+use crate::sim::{Event, FlagEvent, World};
 use macroquad::prelude::*;
 
 struct Tracer {
@@ -21,6 +21,14 @@ pub struct FeedLine {
     pub parts: Vec<(String, Color)>,
     pub mine: bool,
     pub age: f32,
+}
+
+/// A side's name in its colour, for the feed.
+fn side_part(world: &World, side: usize) -> (String, Color) {
+    (
+        t(&world.side_name(side)).to_owned(),
+        super::objectives::side_color(world, side),
+    )
 }
 
 /// Short-lived visuals created from sim events.
@@ -138,6 +146,55 @@ impl Effects {
                         ]
                     };
                     self.say(parts, Some(*fighter) == player);
+                }
+                Event::ZoneTaken { zone, side } => {
+                    let parts = vec![
+                        side_part(world, *side),
+                        (
+                            tf("took {}", &[&super::objectives::zone_letter(*zone)]),
+                            plain,
+                        ),
+                    ];
+                    let mine = player.is_some_and(|p| world.side_of(p) == *side);
+                    self.say(parts, mine);
+                }
+                Event::HillMoved { .. } => {
+                    self.say(vec![(t("The hill moved").to_owned(), plain)], false);
+                }
+                Event::Pushed { side } => {
+                    let parts = vec![
+                        side_part(world, *side),
+                        (t("holds every zone and scores").to_owned(), plain),
+                    ];
+                    let mine = player.is_some_and(|p| world.side_of(p) == *side);
+                    self.say(parts, mine);
+                }
+                Event::Flag {
+                    flag,
+                    fighter,
+                    what,
+                } => {
+                    let team = world.flags[*flag].side;
+                    let (flag_name, c) = side_part(world, team);
+                    let flag_part = (tf("{} flag", &[&flag_name]), c);
+                    let who = fighter.map(|i| {
+                        let f = &world.fighters[i];
+                        (t(&f.name).to_owned(), super::fighter_color(f))
+                    });
+                    let verb = |v: &str| (t(v).to_owned(), plain);
+                    let parts = match (what, who) {
+                        (FlagEvent::Taken, Some(w)) => vec![w, verb(tn("took")), flag_part],
+                        (FlagEvent::Dropped, Some(w)) => vec![w, verb(tn("dropped")), flag_part],
+                        (FlagEvent::Captured, Some(w)) => {
+                            vec![w, verb(tn("captured")), flag_part]
+                        }
+                        (FlagEvent::Returned, Some(w)) => {
+                            vec![w, verb(tn("returned")), flag_part]
+                        }
+                        (_, None) => vec![flag_part, verb(tn("went home"))],
+                    };
+                    let mine = player.is_some() && *fighter == player;
+                    self.say(parts, mine);
                 }
                 Event::Ladder {
                     side, up: false, ..

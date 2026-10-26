@@ -3,6 +3,7 @@
 mod effects;
 mod gadgets;
 mod hud;
+mod objectives;
 mod terrain;
 
 pub use terrain::{MapArt, draw_sky};
@@ -266,6 +267,8 @@ pub fn draw_world(
         }
     }
 
+    objectives::draw_zones(world);
+    objectives::draw_flags(world);
     if let Some(j) = world.juggernaut
         && world.fighters[j].alive
     {
@@ -325,11 +328,16 @@ fn draw_jugg_arrow(world: &World, cam: &GameCamera, player: Option<usize>, s: f3
         return;
     };
     let f = &world.fighters[j];
-    if !f.alive || player == Some(j) {
-        return;
+    if f.alive && player != Some(j) {
+        edge_arrow(cam, f.center(), fighter_color(f), s);
     }
+}
+
+/// While `target` (a world point) is off screen, an arrow at the screen
+/// edge pointing toward it.
+pub(crate) fn edge_arrow(cam: &GameCamera, target: Vec2, color: Color, s: f32) {
     let (sw, sh) = (screen_width(), screen_height());
-    let at = cam.world_to_screen(f.center());
+    let at = cam.world_to_screen(target);
     let margin = 28.0 * s;
     if at.x > 0.0 && at.x < sw && at.y > 0.0 && at.y < sh {
         return;
@@ -342,20 +350,12 @@ fn draw_jugg_arrow(world: &World, cam: &GameCamera, player: Option<usize>, s: f3
     let tip = mid + dir * k;
     let side = vec2(-dir.y, dir.x);
     let len = 22.0 * s;
-    let c = fighter_color(f);
-    draw_triangle(
-        tip,
+    let (l, r) = (
         tip - dir * len + side * len * 0.55,
         tip - dir * len - side * len * 0.55,
-        c,
     );
-    draw_triangle_lines(
-        tip,
-        tip - dir * len + side * len * 0.55,
-        tip - dir * len - side * len * 0.55,
-        1.5 * s,
-        Color::new(0.0, 0.0, 0.0, 0.6),
-    );
+    draw_triangle(tip, l, r, color);
+    draw_triangle_lines(tip, l, r, 1.5 * s, Color::new(0.0, 0.0, 0.0, 0.6));
 }
 
 /// Nameplate size at 720p, in pixels; long names widen it.
@@ -567,6 +567,7 @@ fn draw_fighter(world: &World, f: &Fighter, is_player: bool) {
 fn draw_labels(world: &World, cam: &GameCamera, player: Option<usize>) {
     let s = (screen_height() / 720.0).max(0.6);
     draw_jugg_arrow(world, cam, player, s);
+    objectives::draw_labels(world, cam, player, s);
     for f in world.fighters.iter().filter(|f| f.alive) {
         let top = cam.world_to_screen(vec2(f.feet.x, f.aabb().min.y));
         draw_plate(f, top - vec2(0.0, 8.0 * s), Some(f.id) == player, s);

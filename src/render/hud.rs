@@ -1,5 +1,6 @@
+use super::objectives::{side_color as zone_side_color, zone_letter};
 use super::{Effects, GameCamera, RED, TEAM_COLORS, category_color, fighter_color};
-use crate::data::ProjectileKind;
+use crate::data::{ProjectileKind, Rules};
 use crate::i18n::{t, tf};
 use crate::sim::{GO_SHOWN_S, Phase, World};
 use macroquad::prelude::*;
@@ -557,6 +558,8 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             &[&(rung + 1), &world.ladder.len(), &t(&w.name).to_owned()],
         );
         text_center(&msg, cx, 84.0 * s, 18.0 * s, category_color(w.category));
+    } else {
+        objective_status(world, player, cx, 84.0 * s, s);
     }
 
     // Kill feed, top right.
@@ -681,6 +684,91 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
                 text_center(msg, cx, sh * 0.62, 20.0 * s, WHITE);
             }
         }
+    }
+}
+
+/// Under the score: who holds the hill; each zone's holder and capture
+/// progress; or where your flag is.
+fn objective_status(world: &World, player: usize, cx: f32, y: f32, s: f32) {
+    let faint = Color::new(1.0, 1.0, 1.0, 0.75);
+    match world.mode.rules {
+        Rules::KingOfTheHill => {
+            let Some(h) = world.hill else {
+                return;
+            };
+            let z = &world.zones[h];
+            let (mut msg, c) = match z.owner {
+                Some(side) => (
+                    tf("{} holds the hill", &[&side_name(world, side)]),
+                    zone_side_color(world, side),
+                ),
+                None if z.present.len() > 1 => (t("The hill is contested").to_owned(), WHITE),
+                None => (t("The hill is free").to_owned(), faint),
+            };
+            if world.hill_timer.is_finite() {
+                msg += "    ";
+                msg += &tf("Moves in {}", &[&clock(world.hill_timer)]);
+            }
+            text_center(&msg, cx, y, 18.0 * s, c);
+        }
+        Rules::Domination | Rules::Territories => {
+            let n = world.zones.len();
+            let (w, h, gap) = (30.0 * s, 22.0 * s, 6.0 * s);
+            let x0 = cx - (n as f32 * (w + gap) - gap) / 2.0;
+            let top = y - 16.0 * s;
+            for (k, z) in world.zones.iter().enumerate() {
+                let x = x0 + k as f32 * (w + gap);
+                let bg = z.owner.map_or(Color::new(0.0, 0.0, 0.0, 0.5), |side| {
+                    zone_side_color(world, side)
+                });
+                draw_rectangle(x, top, w, h, bg);
+                let edge = if z.present.len() > 1 {
+                    WHITE
+                } else {
+                    Color::new(1.0, 1.0, 1.0, 0.35)
+                };
+                draw_rectangle_lines(x, top, w, h, 1.5 * s, edge);
+                text_center(
+                    &zone_letter(k),
+                    x + w / 2.0,
+                    top + 16.0 * s,
+                    17.0 * s,
+                    WHITE,
+                );
+                if let Some(side) = z.capturer {
+                    draw_rectangle(
+                        x,
+                        top + h + 2.0 * s,
+                        w * z.progress.min(1.0),
+                        3.0 * s,
+                        zone_side_color(world, side),
+                    );
+                }
+            }
+        }
+        Rules::CaptureTheFlag => {
+            let side = world.side_of(player);
+            let mine = world.flags.iter().find(|f| f.side == side);
+            let (msg, c) = if world.carried_flag(player).is_some() {
+                (
+                    t("You have the flag: take it home!"),
+                    Color::new(1.0, 0.82, 0.3, 1.0),
+                )
+            } else {
+                match mine {
+                    Some(f) if f.carrier.is_some() => (
+                        t("Your flag has been taken!"),
+                        Color::new(1.0, 0.5, 0.4, 1.0),
+                    ),
+                    Some(f) if f.return_in.is_some() => {
+                        (t("Your flag is down: touch it to send it home"), WHITE)
+                    }
+                    _ => (t("Your flag is home"), faint),
+                }
+            };
+            text_center(msg, cx, y, 18.0 * s, c);
+        }
+        _ => {}
     }
 }
 

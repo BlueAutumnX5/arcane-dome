@@ -18,7 +18,11 @@ use std::sync::Arc;
 use ui::{ACCENT, Side, Ui};
 
 // Limit choices; 0 means Off.
-const SCORE_LIMITS: [u32; 11] = [0, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
+const SCORE_LIMITS: [u32; 17] = [
+    0, 1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300,
+];
+/// King of the Hill: seconds between hill moves; 0 = it stays put.
+const HILL_MOVES: [f32; 5] = [0.0, 30.0, 60.0, 90.0, 120.0];
 const ROUND_COUNTS: [u32; 5] = [1, 3, 5, 7, 9];
 /// Most bots one team can have.
 const MAX_TEAM_BOTS: i32 = 7;
@@ -299,11 +303,13 @@ fn test_match(mut s: Session, blood: bool) -> Session {
     s
 }
 
-/// Team settings offered for this map in this mode: 0 (teams off, every
-/// mode has it), then the team counts both the map and the mode support.
+/// Team settings offered for this map in this mode: 0 (teams off, unless
+/// the mode is for teams only), then the team counts both the map and the
+/// mode support.
 fn allowed_team_counts(map: &crate::data::MapDef, mode: &crate::data::ModeDef) -> Vec<usize> {
     let most = (mode.teams as usize).min(MAX_TEAMS);
     std::iter::once(0)
+        .filter(|_| !mode.team_only)
         .chain(
             map.team_counts
                 .iter()
@@ -352,6 +358,8 @@ struct Setup {
     /// Gun Game knock-backs.
     melee_demotes: bool,
     suicide_demotes: bool,
+    /// King of the Hill: index into HILL_MOVES.
+    hill_move: usize,
 }
 
 struct App {
@@ -421,6 +429,7 @@ pub async fn run() {
             jugg_bonus: false,
             melee_demotes: true,
             suicide_demotes: true,
+            hill_move: 2,
         },
         ui: Ui::default(),
         seed: macroquad::miniquad::date::now() as u64,
@@ -1074,6 +1083,9 @@ impl App {
             self.setup.rounds = nearest(&l, r as f32);
         }
         self.setup.time = nearest(&TIME_LIMITS, mode.time_limit_s);
+        if let Some(h) = mode.hill_move_s {
+            self.setup.hill_move = nearest(&HILL_MOVES, h);
+        }
         if let Some(l) = mode.lives {
             let list: Vec<f32> = LIVES.iter().map(|&v| v as f32).collect();
             self.setup.lives = nearest(&list, l as f32);
@@ -1114,6 +1126,7 @@ impl App {
             jugg_bonus: c.jugg_bonus,
             melee_demotes: c.melee_demotes,
             suicide_demotes: c.suicide_demotes,
+            hill_move_s: Some(HILL_MOVES[c.hill_move]),
             ..Default::default()
         };
         MatchConfig {
@@ -1206,7 +1219,7 @@ impl App {
         } else {
             style_blurb(style)
         };
-        for line in ui::wrap(blurb, pv.w, dsize).iter().take(2) {
+        for line in ui::wrap(blurb, pv.w - 10.0 * s, dsize).iter().take(2) {
             y += dsize;
             ui::text_left(
                 line,
@@ -1266,6 +1279,21 @@ impl App {
             d_limit = self
                 .ui
                 .stepper("s_limit", limit_label, &limit_value, row(y), false, true);
+            y += rh + 4.0 * s;
+        }
+        // King of the Hill: how often the hill moves (maps with one zone
+        // keep it in place anyway).
+        let mut d_hill = 0;
+        if mode.rules == Rules::KingOfTheHill {
+            let secs = HILL_MOVES[self.setup.hill_move];
+            let value = if secs > 0.0 {
+                tf("Every {} s", &[&secs])
+            } else {
+                t("Never").to_owned()
+            };
+            d_hill = self
+                .ui
+                .stepper("s_hill", t("Hill Moves"), &value, row(y), false, true);
             y += rh + 4.0 * s;
         }
         let tl = if !mode.respawn && style == ElimStyle::Rounds {
@@ -1551,6 +1579,9 @@ impl App {
         }
         if d_melee != 0 {
             c.melee_demotes = !c.melee_demotes;
+        }
+        if d_hill != 0 {
+            c.hill_move = step(c.hill_move, d_hill, HILL_MOVES.len());
         }
         if d_suicide != 0 {
             c.suicide_demotes = !c.suicide_demotes;
