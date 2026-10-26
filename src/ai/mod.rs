@@ -1,6 +1,7 @@
 //! Bot brains. They read the world and produce the same `Input` a player would,
 //! so the sim never needs to know who is a bot.
 
+pub mod assist;
 mod bot;
 pub mod check;
 pub mod nav;

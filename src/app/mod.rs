@@ -521,7 +521,9 @@ impl App {
         }
         if let Some(next) = self.screen_frame(dt) {
             use_screen();
-            if self.settings.slides && self.screen.slides() && next.slides() {
+            // Off on Android for now: grabbing the screen comes out black.
+            let slides = self.settings.slides && !cfg!(target_os = "android");
+            if slides && self.screen.slides() && next.slides() {
                 self.slide = Some(Slide {
                     from: grab_screen(),
                     to: None,
@@ -861,9 +863,9 @@ impl App {
                 t("Show frames per second in the top left corner."),
             ),
         ];
-        // A phone is always fullscreen: no row for it.
+        // A phone is always fullscreen, and has no slides for now.
         if cfg!(target_os = "android") {
-            rows.retain(|r| r.0 != SettingRow::Fullscreen);
+            rows.retain(|r| !matches!(r.0, SettingRow::Fullscreen | SettingRow::Slides));
         }
         let w = (640.0 * s).min(sw - 80.0 * s);
         let r = Rect::new(
@@ -962,7 +964,7 @@ impl App {
         let most = (total - room).max(0.0);
         let drag = ui::drag_y(&mut self.changes_drag);
         self.changes_scroll =
-            (self.changes_scroll - mouse_wheel().1.signum() * 40.0 * s - drag).clamp(0.0, most);
+            (self.changes_scroll - ui::wheel_step() * 40.0 * s - drag).clamp(0.0, most);
         if is_key_down(KeyCode::Down) {
             self.changes_scroll = (self.changes_scroll + 8.0 * s).min(most);
         }
@@ -1531,10 +1533,14 @@ impl App {
             Info::HowTo => {
                 let keys: &[&str] = if crate::platform::touch() {
                     &[
-                        tn("Left stick  walk; push up to jump (again in the air to double jump)"),
-                        tn("            push down to crouch, or to drop through a thin platform"),
-                        tn("Right stick  aim; push past the red ring to fire"),
-                        tn("Reload, Switch  the buttons above the right stick"),
+                        tn(
+                            "Left stick  walk; push down to crouch, or to drop through a thin platform",
+                        ),
+                        tn("Jump  tap to jump, tap again in the air to double jump"),
+                        tn(
+                            "Fire  hold to aim at the nearest enemy you can see; drag to aim yourself",
+                        ),
+                        tn("Reload, Switch  the buttons above Fire"),
                         tn("Weapons  tap one in the bar at the bottom"),
                         tn("Step  use Shadowstep (the button shows while you hold one)"),
                         tn("Top left  pause and scoreboard (Back also pauses)"),

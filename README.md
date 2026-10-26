@@ -69,16 +69,16 @@ On Android, two thumbs do it all:
 | Action | Touch |
 |---|---|
 | Move | Left stick, left / right |
-| Jump, double jump | Push the left stick up (flick up again in the air) |
+| Jump, double jump | Jump (tap again in the air) |
 | Crouch, drop through a hatch | Push the left stick down |
-| Aim | Right stick |
-| Fire | Push the right stick past its red ring |
-| Reload, switch weapon | The buttons above the right stick |
+| Fire | Hold Fire: it aims at the nearest enemy you can see |
+| Aim yourself | Drag away from Fire, in the direction to shoot |
+| Reload, switch weapon | The buttons above Fire |
 | Pick a weapon | Tap it in the bar at the bottom |
 | Use Shadowstep | Step (shows while you hold one) |
 | Pause, scoreboard | Top left buttons (Back also pauses) |
 
-Both sticks float: put your thumb down anywhere on that half of the screen.
+The stick floats: put your thumb down anywhere on the left side.
 
 ## Inspiration and credits
 

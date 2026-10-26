@@ -4,10 +4,11 @@
 
 - Bahasa Indonesia: pick it under Settings > Language (the game starts in it if your computer or phone is set to Indonesian). Menus, the match, weapons, maps and modes are all translated; the map editor and this page stay in English for now
 - Android version (Android 9 and newer), with touch controls:
-  - Left stick walks; push it up to jump (again for the double jump), down to crouch or drop
-  - Right stick aims; push it past the red ring to fire
+  - Left stick walks, and down crouches or drops; a Jump button (tap again for the double jump)
+  - Fire button: hold it to aim at the nearest enemy you can see (red brackets mark it), or drag away from it to aim yourself
   - Reload and Switch buttons, a tap-to-pick weapon bar, and Pause and Scoreboard buttons; the phone's Back button pauses and goes back
   - Menus and the HUD are bigger on a phone; long pages scroll by dragging; buttons press when you lift your finger, so dragging never presses one
+  - Menu slides are off on Android for now
   - The match pauses itself when you leave the app
   - The map editor stays on the PC version for now
 - Map editor is complete:
@@ -17,6 +18,7 @@
   - Export (Ctrl+E) and Import (Ctrl+I): share maps through the Arcane Dome Maps folder in Documents, or drop a map file onto the editor
   - Map Settings (M): name, description, size, team counts and match types
 - Long text in windows (like file paths) now wraps instead of running off the edge
+- Fixed: the version history page could not be scrolled (it kept jumping back to the top)
 - Bullets fly on past their range: they slow in the air, drop a little, and hit softer the slower they are
 - Bullets leave marks where they hit walls and floors (the last 512 stay); flamethrower flames bounce
 - Each weapon's file can set what its shots do on walls (mark, bounce or vanish), plus their drag and drop

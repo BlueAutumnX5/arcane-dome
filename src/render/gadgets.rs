@@ -235,7 +235,7 @@ pub fn draw_object_labels(world: &World, cam: &GameCamera) {
             (ObjectKind::PowerupSpot, false) => Some(match o.fixed_powerup {
                 Some(p) => format!(
                     "{}  {:.0}",
-                    world.data.powerups.powerups[p].name,
+                    t(&world.data.powerups.powerups[p].name),
                     o.timer.ceil()
                 ),
                 None => format!("{:.0}", o.timer.ceil()),

@@ -114,7 +114,7 @@ impl Scroll {
             self.y = most * f;
         }
         let drag = drag_y(&mut self.drag);
-        self.y = (self.y - drag - mouse_wheel().1.signum() * 40.0 * scale()).clamp(0.0, most);
+        self.y = (self.y - drag - wheel_step() * 40.0 * scale()).clamp(0.0, most);
         SCROLL_Y.with(|y| y.set(self.y));
         self.resume();
     }
@@ -140,10 +140,37 @@ impl Scroll {
         let (sw, sh) = (screen_width(), screen_height());
         if page_h > sh {
             let s = scale();
+            // The page fades out under the buttons along the bottom.
+            let band = 96.0 * s;
+            let steps = 12;
+            for k in 0..steps {
+                let y = sh - band + band * k as f32 / steps as f32;
+                let a = 0.95 * (k + 1) as f32 / steps as f32;
+                draw_rectangle(
+                    0.0,
+                    y,
+                    sw,
+                    band / steps as f32 + 1.0,
+                    Color::new(0.02, 0.06, 0.07, a),
+                );
+            }
             let h = sh * sh / page_h;
             let y = self.y / (page_h - sh) * (sh - h);
             draw_rectangle(sw - 6.0 * s, y, 4.0 * s, h, Color::new(1.0, 1.0, 1.0, 0.35));
         }
+    }
+}
+
+/// -1, 0 or 1: which way the mouse wheel turned this frame. (Not
+/// `signum`: that turns a still wheel's 0.0 into 1.0.)
+pub fn wheel_step() -> f32 {
+    let w = mouse_wheel().1;
+    if w > 0.0 {
+        1.0
+    } else if w < 0.0 {
+        -1.0
+    } else {
+        0.0
     }
 }
 

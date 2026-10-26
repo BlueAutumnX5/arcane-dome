@@ -4,6 +4,7 @@
 use super::touch::{self, Button, TouchControls};
 use super::ui::{self, Side, Ui};
 use crate::ai::BotSet;
+use crate::ai::assist::AutoAim;
 use crate::data::GameData;
 use crate::i18n::{t, tn};
 use crate::render::{self, Effects, GameCamera, MapArt};
@@ -46,13 +47,21 @@ pub struct Session {
     /// The button that leaves the match ("Main Menu", or "Back to Editor"
     /// when test-playing a map).
     pub exit_label: &'static str,
-    /// On-screen sticks and buttons, on touch screens.
+    /// On-screen stick and buttons, on touch screens.
     touch: Option<TouchControls>,
+    /// Touch: the enemy the Fire button's aim assist is locked on to.
+    assist: AutoAim,
+    /// Touch: which way the player points (unit), kept between shots.
+    touch_dir: Vec2,
+    /// Touch: where the player aims this tick, in world tiles.
+    touch_aim: Vec2,
 }
 
 /// How far, in tiles, the touch crosshair sits from the eye: this much at a
-/// light push, plus up to the weapon's look reach at a full one.
+/// light drag, plus up to the weapon's look reach at a full one.
 const TOUCH_AIM_NEAR: f32 = 2.5;
+/// Share of the look reach the camera leans toward an assisted target.
+const ASSIST_LOOK: f32 = 0.5;
 
 /// A frame this long means the game was away (on Android, sent to the
 /// background); a match pauses itself then.
@@ -92,6 +101,9 @@ impl Session {
             blood: true,
             exit_label: tn("Main Menu"),
             touch: crate::platform::touch().then(TouchControls::default),
+            assist: AutoAim::default(),
+            touch_dir: vec2(1.0, 0.0),
+            touch_aim: Vec2::ZERO,
         })
     }
 
@@ -156,12 +168,18 @@ impl Session {
         }
         let me = &self.world.fighters[self.player];
         let reach = render::look_reach(self.world.data.weapons[me.current].range_tiles);
-        // With touch, the aim stick stands in for the mouse: the camera
-        // looks along it, further the harder it is pushed.
+        // With touch, the camera looks along a hand-aimed drag (further the
+        // longer it is), or partway toward an assisted target.
         let mouse: Vec2 = match &self.touch {
             Some(t) => {
                 let centre = vec2(screen_width(), screen_height()) * 0.5;
-                let look = t.aim_dir().unwrap_or(Vec2::ZERO) * t.aim_push() * reach;
+                let look = match t.manual_dir() {
+                    Some(dir) => dir * t.aim_push() * reach,
+                    None if t.firing() && self.assist.target.is_some() => {
+                        (self.touch_aim - me.eye()).clamp_length_max(reach * ASSIST_LOOK)
+                    }
+                    None => Vec2::ZERO,
+                };
                 centre + look * self.cam.ppt / render::LOOK_FOLLOW
             }
             None => mouse_position().into(),
@@ -189,11 +207,14 @@ impl Session {
         render::draw_hud(&self.world, &self.effects, self.player, self.blood);
         if !self.paused && !over {
             let at = match &self.touch {
-                Some(_) => self.cam.world_to_screen(self.touch_aim(reach)),
+                Some(_) => self.cam.world_to_screen(self.touch_aim),
                 None => mouse,
             };
             render::draw_crosshair(&self.world, &self.cam, &self.effects, self.player, at);
             if let (Some(t), Some(layout)) = (&self.touch, &layout) {
+                if let Some(target) = self.assist.target.filter(|_| t.firing()) {
+                    touch::draw_lock(&self.world, &self.cam, target, ui::scale());
+                }
                 t.draw(layout, &self.world, self.player, ui::scale());
             }
         }
@@ -216,15 +237,33 @@ impl Session {
         Outcome::Continue
     }
 
-    /// Where the touch controls aim, in world tiles: along the aim stick
-    /// (or the way the player faces, before the first aim).
-    fn touch_aim(&self, reach: f32) -> Vec2 {
-        let f = &self.world.fighters[self.player];
+    /// Where the touch controls aim this tick, in world tiles: along a
+    /// hand-aimed drag of Fire; at the assisted target while Fire is held
+    /// still; otherwise the way the player last pointed, turning to face
+    /// where they walk.
+    fn update_touch_aim(&mut self, reach: f32) {
         let Some(t) = &self.touch else {
-            return f.eye();
+            return;
         };
-        let dir = t.aim_dir().unwrap_or(vec2(f.facing, 0.0));
-        f.eye() + dir * (TOUCH_AIM_NEAR + t.aim_push() * reach)
+        let eye = self.world.fighters[self.player].eye();
+        let assisted = if t.firing() && t.manual_dir().is_none() {
+            self.assist.update(&self.world, self.player)
+        } else {
+            self.assist.target = None;
+            None
+        };
+        if let Some(dir) = t.manual_dir() {
+            self.touch_dir = dir;
+            self.touch_aim = eye + dir * (TOUCH_AIM_NEAR + t.aim_push() * reach);
+        } else if let Some(at) = assisted {
+            self.touch_dir = (at - eye).normalize_or(self.touch_dir);
+            self.touch_aim = at;
+        } else {
+            if !t.firing() && t.move_x() != 0.0 {
+                self.touch_dir = vec2(t.move_x(), 0.0);
+            }
+            self.touch_aim = eye + self.touch_dir * TOUCH_AIM_NEAR;
+        }
     }
 
     fn collect_edges(&mut self, taps: &[Button]) {
@@ -238,7 +277,8 @@ impl Session {
                 Button::Switch => self.edges.cycle = 1,
                 Button::Ability => self.edges.ability = true,
                 Button::Weapon(w) => self.edges.select = Some(w),
-                Button::Pause | Button::Scores => {}
+                // Jump goes straight to the jump edge (see take_jump).
+                Button::Pause | Button::Scores | Button::Jump => {}
             }
         }
         if Self::pressed(&[KeyCode::W, KeyCode::Up, KeyCode::Space]) {
@@ -291,13 +331,14 @@ impl Session {
         };
         // Touch: the sticks (a keyboard, if one is plugged in, still works;
         // the mouse does not, as every touch also moves it).
+        self.update_touch_aim(reach);
         if let Some(t) = &self.touch {
             if t.move_x() != 0.0 {
                 player.move_x = t.move_x();
             }
             player.jump_held |= t.jump_held();
             player.crouch |= t.crouch();
-            player.aim = self.touch_aim(reach);
+            player.aim = self.touch_aim;
             player.fire = t.firing();
         }
         let mut inputs = vec![Input::default(); self.world.fighters.len()];
@@ -361,7 +402,7 @@ impl Session {
         }
         let help = if self.touch.is_some() {
             t(
-                "Left stick: walk, push up to jump (again for a double jump), down to crouch.   Right stick: aim, push past the ring to fire.",
+                "Left stick: walk, down to crouch.   Jump: tap again in the air to double jump.   Fire: hold to aim at the nearest enemy, or drag to aim yourself.",
             )
         } else {
             t(

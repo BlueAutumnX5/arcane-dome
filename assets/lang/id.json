@@ -91,10 +91,6 @@
   "HOW TO PLAY": "CARA BERMAIN",
   "WEAPON INFO": "INFO SENJATA",
   "ABOUT": "TENTANG",
-  "Left stick  walk; push up to jump (again in the air to double jump)": "Stik kiri  jalan; dorong ke atas untuk lompat (lagi di udara untuk lompat ganda)",
-  "            push down to crouch, or to drop through a thin platform": "            dorong ke bawah untuk jongkok, atau turun lewat platform tipis",
-  "Right stick  aim; push past the red ring to fire": "Stik kanan  bidik; dorong melewati cincin merah untuk menembak",
-  "Reload, Switch  the buttons above the right stick": "Isi Ulang, Ganti  tombol di atas stik kanan",
   "Weapons  tap one in the bar at the bottom": "Senjata  ketuk salah satu di bilah bawah",
   "Step  use Shadowstep (the button shows while you hold one)": "Langkah  pakai Langkah Bayangan (tombolnya muncul saat kamu punya)",
   "Top left  pause and scoreboard (Back also pauses)": "Kiri atas  jeda dan papan skor (tombol Kembali juga menjeda)",
@@ -136,7 +132,6 @@
   "Main Menu": "Menu Utama",
   "Back to Editor": "Kembali ke Editor",
   "Rematch": "Main Lagi",
-  "Left stick: walk, push up to jump (again for a double jump), down to crouch.   Right stick: aim, push past the ring to fire.": "Stik kiri: jalan, dorong ke atas untuk lompat (lagi untuk lompat ganda), ke bawah untuk jongkok.   Stik kanan: bidik, dorong melewati cincin untuk menembak.",
   "Move A/D  Jump W/Space (twice to double jump)  Crouch S  Fire mouse  Reload R  Shadowstep F  Weapons 1-0 / Q E / wheel  Scores Tab": "Gerak A/D  Lompat W/Spasi (2x untuk lompat ganda)  Jongkok S  Tembak mouse  Isi ulang R  Langkah Bayangan F  Senjata 1-0 / Q E / roda  Skor Tab",
   "no limit": "tanpa batas",
   "to {}": "sampai {}",
@@ -207,5 +202,12 @@
   "Redstone Arches": "Redstone Arches",
   "A steel mill built around a pit of molten slag. Climb the old smelter tower, or ride its thruster shaft straight to the roof.": "Pabrik baja yang dibangun di sekitar lubang terak cair. Panjat menara peleburan tua, atau naiki lorong pendorongnya langsung ke atap.",
   "A relay station high in frozen mountains. Hold a cliff, the valley or the relay deck, and ride the shaft to the tower roof.": "Stasiun relai tinggi di pegunungan beku. Kuasai tebing, lembah, atau dek relai, dan naiki lorong ke atap menara.",
-  "A dry canyon under a giant stone arch. Hold the mesas, brawl by the oasis, and fight for the crest of the arch.": "Ngarai kering di bawah lengkung batu raksasa. Kuasai mesa, bertarung di dekat oasis, dan rebut puncak lengkungan."
+  "A dry canyon under a giant stone arch. Hold the mesas, brawl by the oasis, and fight for the crest of the arch.": "Ngarai kering di bawah lengkung batu raksasa. Kuasai mesa, bertarung di dekat oasis, dan rebut puncak lengkungan.",
+  "Left stick  walk; push down to crouch, or to drop through a thin platform": "Stik kiri  jalan; dorong ke bawah untuk jongkok, atau turun lewat platform tipis",
+  "Jump  tap to jump, tap again in the air to double jump": "Lompat  ketuk untuk lompat, ketuk lagi di udara untuk lompat ganda",
+  "Fire  hold to aim at the nearest enemy you can see; drag to aim yourself": "Tembak  tahan untuk membidik musuh terdekat yang terlihat; geser untuk membidik sendiri",
+  "Reload, Switch  the buttons above Fire": "Isi Ulang, Ganti  tombol di atas Tembak",
+  "Left stick: walk, down to crouch.   Jump: tap again in the air to double jump.   Fire: hold to aim at the nearest enemy, or drag to aim yourself.": "Stik kiri: jalan, ke bawah untuk jongkok.   Lompat: ketuk lagi di udara untuk lompat ganda.   Tembak: tahan untuk membidik musuh terdekat, atau geser untuk membidik sendiri.",
+  "Fire": "Tembak",
+  "Jump": "Lompat"
 }
