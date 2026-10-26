@@ -3,6 +3,7 @@
   "name": "Assault Rifle",
   "short_name": "Rifle",
   "category": "automatic",
+  "icon": "rifle",
   "damage": 9.0,
   "headshot_mult": 2.0,
   "fire_rate_rps": 8.0,

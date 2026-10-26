@@ -3,6 +3,7 @@
   "name": "Flamethrower",
   "short_name": "Flamer",
   "category": "close_range",
+  "icon": "flamer",
   "damage": 4.0,
   "headshot_mult": 1.0,
   "fire_rate_rps": 12.0,

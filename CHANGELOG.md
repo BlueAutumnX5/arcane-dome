@@ -2,6 +2,12 @@
 
 ## Next version (in progress)
 
+- New HUD on the PC:
+  - Health sits at the top centre ("Health 97%", your name, "Shield 69%"). The bar fades from green through yellow to red as you lose health, with a thin yellow shield strip under it (phones get the same colours in their own spot)
+  - The weapon in your hands is pictured top left, with its clip below it (or reload progress)
+  - The timer and match name are top right, with the kill feed under them; the FPS counter moved to the bottom left
+  - The weapon bar shows each weapon you hold with its name above its picture and an ammo strip along the top; the one in hand stands taller; one you hold but have run dry is greyed out; empty slots are low stubs
+  - Every weapon has its own picture, drawn by the game (each weapon file picks one with `icon`)
 - New match type: **King of the Hill**. Score a point for every second your side alone stands in the hill (the zone in the spotlight); nobody scores while it is contested. The hill moves to another zone every minute, or as often as you pick in Quick Match (or never). Free-for-all or teams
 - New match type: **Domination** (teams). Stand in a zone to capture it: 6 seconds alone, faster with teammates, and an enemy inside stops it. Every zone your team holds earns points; first to 200
 - New match type: **Territories** (2 teams). The zones form a line from one base to the other; you can only capture the zone next to one you hold. Hold every zone to score, and the line resets; first to 3

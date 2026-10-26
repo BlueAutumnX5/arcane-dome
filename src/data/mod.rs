@@ -17,7 +17,7 @@ pub use map::{
 pub use modes::{ModeDef, Rules, parse_modes};
 pub use powerups::{PowerupConfig, PowerupDef, PowerupEffect, parse_powerups};
 pub use weapon::{
-    BULLET_GRAVITY, BULLET_SPEED_AT_RANGE, Category, ExplosionDef, Falloff, ProjectileDef,
+    BULLET_GRAVITY, BULLET_SPEED_AT_RANGE, Category, ExplosionDef, Falloff, Icon, ProjectileDef,
     ProjectileKind, Special, WallHit, WeaponDef, parse_weapon,
 };
 

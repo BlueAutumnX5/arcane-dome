@@ -3,6 +3,7 @@
   "name": "Leech SMG",
   "short_name": "SMG",
   "category": "automatic",
+  "icon": "smg",
   "damage": 6.0,
   "headshot_mult": 1.5,
   "fire_rate_rps": 13.0,

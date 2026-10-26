@@ -3,6 +3,7 @@
   "name": "Shock Baton",
   "short_name": "Baton",
   "category": "melee",
+  "icon": "baton",
   "loot": false,
   "damage": 55.0,
   "headshot_mult": 1.0,

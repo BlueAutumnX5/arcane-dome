@@ -581,10 +581,11 @@ impl App {
                 }
                 self.memory = (now, text);
             }
+            // Bottom left, clear of the match HUD's panels.
             ui::text_left(
                 &format!("{} FPS{}", get_fps(), self.memory.1),
                 8.0 * s,
-                16.0 * s,
+                screen_height() - 6.0 * s,
                 15.0 * s,
                 Color::new(1.0, 1.0, 0.6, 0.9),
             );

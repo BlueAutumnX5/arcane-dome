@@ -3,6 +3,7 @@
   "name": "Sniper Rifle",
   "short_name": "Sniper",
   "category": "long_range",
+  "icon": "sniper",
   "damage": 70.0,
   "headshot_mult": 2.0,
   "fire_rate_rps": 0.6,

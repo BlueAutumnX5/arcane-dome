@@ -3,6 +3,7 @@
   "name": "Shotgun",
   "short_name": "Shotgun",
   "category": "close_range",
+  "icon": "shotgun",
   "damage": 9.0,
   "headshot_mult": 1.25,
   "fire_rate_rps": 1.4,

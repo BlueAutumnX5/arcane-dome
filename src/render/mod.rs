@@ -3,6 +3,7 @@
 mod effects;
 mod gadgets;
 mod hud;
+mod icons;
 mod objectives;
 mod terrain;
 

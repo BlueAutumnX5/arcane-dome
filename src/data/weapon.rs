@@ -34,6 +34,23 @@ impl ProjectileKind {
     }
 }
 
+/// The picture of a weapon on the HUD (drawn in code, not an image file).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Icon {
+    Pistol,
+    Smg,
+    Rifle,
+    Shotgun,
+    Flamer,
+    Marksman,
+    Sniper,
+    Rocket,
+    Grenade,
+    Laser,
+    Baton,
+}
+
 /// What a projectile does when it hits terrain (explosives always explode).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -261,6 +278,9 @@ pub struct WeaponDef {
     pub projectile: ProjectileDef,
     #[serde(default)]
     pub specials: Vec<Special>,
+    /// The HUD picture (default: one that suits the category).
+    #[serde(default)]
+    pub icon: Option<Icon>,
     #[serde(default)]
     pub sprite: Option<String>,
     #[serde(default)]
@@ -329,6 +349,21 @@ impl WeaponDef {
             })
             .sum();
         self.pellets + extra
+    }
+
+    /// The HUD picture: the weapon's own, or one for its kind.
+    pub fn icon(&self) -> Icon {
+        self.icon
+            .unwrap_or(match (self.category, self.projectile.kind) {
+                (_, ProjectileKind::MeleeArc) | (Category::Melee, _) => Icon::Baton,
+                (_, ProjectileKind::Rocket) => Icon::Rocket,
+                (_, ProjectileKind::Grenade) => Icon::Grenade,
+                (_, ProjectileKind::Beam) => Icon::Laser,
+                (Category::Starter | Category::Sidearm, _) => Icon::Pistol,
+                (Category::CloseRange, _) => Icon::Shotgun,
+                (Category::LongRange, _) => Icon::Sniper,
+                _ => Icon::Rifle,
+            })
     }
 
     /// Short label for the weapon bar.

@@ -260,5 +260,8 @@
   "{} flag": "bendera {}",
   "{} holds the hill": "{} menguasai bukit",
   "You have the flag: take it home!": "Kamu membawa bendera: bawa ke markas!",
-  "Your flag is down: touch it to send it home": "Benderamu jatuh: sentuh untuk mengembalikannya"
+  "Your flag is down: touch it to send it home": "Benderamu jatuh: sentuh untuk mengembalikannya",
+  "Health: {}%": "Darah: {}%",
+  "Shield: {}%": "Perisai: {}%",
+  "Clip: {}": "Magasin: {}"
 }

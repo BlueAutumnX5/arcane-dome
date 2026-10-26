@@ -250,69 +250,43 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         draw_rectangle(sw - t, 0.0, t, sh, c);
     }
 
-    // Health, bottom left; with touch controls, top left beside the pause
-    // and scores buttons, out from under the thumbs (the touch weapon bar
-    // and its buttons are drawn by `app::touch`).
     let touch = crate::platform::touch();
-    let (hx, hy, hw, hh) = if touch {
-        (128.0 * s, 26.0 * s, 220.0 * s, 22.0 * s)
-    } else {
-        (20.0 * s, sh - 44.0 * s, 240.0 * s, 22.0 * s)
-    };
-    // Shield and powerups stack away from the screen edge.
-    let stack = if touch { -1.0 } else { 1.0 };
-    draw_rectangle(hx, hy, hw, hh, Color::new(0.0, 0.0, 0.0, 0.55));
     let frac = (f.health / f.max_health).clamp(0.0, 1.0);
-    let hc = if frac > 0.5 {
-        Color::new(0.35, 0.85, 0.45, 1.0)
-    } else if frac > 0.25 {
-        Color::new(0.95, 0.75, 0.25, 1.0)
-    } else {
-        Color::new(0.95, 0.3, 0.25, 1.0)
-    };
-    draw_rectangle(hx, hy, hw * frac, hh, hc);
-    text(
-        &format!("{:.0}", f.health.max(0.0)),
-        hx + 8.0 * s,
-        hy + 17.0 * s,
-        22.0 * s,
-        WHITE,
-    );
-
-    // Shield, just above health (below, with touch).
-    if f.shield > 0.0 {
-        let sy = if touch {
-            hy + hh + 4.0 * s
-        } else {
-            hy - 10.0 * s
-        };
-        draw_rectangle(hx, sy, hw, 6.0 * s, Color::new(0.0, 0.0, 0.0, 0.55));
-        draw_rectangle(
-            hx,
-            sy,
-            hw * (f.shield / f.max_shield).clamp(0.0, 1.0),
-            6.0 * s,
-            super::gadgets::SHIELD_COLOR,
-        );
+    let shield = (f.shield / f.max_shield).clamp(0.0, 1.0);
+    // Powerups list from here, one row further each.
+    let (px, py, pdir) = if touch {
+        // With touch controls, health sits top left beside the pause and
+        // scores buttons, out from under the thumbs (the touch weapon bar
+        // and its buttons are drawn by `app::touch`).
+        let (hx, hy, hw, hh) = (128.0 * s, 26.0 * s, 220.0 * s, 22.0 * s);
+        draw_rectangle(hx, hy, hw, hh, Color::new(0.0, 0.0, 0.0, 0.55));
+        draw_rectangle(hx, hy, hw * frac, hh, health_color(frac));
         text(
-            &tf("Shield {}", &[&format!("{:.0}", f.shield)]),
-            hx + hw + 8.0 * s,
-            sy + 8.0 * s,
-            16.0 * s,
-            super::gadgets::SHIELD_COLOR,
+            &format!("{:.0}", f.health.max(0.0)),
+            hx + 8.0 * s,
+            hy + 17.0 * s,
+            22.0 * s,
+            WHITE,
         );
-    }
+        draw_rectangle(hx, hy + hh, hw, 4.0 * s, Color::new(0.0, 0.0, 0.0, 0.55));
+        draw_rectangle(hx, hy + hh, hw * shield, 4.0 * s, SHIELD_BAR);
+        (hx, hy + hh + 14.0 * s, 1.0)
+    } else {
+        health_panel(f, frac, shield, s);
+        weapon_panel(world, f, s);
+        (14.0 * s, 104.0 * s, 1.0)
+    };
 
-    // Active powerups, stacked above health.
+    // Active powerups, below health.
     let mut row = 0.0;
     for b in &f.buffs {
         if let Some(p) = world.data.powerups.powerups.get(b.powerup) {
             let c = super::gadgets::rgb(p.color);
-            let y = hy - stack * (34.0 + row * 24.0) * s;
-            draw_rectangle(hx, y, 14.0 * s, 14.0 * s, c);
+            let y = py + pdir * row * 24.0 * s;
+            draw_rectangle(px, y, 14.0 * s, 14.0 * s, c);
             text(
                 &format!("{}  {:.0}s", t(&p.name), b.time_left.ceil()),
-                hx + 22.0 * s,
+                px + 22.0 * s,
                 y + 13.0 * s,
                 18.0 * s,
                 c,
@@ -326,30 +300,23 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             .and_then(|p| world.data.powerups.powerups.get(p))
     {
         let c = super::gadgets::rgb(p.color);
-        let y = hy - stack * (34.0 + row * 24.0) * s;
-        draw_rectangle(hx, y, 14.0 * s, 14.0 * s, c);
+        let y = py + pdir * row * 24.0 * s;
+        draw_rectangle(px, y, 14.0 * s, 14.0 * s, c);
         let key = if touch { "" } else { "  [F]" };
         text(
             &format!("{} x{}{key}", t(&p.name), f.teleport_charges),
-            hx + 22.0 * s,
+            px + 22.0 * s,
             y + 13.0 * s,
             18.0 * s,
             c,
         );
     }
 
-    // Ammo, bottom right.
     let def = &world.data.weapons[f.current];
     let slot = f.inventory[f.current];
-    let ammo = if !def.uses_ammo() {
-        "-".to_owned()
-    } else if def.infinite_reserve() {
-        format!("{} / inf", slot.mag)
-    } else {
-        format!("{} / {}", slot.mag, slot.reserve)
-    };
     if touch {
-        // Above the touch weapon bar (46 high, 10 from the bottom).
+        // Ammo above the touch weapon bar (46 high, 10 from the bottom).
+        let ammo = ammo_text(def, slot);
         let y = sh - 66.0 * s;
         let name = measure_text(t(&def.name), None, (22.0 * s) as u16, 1.0).width;
         let count = measure_text(&ammo, None, (26.0 * s) as u16, 1.0).width;
@@ -366,92 +333,12 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             draw_rectangle(bx, by, w, 5.0 * s, Color::new(0.0, 0.0, 0.0, 0.5));
             draw_rectangle(bx, by, w * p, 5.0 * s, WHITE);
         }
-    }
-    let rx = sw - 20.0 * s;
-    if !touch {
-        text_right(
-            t(&def.name),
-            rx,
-            sh - 52.0 * s,
-            22.0 * s,
-            category_color(def.category),
-        );
-        text_right(&ammo, rx, sh - 22.0 * s, 30.0 * s, WHITE);
-    }
-    if f.is_reloading() && !touch {
-        let total = def.reload_time_s.max(0.01);
-        let p = 1.0 - f.reload_timer / total;
-        let w = 140.0 * s;
-        draw_rectangle(
-            rx - w,
-            sh - 78.0 * s,
-            w,
-            5.0 * s,
-            Color::new(0.0, 0.0, 0.0, 0.5),
-        );
-        draw_rectangle(rx - w, sh - 78.0 * s, w * p, 5.0 * s, WHITE);
-        text_right(t("RELOADING"), rx, sh - 84.0 * s, 16.0 * s, WHITE);
-    }
-
-    // Weapon bar, bottom center: the weapons anyone can find, plus any other
-    // held. Gun Game hands out its own, so there it shows just those.
-    let slots: Vec<usize> = if touch {
-        Vec::new()
     } else {
-        let gun_game = !world.ladder.is_empty();
-        (0..world.data.weapons.len())
-            .filter(|&w| f.owns(w) || (world.data.weapons[w].loot && !gun_game))
-            .take(10)
-            .collect()
-    };
-    let bw = 66.0 * s;
-    let bh = 38.0 * s;
-    let gap = 4.0 * s;
-    let total = slots.len() as f32 * (bw + gap) - gap;
-    let bx = (sw - total) / 2.0;
-    let by = sh - bh - 14.0 * s;
-    for (k, &w) in slots.iter().enumerate() {
-        let x = bx + k as f32 * (bw + gap);
-        let d = &world.data.weapons[w];
-        let owned = f.owns(w);
-        let current = w == f.current;
-        let bg = if current {
-            Color::new(1.0, 1.0, 1.0, 0.22)
-        } else {
-            Color::new(0.0, 0.0, 0.0, 0.45)
-        };
-        draw_rectangle(x, by, bw, bh, bg);
-        let cc = category_color(d.category);
-        if current {
-            draw_rectangle_lines(x, by, bw, bh, 2.0 * s, cc);
-        }
-        let alpha = if owned { 1.0 } else { 0.28 };
-        // Number keys pick by slot: 1 to 9, then 0.
-        let key = match w {
-            0..9 => (w + 1).to_string(),
-            9 => "0".to_owned(),
-            _ => String::new(),
-        };
-        text(
-            &key,
-            x + 4.0 * s,
-            by + 13.0 * s,
-            14.0 * s,
-            Color::new(1.0, 1.0, 1.0, alpha * 0.7),
-        );
-        let name = t(&d.short_name()).to_owned();
-        let size = 14.0 * s;
-        let dims = measure_text(&name, None, size as u16, 1.0);
-        text(
-            &name,
-            x + (bw - dims.width) / 2.0,
-            by + 31.0 * s,
-            size,
-            Color::new(cc.r, cc.g, cc.b, alpha),
-        );
+        weapon_slots(world, f, s);
     }
 
-    // Score and timer, top center.
+    // Score and timer: top centre with touch controls; on a PC the timer
+    // and match name go top right and the score under the health panel.
     let cx = sw / 2.0;
     let mode = &world.mode;
     let time = if matches!(world.phase, Phase::RoundOver { .. }) {
@@ -459,7 +346,20 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     } else {
         clock(world.time_left)
     };
-    text_center(&time, cx, 34.0 * s, 30.0 * s, WHITE);
+    let (score_y, status_y) = if touch {
+        text_center(&time, cx, 34.0 * s, 30.0 * s, WHITE);
+        (58.0 * s, 84.0 * s)
+    } else {
+        text_right(&time, sw - 18.0 * s, 32.0 * s, 28.0 * s, WHITE);
+        text_right(
+            &match_name(world),
+            sw - 18.0 * s,
+            54.0 * s,
+            17.0 * s,
+            Color::new(1.0, 1.0, 1.0, 0.75),
+        );
+        (80.0 * s, 104.0 * s)
+    };
     if mode.is_team() {
         // One coloured segment per team: score (or round wins and how many
         // are still standing), then the target.
@@ -494,7 +394,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             round_text(world)
         };
         parts.push((goal, Color::new(1.0, 1.0, 1.0, 0.75)));
-        segments_center(&parts, cx, 58.0 * s, 20.0 * s, 22.0 * s);
+        segments_center(&parts, cx, score_y, 20.0 * s, 22.0 * s);
     }
     let line = if mode.is_team() {
         String::new()
@@ -530,13 +430,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             ],
         )
     };
-    text_center(
-        &line,
-        cx,
-        58.0 * s,
-        20.0 * s,
-        Color::new(1.0, 1.0, 1.0, 0.9),
-    );
+    text_center(&line, cx, score_y, 20.0 * s, Color::new(1.0, 1.0, 1.0, 0.9));
     // Juggernaut: who it is. Gun Game: the weapon your rung gives.
     if let Some(j) = world.juggernaut {
         let msg = if j == player {
@@ -548,7 +442,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             )
         };
         let red = super::fighter_color(&world.fighters[j]);
-        text_center(&msg, cx, 84.0 * s, 18.0 * s, red);
+        text_center(&msg, cx, status_y, 18.0 * s, red);
     } else if !world.ladder.is_empty() {
         let side = world.side_of(player);
         let rung = (world.scores[side].max(0) as usize).min(world.ladder.len() - 1);
@@ -557,9 +451,9 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             "Weapon {}/{}: {}",
             &[&(rung + 1), &world.ladder.len(), &t(&w.name).to_owned()],
         );
-        text_center(&msg, cx, 84.0 * s, 18.0 * s, category_color(w.category));
+        text_center(&msg, cx, status_y, 18.0 * s, category_color(w.category));
     } else {
-        objective_status(world, player, cx, 84.0 * s, s);
+        objective_status(world, player, cx, status_y, s);
     }
 
     // Kill feed, top right.
@@ -567,7 +461,9 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         let a = (1.0 - (l.age - 5.0).max(0.0)).clamp(0.0, 1.0);
         let size = 18.0 * s;
         let gap = 7.0 * s;
-        let y = 28.0 * s + i as f32 * 22.0 * s;
+        // Under the timer on a PC.
+        let top = if touch { 28.0 } else { 80.0 };
+        let y = (top + i as f32 * 22.0) * s;
         let widths: Vec<f32> = l
             .parts
             .iter()
@@ -684,6 +580,233 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
                 text_center(msg, cx, sh * 0.62, 20.0 * s, WHITE);
             }
         }
+    }
+}
+
+/// The shield strip's colour, the same at any strength.
+const SHIELD_BAR: Color = Color::new(1.0, 0.84, 0.25, 1.0);
+
+/// Health from green (full) through yellow (half) to red (empty).
+fn health_color(frac: f32) -> Color {
+    let (green, yellow, red) = (
+        Color::new(0.3, 0.85, 0.4, 1.0),
+        Color::new(0.95, 0.85, 0.25, 1.0),
+        Color::new(0.95, 0.25, 0.2, 1.0),
+    );
+    let mix = |a: Color, b: Color, k: f32| {
+        Color::new(
+            a.r + (b.r - a.r) * k,
+            a.g + (b.g - a.g) * k,
+            a.b + (b.b - a.b) * k,
+            1.0,
+        )
+    };
+    if frac >= 0.5 {
+        mix(yellow, green, (frac - 0.5) * 2.0)
+    } else {
+        mix(red, yellow, frac * 2.0)
+    }
+}
+
+const PANEL_BG: Color = Color::new(0.04, 0.06, 0.08, 0.82);
+const PANEL_EDGE: Color = Color::new(0.35, 0.85, 0.9, 0.55);
+
+/// "30 / 150": rounds in the magazine and in reserve.
+fn ammo_text(def: &crate::data::WeaponDef, slot: crate::sim::Slot) -> String {
+    if !def.uses_ammo() {
+        "-".to_owned()
+    } else if def.infinite_reserve() {
+        format!("{} / inf", slot.mag)
+    } else {
+        format!("{} / {}", slot.mag, slot.reserve)
+    }
+}
+
+/// Top centre: "Health 97%", the fighter's name and "Shield 69%" over the
+/// health bar (green, fading to yellow and red as it empties), with a thin
+/// shield strip under it.
+fn health_panel(f: &crate::sim::Fighter, frac: f32, shield: f32, s: f32) {
+    let w = 460.0 * s;
+    let x = (screen_width() - w) / 2.0;
+    let y = 6.0 * s;
+    let h = 52.0 * s;
+    draw_rectangle(x, y, w, h, PANEL_BG);
+    draw_rectangle_lines(x, y, w, h, 1.5 * s, PANEL_EDGE);
+    // Slanted stripes on both shoulders.
+    for k in 0..3 {
+        let o = k as f32 * 9.0 * s;
+        for (sx, dir) in [(x - 6.0 * s - o, -1.0), (x + w + 6.0 * s + o, 1.0)] {
+            draw_triangle(
+                vec2(sx, y + 4.0 * s),
+                vec2(sx + dir * 5.0 * s, y + 4.0 * s),
+                vec2(sx + dir * 9.0 * s, y + 18.0 * s),
+                PANEL_EDGE,
+            );
+        }
+    }
+    let size = 17.0 * s;
+    let ty = y + 18.0 * s;
+    text(
+        &tf("Health: {}%", &[&((frac * 100.0).round() as i32)]),
+        x + 12.0 * s,
+        ty,
+        size,
+        WHITE,
+    );
+    text_right(
+        &tf("Shield: {}%", &[&((shield * 100.0).round() as i32)]),
+        x + w - 12.0 * s,
+        ty,
+        size,
+        WHITE,
+    );
+    let name = t(&f.name);
+    let nw = measure_text(name, None, size as u16, 1.0).width + 28.0 * s;
+    draw_rectangle(
+        x + (w - nw) / 2.0,
+        y,
+        nw,
+        24.0 * s,
+        Color::new(0.0, 0.0, 0.0, 0.6),
+    );
+    text_center(name, x + w / 2.0, ty, size, WHITE);
+    let (bx, bw) = (x + 10.0 * s, w - 20.0 * s);
+    let by = y + 27.0 * s;
+    draw_rectangle(bx, by, bw, 12.0 * s, Color::new(0.0, 0.0, 0.0, 0.6));
+    draw_rectangle(bx, by, bw * frac, 12.0 * s, health_color(frac));
+    draw_rectangle(bx, by, bw * frac, 4.0 * s, Color::new(1.0, 1.0, 1.0, 0.18));
+    let sy = by + 15.0 * s;
+    draw_rectangle(bx, sy, bw, 4.0 * s, Color::new(0.0, 0.0, 0.0, 0.6));
+    draw_rectangle(bx, sy, bw * shield, 4.0 * s, SHIELD_BAR);
+}
+
+/// Top left: the weapon in hand, with its clip under it (or how far a
+/// reload has got).
+fn weapon_panel(world: &World, f: &crate::sim::Fighter, s: f32) {
+    let def = &world.data.weapons[f.current];
+    let slot = f.inventory[f.current];
+    let (x, y, w, h) = (12.0 * s, 6.0 * s, 210.0 * s, 78.0 * s);
+    draw_rectangle(x, y, w, h, PANEL_BG);
+    draw_rectangle_lines(x, y, w, h, 1.5 * s, PANEL_EDGE);
+    let icon = Rect::new(x + 40.0 * s, y + 4.0 * s, 130.0 * s, 46.0 * s);
+    super::icons::draw_weapon_icon(def.icon(), icon, WHITE);
+    let (bx, by, bw, bh) = (x + 8.0 * s, y + 54.0 * s, w - 16.0 * s, 18.0 * s);
+    draw_rectangle(bx, by, bw, bh, Color::new(0.0, 0.0, 0.0, 0.6));
+    let (fill, label) = if f.is_reloading() {
+        let total = def.reload_time_s.max(0.01);
+        (1.0 - f.reload_timer / total, t("RELOADING").to_owned())
+    } else if def.uses_ammo() {
+        (
+            slot.mag as f32 / def.magazine.max(1) as f32,
+            tf("Clip: {}", &[&ammo_text(def, slot)]),
+        )
+    } else {
+        (1.0, t(&def.name).to_owned())
+    };
+    draw_rectangle(
+        bx,
+        by,
+        bw * fill.clamp(0.0, 1.0),
+        bh,
+        Color::new(0.62, 0.14, 0.14, 0.95),
+    );
+    text_center(&label, bx + bw / 2.0, by + 14.0 * s, 16.0 * s, WHITE);
+}
+
+/// Bottom centre: a slot for each weapon. Held ones stand tall with the
+/// weapon's name over its picture and an ammo strip along the top (greyed
+/// out once empty); the one in hand stands tallest; the rest are low stubs.
+/// Gun Game hands out its own weapons, so there it shows just those.
+fn weapon_slots(world: &World, f: &crate::sim::Fighter, s: f32) {
+    let (sw, sh) = (screen_width(), screen_height());
+    let gun_game = !world.ladder.is_empty();
+    let slots: Vec<usize> = (0..world.data.weapons.len())
+        .filter(|&w| f.owns(w) || (world.data.weapons[w].loot && !gun_game))
+        .take(10)
+        .collect();
+    let (bw, bh, gap) = (84.0 * s, 62.0 * s, 6.0 * s);
+    let total = slots.len() as f32 * (bw + gap) - gap;
+    let x0 = (sw - total) / 2.0;
+    let bottom = sh - 8.0 * s;
+    for (k, &w) in slots.iter().enumerate() {
+        let x = x0 + k as f32 * (bw + gap);
+        let d = &world.data.weapons[w];
+        // Number keys pick by slot: 1 to 9, then 0.
+        let key = match w {
+            0..9 => (w + 1).to_string(),
+            9 => "0".to_owned(),
+            _ => String::new(),
+        };
+        if !f.owns(w) {
+            let h = 16.0 * s;
+            draw_rectangle(x, bottom - h, bw, h, Color::new(0.0, 0.0, 0.0, 0.5));
+            text(
+                &key,
+                x + 4.0 * s,
+                bottom - 3.0 * s,
+                12.0 * s,
+                Color::new(1.0, 1.0, 1.0, 0.35),
+            );
+            continue;
+        }
+        let current = w == f.current;
+        let slot = f.inventory[w];
+        let full = d.magazine + d.reserve_ammo;
+        let left = if !d.uses_ammo() || d.infinite_reserve() {
+            1.0
+        } else {
+            (slot.mag + slot.reserve) as f32 / full.max(1) as f32
+        };
+        let empty = left <= 0.0;
+        let h = if current { bh + 10.0 * s } else { bh };
+        let y = bottom - h;
+        let cc = if empty {
+            Color::new(0.55, 0.55, 0.58, 1.0)
+        } else {
+            category_color(d.category)
+        };
+        let bg = match (current, empty) {
+            (_, true) => Color::new(0.35, 0.35, 0.38, 0.6),
+            (true, _) => Color::new(0.16, 0.2, 0.24, 0.92),
+            _ => PANEL_BG,
+        };
+        draw_rectangle(x, y, bw, h, bg);
+        draw_rectangle_lines(
+            x,
+            y,
+            bw,
+            h,
+            if current { 2.0 } else { 1.0 } * s,
+            if current {
+                cc
+            } else {
+                Color::new(1.0, 1.0, 1.0, 0.2)
+            },
+        );
+        // Ammo left, along the top.
+        draw_rectangle(x, y, bw, 4.0 * s, Color::new(0.0, 0.0, 0.0, 0.6));
+        draw_rectangle(
+            x,
+            y,
+            bw * left.clamp(0.0, 1.0),
+            4.0 * s,
+            Color::new(0.85, 0.2, 0.18, 1.0),
+        );
+        let ink = if empty {
+            Color::new(1.0, 1.0, 1.0, 0.45)
+        } else {
+            WHITE
+        };
+        text(&key, x + 4.0 * s, y + 17.0 * s, 13.0 * s, ink);
+        let name = t(&d.short_name()).to_owned();
+        text_center(&name, x + bw / 2.0 + 5.0 * s, y + 18.0 * s, 13.0 * s, ink);
+        let icon = Rect::new(x + 8.0 * s, y + 22.0 * s, bw - 16.0 * s, h - 28.0 * s);
+        let tint = if empty {
+            cc
+        } else {
+            Color::new(0.5 + cc.r * 0.5, 0.5 + cc.g * 0.5, 0.5 + cc.b * 0.5, 1.0)
+        };
+        super::icons::draw_weapon_icon(d.icon(), icon, tint);
     }
 }
 
