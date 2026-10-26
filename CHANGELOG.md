@@ -9,6 +9,7 @@
   - Quick Match switches: a melee kill sends the victim back one weapon, and so does dying by your own fire or to the map
   - Ammo never runs out in Gun Game, and weapon pickups, ammo boxes and weapon stations are left out
 - Easy bots see a little wider, notice you sooner, turn faster, and stand their ground more instead of strafing and running off
+- The FPS counter (Settings) now also shows the game's memory use, RAM and (on Linux) graphics memory, to help track down memory problems
 - Bahasa Indonesia: pick it under Settings > Language (the game starts in it if your computer or phone is set to Indonesian). Menus, the match, weapons, maps and modes are all translated; the map editor and this page stay in English for now
 - Android version (Android 9 and newer), with touch controls:
   - Left stick walks, and down crouches or drops; a Jump button (tap again for the double jump)

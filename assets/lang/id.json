@@ -42,7 +42,7 @@
   "Blood Effects": "Efek Darah",
   "Blood on the screen as you get hurt, and on the death screen. The red hit flash stays either way.": "Darah di layar saat kamu terluka, dan di layar kematian. Kilatan merah saat terkena tembakan tetap ada.",
   "FPS Counter": "Penghitung FPS",
-  "Show frames per second in the top left corner.": "Tampilkan frame per detik di pojok kiri atas.",
+  "Show frames per second and memory use in the top left corner.": "Tampilkan frame per detik dan pemakaian memori di pojok kiri atas.",
   "Changes are saved right away.": "Perubahan langsung disimpan.",
   "On": "Aktif",
   "Off": "Nonaktif",

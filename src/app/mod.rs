@@ -375,6 +375,8 @@ struct App {
     info_scroll: ui::Scroll,
     /// Rendered map pictures for the setup screen, by map id.
     thumbs: std::collections::HashMap<String, crate::render::MapThumb>,
+    /// The FPS counter's memory figures, and when they were read.
+    memory: (f64, String),
 }
 
 pub async fn run() {
@@ -430,6 +432,7 @@ pub async fn run() {
         setup_scroll: Default::default(),
         info_scroll: Default::default(),
         thumbs: Default::default(),
+        memory: (f64::MIN, String::new()),
     };
     app.reset_mode_defaults();
 
@@ -551,11 +554,26 @@ impl App {
         self.draw_fps();
     }
 
-    fn draw_fps(&self) {
+    fn draw_fps(&mut self) {
         if self.settings.show_fps {
             let s = ui::scale();
+            // Memory, read once a second: a figure that keeps climbing
+            // points at a leak.
+            let now = get_time();
+            if now - self.memory.0 >= 1.0 {
+                let mb = |b: u64| b / (1 << 20);
+                let (ram, gpu) = crate::platform::memory_use();
+                let mut text = String::new();
+                if let Some(r) = ram {
+                    text += &format!("   RAM {} MB", mb(r));
+                }
+                if let Some(g) = gpu {
+                    text += &format!("   GPU {} MB", mb(g));
+                }
+                self.memory = (now, text);
+            }
             ui::text_left(
-                &format!("{} FPS", get_fps()),
+                &format!("{} FPS{}", get_fps(), self.memory.1),
                 8.0 * s,
                 16.0 * s,
                 15.0 * s,
@@ -872,7 +890,7 @@ impl App {
                 SettingRow::Fps,
                 t("FPS Counter"),
                 on_off(st.show_fps),
-                t("Show frames per second in the top left corner."),
+                t("Show frames per second and memory use in the top left corner."),
             ),
         ];
         // A phone is always fullscreen, and has no slides for now.
