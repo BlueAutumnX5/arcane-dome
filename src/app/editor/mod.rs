@@ -8,7 +8,9 @@ mod windows;
 
 use super::session::Session;
 use super::ui::{self, ACCENT, Ui};
-use crate::data::{GameData, MapDef, ObjectKind, PickupKind, parse_map};
+use crate::data::{
+    GameData, MapDef, ObjectKind, PickupKind, Rules, ZONE_H, ZONE_W, ZoneDef, parse_map,
+};
 use crate::render::{GameCamera, MapArt, TEAM_COLORS, draw_sky, use_camera, use_screen};
 use crate::sim::{Difficulty, MatchConfig};
 use doc::{Doc, Layer};
@@ -31,7 +33,7 @@ const MOUSE_HINT: [&str; 3] = [
     "Left-click: place (drops onto the floor below)   Right-drag: pan   Wheel: zoom",
 ];
 /// What each tool button does, shown when the mouse rests on it.
-const TOOL_TIPS: [&str; 10] = [
+const TOOL_TIPS: [&str; 12] = [
     "Click a shape, spawn, pickup or gadget to select it, then drag to move it. On a selected shape, drag the corner squares to reshape it.",
     "Click to place corners. Click the first corner again, or press Enter, to close the shape. Pick its kind and material in the panel at the bottom left.",
     "Where fighters appear. Set a team in the panel, or leave it on Any for free-for-all. A map needs 4 free-for-all spawns and 2 per team.",
@@ -42,6 +44,8 @@ const TOOL_TIPS: [&str; 10] = [
     "Deploys a random weapon every 30 to 45 seconds.",
     "Gives +50 or +100 shield. Shield soaks up part of each hit.",
     "Holds one powerup: first at 45 seconds, then 2 minutes after each pickup. Pick one in the panel, or leave it on Random.",
+    "An area to hold or capture in King of the Hill, Domination and Territories. Set its size in the panel. Territories runs through the zones from left to right, so it needs 3 or more.",
+    "A team's flag base for Capture the Flag. Set its team in the panel. Each team needs one flag for every team count the map offers.",
 ];
 /// The instructions page: a heading and a paragraph per section, in two
 /// columns.
@@ -52,7 +56,7 @@ const HELP_PAGE: [(&str, &str); 8] = [
     ),
     (
         "Tools (left)",
-        "Pick a tool with its button or its number key. Select (1) picks and moves things, Draw Shape (2) adds terrain, and 3 to 0 put down spawns, pickups and gadgets. They drop onto the floor below the cursor.",
+        "Pick a tool with its button or its number key. Select (1) picks and moves things, Draw Shape (2) adds terrain, and 3 to 0 put down spawns, pickups and gadgets. Zone and Flag set up the objective match types. Everything drops onto the floor below the cursor.",
     ),
     (
         "Shapes",
@@ -115,7 +119,7 @@ const MATERIALS: [&str; 12] = [
     "void",
 ];
 /// Things the place tools put down: name, list, and starting fields.
-const PLACE: [(&str, Layer, &str); 8] = [
+const PLACE: [(&str, Layer, &str); 10] = [
     ("Spawn", Layer::Spawns, "{}"),
     (
         "Health",
@@ -148,6 +152,8 @@ const PLACE: [(&str, Layer, &str); 8] = [
         r#"{"type": "shield_station"}"#,
     ),
     ("Powerup", Layer::Objects, r#"{"type": "powerup_spot"}"#),
+    ("Zone", Layer::Zones, r#"{"w": 6, "h": 4}"#),
+    ("Flag", Layer::Flags, r#"{"team": 0}"#),
 ];
 /// How far below the cursor a placed thing looks for a floor to stand on.
 const FLOOR_REACH: f32 = 6.0;
@@ -605,7 +611,12 @@ impl Editor {
             &modes,
         ) {
             Ok(map) => {
-                self.problems.clear();
+                // Objective match types need their zones or flags.
+                self.problems = map
+                    .modes
+                    .iter()
+                    .filter_map(|id| self.data.mode(id)?.map_problem(&map))
+                    .collect();
                 self.preview = Some(Preview {
                     art: MapArt::new(&map),
                     map,
@@ -1105,8 +1116,12 @@ impl Editor {
     fn toolbar(&mut self, ui: &mut Ui, live: bool) {
         for (i, r) in self.toolbar_rects().into_iter().enumerate() {
             let tool = tool_at(i);
-            let key = (i + 1) % 10;
-            let label = format!("{} ({key})", tool_name(tool));
+            // Number keys reach the first ten tools.
+            let label = if i < 10 {
+                format!("{} ({})", tool_name(tool), (i + 1) % 10)
+            } else {
+                tool_name(tool).to_owned()
+            };
             let id = format!("ed_tool{i}");
             if ui.button(&id, &label, r, self.tool == tool, live) {
                 self.set_tool(tool);
@@ -1265,7 +1280,7 @@ impl Editor {
         }
         for layer in Layer::ALL.into_iter().rev() {
             for i in (0..self.doc.count(layer)).rev() {
-                if marker_rect(layer, self.doc.thing_pos(layer, i)).contains(world) {
+                if marker_rect(layer, self.doc.thing(layer, i)).contains(world) {
                     return Some(Sel::Thing(layer, i));
                 }
             }
@@ -1411,6 +1426,8 @@ impl Editor {
                     }))
                     .to_owned(),
                     Layer::Objects => object_kind(&t).map_or("?", object_name).to_owned(),
+                    Layer::Zones => "Zone".to_owned(),
+                    Layer::Flags => "Flag".to_owned(),
                 };
                 ui::text_left(&title, r.x + 12.0 * s, title_y, 16.0 * s, ACCENT);
                 for (n, prop) in thing_props(&t, layer).into_iter().enumerate() {
@@ -1539,8 +1556,35 @@ impl Editor {
         }
     }
 
-    /// Spawns, pickups and gadgets as plain markers, in world space.
+    /// Spawns, pickups, gadgets, zones and flags as plain markers, in world
+    /// space.
     fn draw_things(&self) {
+        for i in 0..self.doc.count(Layer::Zones) {
+            let (a, b) = zone_of(self.doc.thing(Layer::Zones, i)).rect();
+            let c = Color::new(0.85, 0.9, 1.0, 1.0);
+            draw_rectangle(a.x, a.y, b.x - a.x, b.y - a.y, with_alpha(c, 0.08));
+            draw_rectangle_lines(a.x, a.y, b.x - a.x, b.y - a.y, 0.06, with_alpha(c, 0.6));
+            draw_rectangle(a.x, b.y - 0.6, b.x - a.x, 0.6, with_alpha(c, 0.25));
+        }
+        for i in 0..self.doc.count(Layer::Flags) {
+            let p = self.doc.thing_pos(Layer::Flags, i);
+            let color = spawn_team(self.doc.thing(Layer::Flags, i))
+                .map_or(WHITE, |t| TEAM_COLORS[t as usize % TEAM_COLORS.len()]);
+            draw_line(
+                p.x,
+                p.y,
+                p.x,
+                p.y - 2.4,
+                0.08,
+                Color::new(0.85, 0.87, 0.9, 1.0),
+            );
+            draw_triangle(
+                vec2(p.x, p.y - 2.4),
+                vec2(p.x + 1.1, p.y - 2.0),
+                vec2(p.x, p.y - 1.6),
+                color,
+            );
+        }
         for i in 0..self.doc.count(Layer::Spawns) {
             let p = self.doc.thing_pos(Layer::Spawns, i);
             let color = spawn_team(self.doc.thing(Layer::Spawns, i))
@@ -1617,8 +1661,13 @@ impl Editor {
         let px = 1.0 / self.cam.ppt;
         match sel {
             Sel::Thing(layer, i) => {
-                let r = marker_rect(layer, self.doc.thing_pos(layer, i));
+                let thing = self.doc.thing(layer, i);
+                let r = marker_rect(layer, thing);
                 draw_rectangle_lines(r.x, r.y, r.w, r.h, 3.0 * px, ACCENT);
+                if layer == Layer::Zones {
+                    let (a, b) = zone_of(thing).rect();
+                    draw_rectangle_lines(a.x, a.y, b.x - a.x, b.y - a.y, 2.0 * px, ACCENT);
+                }
             }
             Sel::Shape(i) | Sel::Point(i, _) => {
                 let pts = self.doc.shape_points(i);
@@ -1671,11 +1720,18 @@ impl Editor {
                         ),
                     },
                     Layer::Objects => object_kind(t).map_or("?", object_name).to_owned(),
+                    Layer::Zones => "Zone".into(),
+                    Layer::Flags => match spawn_team(t) {
+                        Some(n) => format!("{} Flag", crate::sim::TEAM_NAMES[n as usize % 4]),
+                        None => "Flag".into(),
+                    },
                 };
                 let lift = match layer {
                     Layer::Spawns => 2.7,
                     Layer::Pickups => 1.1,
                     Layer::Objects => 1.4,
+                    Layer::Zones => zone_of(t).h + 0.3,
+                    Layer::Flags => 2.8,
                 };
                 let s = self
                     .cam
@@ -1772,6 +1828,11 @@ enum Prop {
     Height,
     Shield,
     Powerup,
+    /// A zone's size.
+    Width,
+    Depth,
+    /// A flag's team (no "Any": a flag belongs to someone).
+    FlagTeam,
 }
 
 fn thing_props(t: &Value, layer: Layer) -> Vec<Prop> {
@@ -1785,6 +1846,8 @@ fn thing_props(t: &Value, layer: Layer) -> Vec<Prop> {
             Some(ObjectKind::PowerupSpot) => vec![Prop::Powerup],
             _ => vec![],
         },
+        Layer::Zones => vec![Prop::Width, Prop::Depth],
+        Layer::Flags => vec![Prop::FlagTeam],
     }
 }
 
@@ -1796,6 +1859,9 @@ impl Prop {
             Prop::Height => "Height",
             Prop::Shield => "Shield",
             Prop::Powerup => "Powerup",
+            Prop::Width => "Width",
+            Prop::Depth => "Height",
+            Prop::FlagTeam => "Team",
         }
     }
 
@@ -1824,6 +1890,11 @@ impl Prop {
                 .and_then(Value::as_str)
                 .and_then(|id| data.powerups.powerups.iter().find(|p| p.id == id))
                 .map_or("Random".into(), |p| p.name.clone()),
+            Prop::Width => format!("{} tiles", zone_of(t).w),
+            Prop::Depth => format!("{} tiles", zone_of(t).h),
+            Prop::FlagTeam => spawn_team(t).map_or("None".into(), |n| {
+                crate::sim::TEAM_NAMES[n as usize % 4].to_owned()
+            }),
         }
     }
 
@@ -1870,16 +1941,46 @@ impl Prop {
                 let next = step(now, d, ids.len() + 1);
                 ("powerup", (next > 0).then(|| json!(ids[next - 1])))
             }
+            Prop::Width => ("w", Some(json!((zone_of(t).w + d as f32).clamp(2.0, 24.0)))),
+            Prop::Depth => ("h", Some(json!((zone_of(t).h + d as f32).clamp(2.0, 12.0)))),
+            Prop::FlagTeam => {
+                let now = spawn_team(t).map_or(0, |n| n as usize);
+                ("team", Some(json!(step(now, d, 4))))
+            }
         }
     }
 }
 
-/// The clickable area of a marker whose feet are at `p`.
-fn marker_rect(layer: Layer, p: Vec2) -> Rect {
+/// The clickable area of a placed thing. A zone is grabbed by the strip
+/// along its floor, so it never hides what stands inside it.
+fn marker_rect(layer: Layer, thing: &Value) -> Rect {
+    let at = |k| thing.get(k).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+    let p = vec2(at("x"), at("y"));
     match layer {
         Layer::Spawns => Rect::new(p.x - 0.45, p.y - 2.55, 0.9, 2.55),
         Layer::Pickups => Rect::new(p.x - 0.45, p.y - 0.85, 0.9, 0.85),
         Layer::Objects => Rect::new(p.x - 0.85, p.y - 1.1, 1.7, 1.4),
+        Layer::Zones => {
+            let w = zone_of(thing).w;
+            Rect::new(p.x - w / 2.0, p.y - 0.6, w, 0.6)
+        }
+        Layer::Flags => Rect::new(p.x - 0.3, p.y - 2.5, 1.4, 2.5),
+    }
+}
+
+/// A zone entry of the map file, with the game's defaults filled in.
+fn zone_of(thing: &Value) -> ZoneDef {
+    let at = |k, or: f32| {
+        thing
+            .get(k)
+            .and_then(Value::as_f64)
+            .map_or(or, |v| v as f32)
+    };
+    ZoneDef {
+        x: at("x", 0.0),
+        y: at("y", 0.0),
+        w: at("w", ZONE_W),
+        h: at("h", ZONE_H),
     }
 }
 

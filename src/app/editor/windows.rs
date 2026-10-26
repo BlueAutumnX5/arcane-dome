@@ -777,12 +777,16 @@ fn type_into(text: &mut String, max: usize) {
     }
 }
 
+/// Match type toggles per row in Map Settings (long names need the room).
+const MODES_PER_ROW: usize = 2;
+
 impl Editor {
     /// The Map Settings window. Returns Some(true) for Apply, Some(false)
     /// for Cancel.
     fn settings_window(&self, ui: &mut Ui, ms: &mut MapSettings, input: bool) -> Option<bool> {
         let s = ui::scale();
-        let r = Self::window(560.0 * s, 336.0 * s, "Map Settings");
+        let rows = 5 + ms.modes.len().div_ceil(MODES_PER_ROW);
+        let r = Self::window(560.0 * s, (132.0 + rows as f32 * 34.0) * s, "Map Settings");
         let x = r.x + 20.0 * s;
         let w = r.w - 40.0 * s;
         if input {
@@ -864,30 +868,48 @@ impl Editor {
             }
         }
         label(5.0, "Match Types");
-        let mode_w = (w - 130.0 * s - 10.0 * s) / ms.modes.len().max(1) as f32;
+        let per_row = MODES_PER_ROW;
+        let mode_w = (w - 130.0 * s - 10.0 * s) / per_row as f32;
         let on = ms.modes.iter().filter(|m| m.2).count();
-        for (i, (_, name, offered)) in ms.modes.iter_mut().enumerate() {
+        for (i, (id_, name, offered)) in ms.modes.iter_mut().enumerate() {
+            let line = row(5.0 + (i / per_row) as f32);
             let b = Rect::new(
-                x + 130.0 * s + i as f32 * (mode_w + 10.0 * s),
-                row(5.0).y,
+                x + 130.0 * s + (i % per_row) as f32 * (mode_w + 10.0 * s),
+                line.y,
                 mode_w - 10.0 * s,
-                row(5.0).h,
+                line.h,
             );
             let id = format!("ed_set_m{i}");
             if ui.toggle(&id, name, b, *offered, input) && (!*offered || on > 1) {
                 *offered = !*offered;
             }
             if input {
-                ui.hint(&id, b, "Offer this match type for the map in Quick Match.");
+                let needs = match self.data.mode(id_).map(|m| m.rules) {
+                    Some(Rules::KingOfTheHill) => " It needs a zone (Zone tool).",
+                    Some(Rules::Domination) => " It needs 2 zones or more (Zone tool).",
+                    Some(Rules::Territories) => {
+                        " It needs 3 zones or more (Zone tool) and 2 Teams on."
+                    }
+                    Some(Rules::CaptureTheFlag) => {
+                        " It needs a flag for every team in every team count (Flag tool)."
+                    }
+                    _ => "",
+                };
+                ui.hint(
+                    &id,
+                    b,
+                    &format!("Offer this match type for the map in Quick Match.{needs}"),
+                );
             }
         }
+        let rows_used = 5.0 + ms.modes.len().div_ceil(per_row) as f32;
         ui::text_left(
             &format!(
                 "File: {}.json (the name can change, the file keeps its id)",
                 self.doc.id()
             ),
             x,
-            r.y + 266.0 * s,
+            r.y + (46.0 + rows_used * 34.0 + 12.0) * s,
             14.0 * s,
             Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.8),
         );

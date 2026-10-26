@@ -8,19 +8,31 @@ use serde_json::{Map, Value, json};
 /// The kinds of placed things, each a list in the map file.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Layer {
+    Zones,
     Spawns,
     Pickups,
     Objects,
+    Flags,
 }
 
 impl Layer {
-    pub const ALL: [Layer; 3] = [Layer::Spawns, Layer::Pickups, Layer::Objects];
+    /// Drawing order; clicks try them the other way round, so zones (big)
+    /// are picked last.
+    pub const ALL: [Layer; 5] = [
+        Layer::Zones,
+        Layer::Spawns,
+        Layer::Pickups,
+        Layer::Objects,
+        Layer::Flags,
+    ];
 
     fn key(self) -> &'static str {
         match self {
+            Layer::Zones => "zones",
             Layer::Spawns => "spawns",
             Layer::Pickups => "pickups",
             Layer::Objects => "objects",
+            Layer::Flags => "flags",
         }
     }
 }
@@ -439,6 +451,28 @@ mod tests {
         )
         .unwrap_or_else(|e| panic!("{e:?}"));
         assert_eq!(map.spawns.len(), 8);
+    }
+
+    #[test]
+    fn zones_and_flags_placed_in_the_editor_load_in_the_game() {
+        let mut doc = Doc::blank("objective_test", "Objectives", 40.0, 20.0);
+        for x in [8.0, 20.0, 32.0] {
+            doc.add_thing(Layer::Zones, vec2(x, 16.0), json!({"w": 6, "h": 4}));
+        }
+        doc.add_thing(Layer::Flags, vec2(3.0, 16.0), json!({"team": 0}));
+        doc.add_thing(Layer::Flags, vec2(37.0, 16.0), json!({"team": 1}));
+        doc.set("modes", json!(["territories", "capture_the_flag"]));
+        let map = crate::data::parse_map(
+            "objective_test.json",
+            "objective_test",
+            &doc.to_json(),
+            &[],
+            &["territories", "capture_the_flag"],
+        )
+        .unwrap_or_else(|e| panic!("{e:?}"));
+        assert_eq!(map.zones.len(), 3);
+        assert_eq!(map.zones[1].feet(), vec2(20.0, 16.0));
+        assert_eq!(map.flags[1].team, Some(1));
     }
 
     #[test]
