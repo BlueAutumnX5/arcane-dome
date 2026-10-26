@@ -2,6 +2,15 @@
 
 ## Next version (in progress)
 
+- New match type: **King of the Hill**. Score a point for every second your side alone stands in the hill (the zone in the spotlight); nobody scores while it is contested. The hill moves to another zone every minute, or as often as you pick in Quick Match (or never). Free-for-all or teams
+- New match type: **Domination** (teams). Stand in a zone to capture it: 6 seconds alone, faster with teammates, and an enemy inside stops it. Every zone your team holds earns points; first to 200
+- New match type: **Territories** (2 teams). The zones form a line from one base to the other; you can only capture the zone next to one you hold. Hold every zone to score, and the line resets; first to 3
+- New match type: **Capture the Flag** (2 to 4 teams). Grab an enemy flag and bring it to your own while yours is home. A dropped flag goes home after 15 seconds, or at once when its team touches it; first to 3 captures
+- Zones show who holds them and how far a capture has got; flags fly from their bases and their carriers' backs; the top of the screen shows the hill's holder, every zone's owner, or where your flag is; arrows at the screen edge point to the hill, your flag, or home when you carry one
+- Bots play every objective: they hold the hill, capture and guard zones, push the line, take flags home, chase flag carriers and return dropped flags
+- All three maps have zones and flag bases for every team count they offer
+- Map editor: Zone and Flag tools (with their size and team in the panel); the top bar says when a match type the map offers is missing its zones or flags; Map Settings lists match types two to a row
+- Match types are offered in the order they are listed, Deathmatch first; team-only ones skip the free-for-all choice
 - New match type: **Juggernaut**. One random fighter is the Juggernaut: red, in a beam of light, with 500 health and 200 shield; everyone else is on the blue side, hunting them. Kill the Juggernaut to become it. If the Juggernaut dies to the map or their own blast, someone at random takes over. An arrow at the screen edge points to the Juggernaut when they are off screen
   - Quick Match lets you choose what scores: kills as the Juggernaut, killing the Juggernaut, or both (one always stays on), plus a bonus that makes kills as the Juggernaut worth 2. The score limit is yours to set (10 to start)
 - New match type: **Gun Game**, free-for-all or in teams (Team Gun Game, where a kill by anyone on the team moves the whole team up). Every kill moves you to the next weapon, from easy to awkward: Assault Rifle, Leech SMG, Laser, Shotgun, Pistol, Flamethrower, Marksman Rifle, Rocket Launcher, Sniper Rifle, Grenade Launcher, then the Shock Baton. A kill with the Baton wins
