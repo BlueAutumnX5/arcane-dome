@@ -176,6 +176,8 @@ enum Screen {
     Changes,
     Game(Box<Session>),
     Editor(Box<Editor>),
+    /// A test match on the map being edited; the editor waits beside it.
+    TestPlay(Box<Session>, Box<Editor>),
     Error(String),
 }
 
@@ -248,6 +250,13 @@ fn grab_screen() -> Texture2D {
     tex.grab_screen();
     resync_texture_bindings();
     tex
+}
+
+/// A match started from the editor: leaving it goes back to the editor.
+fn test_match(mut s: Session, blood: bool) -> Session {
+    s.blood = blood;
+    s.exit_label = "Back to Editor";
+    s
 }
 
 /// Team settings offered for this map in this mode: 0 (teams off, every
@@ -485,7 +494,12 @@ impl App {
 
     /// Run and draw the current screen; returns the screen to switch to.
     fn screen_frame(&mut self, dt: f32) -> Option<Screen> {
-        match &mut self.screen {
+        let blood = self.settings.blood;
+        // Test-play switches swap the editor between screens; they happen
+        // after the match below, once nothing borrows the screen.
+        let mut start_test = None;
+        let mut back_to_editor = false;
+        let next = match &mut self.screen {
             Screen::Error(msg) => {
                 let msg = msg.clone();
                 self.error_screen(&msg);
@@ -514,8 +528,46 @@ impl App {
             Screen::Editor(ed) => match ed.frame(dt, &mut self.ui) {
                 editor::Outcome::Continue => None,
                 editor::Outcome::Menu => Some(Screen::Menu),
+                editor::Outcome::TestPlay(cfg) => {
+                    match ed.test_session(cfg) {
+                        Ok(s) => start_test = Some(test_match(s, blood)),
+                        Err(e) => ed.say(e),
+                    }
+                    None
+                }
             },
-        }
+            Screen::TestPlay(session, ed) => match session.frame(dt, &mut self.ui) {
+                session::Outcome::Continue => None,
+                session::Outcome::Rematch => {
+                    let cfg = session.config().clone();
+                    let cfg = MatchConfig {
+                        seed: cfg.seed.wrapping_add(1),
+                        ..cfg
+                    };
+                    match ed.test_session(cfg) {
+                        Ok(s) => **session = test_match(s, blood),
+                        Err(e) => {
+                            ed.say(e);
+                            back_to_editor = true;
+                        }
+                    }
+                    None
+                }
+                session::Outcome::Menu => {
+                    back_to_editor = true;
+                    None
+                }
+            },
+        };
+        // Set directly, not returned: these are not menu page changes, so
+        // they must not slide.
+        let screen = std::mem::replace(&mut self.screen, Screen::Menu);
+        self.screen = match (screen, start_test, back_to_editor) {
+            (Screen::Editor(ed), Some(s), _) => Screen::TestPlay(Box::new(s), ed),
+            (Screen::TestPlay(_, ed), _, true) => Screen::Editor(ed),
+            (screen, _, _) => screen,
+        };
+        next
     }
 
     fn next_seed(&mut self) -> u64 {
@@ -1517,7 +1569,7 @@ impl App {
                     self.setup.map = i;
                 }
                 self.screen = self.open_editor();
-                // ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw|validate|broken.
+                // ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw|validate|broken|test|testplay.
                 if let (Screen::Editor(ed), Ok(what)) =
                     (&mut self.screen, std::env::var("ARCANE_SHOT_EDITOR"))
                 {

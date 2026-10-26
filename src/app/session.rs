@@ -41,6 +41,9 @@ pub struct Session {
     over_for: f32,
     /// Blood effects on screen (a player setting).
     pub blood: bool,
+    /// The button that leaves the match ("Main Menu", or "Back to Editor"
+    /// when test-playing a map).
+    pub exit_label: &'static str,
 }
 
 const SLOT_KEYS: [KeyCode; 10] = [
@@ -75,6 +78,7 @@ impl Session {
             edges: Edges::default(),
             over_for: 0.0,
             blood: true,
+            exit_label: "Main Menu",
         })
     }
 
@@ -255,7 +259,7 @@ impl Session {
         }
         if ui.tab(
             "pause_menu",
-            "Main Menu",
+            self.exit_label,
             Rect::new(x, y0 + 108.0 * s, bw, bh),
             Side::Left,
             false,
@@ -284,7 +288,7 @@ impl Session {
         let y = sh - 80.0 * s;
         if ui.tab(
             "end_menu",
-            "Main Menu",
+            self.exit_label,
             Rect::new(50.0 * s, y, bw, bh),
             Side::Left,
             false,

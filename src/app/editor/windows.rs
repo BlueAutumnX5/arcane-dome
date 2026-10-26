@@ -69,6 +69,19 @@ impl Editor {
                     None => Some(Modal::Unsaved(to)),
                 }
             }
+            Modal::TestPlay(mut setup) => match self.test_window(ui, &mut setup, input) {
+                Some(true) => {
+                    self.start_test = Some(self.test_config(&setup));
+                    None
+                }
+                Some(false) => None,
+                None if esc => None,
+                None if enter => {
+                    self.start_test = Some(self.test_config(&setup));
+                    None
+                }
+                None => Some(Modal::TestPlay(setup)),
+            },
         };
         // A choice above may have opened the next window (New Map after
         // Unsaved); that one wins.
@@ -364,5 +377,131 @@ impl Editor {
             }
         }
         pick
+    }
+
+    /// The modes this map lists, as indices into the game's modes.
+    fn test_modes(&self) -> Vec<usize> {
+        let Some(p) = &self.preview else {
+            return Vec::new();
+        };
+        (0..self.data.modes.len())
+            .filter(|&m| p.map.modes.contains(&self.data.modes[m].id))
+            .collect()
+    }
+
+    /// Team counts the map and the chosen mode allow (0 = no teams).
+    fn test_team_counts(&self, setup: &TestSetup) -> Vec<usize> {
+        let modes = self.test_modes();
+        match (&self.preview, modes.get(setup.mode)) {
+            (Some(p), Some(&m)) => super::super::allowed_team_counts(&p.map, &self.data.modes[m]),
+            _ => vec![0],
+        }
+    }
+
+    /// The match the Test Play window describes.
+    pub(super) fn test_config(&self, setup: &TestSetup) -> MatchConfig {
+        let modes = self.test_modes();
+        let mode = modes.get(setup.mode).map_or_else(
+            || "deathmatch".to_owned(),
+            |&m| self.data.modes[m].id.clone(),
+        );
+        let teams = self
+            .test_team_counts(setup)
+            .get(setup.teams)
+            .copied()
+            .unwrap_or(0);
+        let skill = Difficulty::ALL[setup.skill];
+        // Teams: everyone gets `bots`, the player's team one fewer (the
+        // player fills that seat).
+        let mut team_bots = [setup.bots; crate::sim::MAX_TEAMS];
+        team_bots[0] = setup.bots.saturating_sub(1);
+        MatchConfig {
+            mode_id: mode,
+            teams: teams as u8,
+            bots: setup.bots,
+            difficulty: skill,
+            team_bots,
+            team_difficulty: [skill; crate::sim::MAX_TEAMS],
+            seed: (self.time * 1000.0) as u64 + 7,
+            ..Default::default()
+        }
+    }
+
+    /// The Test Play window. Returns Some(true) for Start, Some(false) for
+    /// Cancel.
+    fn test_window(&self, ui: &mut Ui, setup: &mut TestSetup, input: bool) -> Option<bool> {
+        let s = ui::scale();
+        let r = Self::window(460.0 * s, 250.0 * s, "Test Play");
+        let x = r.x + 20.0 * s;
+        let w = r.w - 40.0 * s;
+        let row = |n: f32| Rect::new(x, r.y + (46.0 + n * 34.0) * s, w, 30.0 * s);
+        let modes = self.test_modes();
+        if !modes.is_empty() {
+            let name = self.data.modes[modes[setup.mode.min(modes.len() - 1)]].display_name();
+            let d = ui.stepper("ed_test_mode", "Match Type", &name, row(0.0), false, input);
+            if d != 0 {
+                setup.mode = step(setup.mode, d, modes.len());
+                setup.teams = 0;
+            }
+        }
+        let counts = self.test_team_counts(setup);
+        setup.teams = setup.teams.min(counts.len() - 1);
+        let teams = counts[setup.teams];
+        let label = if teams >= 2 {
+            teams.to_string()
+        } else {
+            "Off".into()
+        };
+        let d = ui.stepper(
+            "ed_test_teams",
+            "Teams",
+            &label,
+            row(1.0),
+            false,
+            counts.len() > 1,
+        );
+        setup.teams = step(setup.teams, d, counts.len());
+        let (what, most) = if teams >= 2 {
+            ("Bots per Team", 4)
+        } else {
+            ("Bots", 7)
+        };
+        setup.bots = setup.bots.clamp(1, most);
+        let d = ui.stepper(
+            "ed_test_bots",
+            what,
+            &setup.bots.to_string(),
+            row(2.0),
+            false,
+            input,
+        );
+        setup.bots = (setup.bots as i32 + d).clamp(1, most as i32) as u32;
+        let d = ui.stepper(
+            "ed_test_skill",
+            "Bot Skill",
+            Difficulty::ALL[setup.skill].label(),
+            row(3.0),
+            false,
+            input,
+        );
+        setup.skill = step(setup.skill, d, Difficulty::ALL.len());
+        let bw = (w - 10.0 * s) / 2.0;
+        let by = r.y + r.h - 44.0 * s;
+        let start = Rect::new(x, by, bw, 30.0 * s);
+        let cancel = Rect::new(x + bw + 10.0 * s, by, bw, 30.0 * s);
+        if ui.button("ed_test_start", "Start (Enter)", start, false, input) {
+            return Some(true);
+        }
+        if input {
+            ui.hint(
+                "ed_test_start",
+                start,
+                "Play the map as it is now. Pause (Esc) and pick Back to Editor to return; nothing is lost.",
+            );
+        }
+        if ui.button("ed_test_cancel", "Cancel (Esc)", cancel, false, input) {
+            return Some(false);
+        }
+        None
     }
 }

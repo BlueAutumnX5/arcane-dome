@@ -5,9 +5,11 @@ mod doc;
 mod report;
 mod windows;
 
+use super::session::Session;
 use super::ui::{self, ACCENT, Ui};
 use crate::data::{GameData, MapDef, ObjectKind, PickupKind, parse_map};
 use crate::render::{GameCamera, MapArt, TEAM_COLORS, draw_sky, use_camera, use_screen};
+use crate::sim::{Difficulty, MatchConfig};
 use doc::{Doc, Layer};
 use macroquad::prelude::*;
 use report::Report;
@@ -94,6 +96,8 @@ const NOTE_S: f32 = 3.0;
 pub enum Outcome {
     Continue,
     Menu,
+    /// Start a test match on the map being edited (see `test_session`).
+    TestPlay(MatchConfig),
 }
 
 /// Shape kinds, and the material a new shape of that kind starts with.
@@ -169,6 +173,7 @@ enum Action {
     Grid,
     Fit,
     Validate,
+    TestPlay,
     Help,
     Back,
 }
@@ -179,7 +184,7 @@ const ACTIONS: [&[Action]; 6] = [
     &[Action::Undo, Action::Redo, Action::Delete],
     &[Action::Finish, Action::PopCorner],
     &[Action::Snap, Action::Grid, Action::Fit],
-    &[Action::Validate],
+    &[Action::Validate, Action::TestPlay],
     &[Action::Help, Action::Back],
 ];
 
@@ -198,6 +203,7 @@ impl Action {
             Action::Grid => "Show Grid (G)",
             Action::Fit => "Fit View (F)",
             Action::Validate => "Validate (V)",
+            Action::TestPlay => "Test Play (T)",
             Action::Help => "Instructions (F1)",
             Action::Back => "Back to Menu (Esc)",
         }
@@ -224,6 +230,9 @@ impl Action {
             Action::Fit => "Zoom and pan so the whole map fits on screen.",
             Action::Validate => {
                 "Check the map: can bots reach every spawn, pickup and gadget, and is any spawn in lava or water? Click a problem to fly to it."
+            }
+            Action::TestPlay => {
+                "Play this map against bots right now, even before saving. Leave the match to come back here."
             }
             Action::Help => "How the editor works.",
             Action::Back => {
@@ -253,6 +262,7 @@ impl Action {
             Action::Grid => !ctrl && key(KeyCode::G),
             Action::Fit => !ctrl && key(KeyCode::F),
             Action::Validate => !ctrl && key(KeyCode::V),
+            Action::TestPlay => !ctrl && key(KeyCode::T),
             Action::Help => key(KeyCode::F1),
             Action::Back => false,
         }
@@ -266,6 +276,30 @@ enum Modal {
     Open(Vec<MapEntry>),
     /// Leaving would lose edits: save, discard or stay.
     Unsaved(Leave),
+    TestPlay(TestSetup),
+}
+
+/// The Test Play window's choices.
+struct TestSetup {
+    /// Index into the modes this map lists.
+    mode: usize,
+    /// Index into the team counts this map and mode allow (0 = no teams).
+    teams: usize,
+    /// Bots in free-for-all, or per team.
+    bots: u32,
+    /// Index into `Difficulty::ALL`.
+    skill: usize,
+}
+
+impl Default for TestSetup {
+    fn default() -> Self {
+        Self {
+            mode: 0,
+            teams: 0,
+            bots: 3,
+            skill: 1,
+        }
+    }
 }
 
 /// Where the editor goes once unsaved edits are dealt with.
@@ -353,6 +387,8 @@ pub struct Editor {
     window: Vec2,
     /// The last Validate's results, shown in a panel until closed.
     report: Option<Report>,
+    /// A test match to start at the end of the frame.
+    start_test: Option<MatchConfig>,
     /// A ring marking the problem the camera flew to, and its age.
     flash: Option<(Vec2, f32)>,
 }
@@ -385,6 +421,7 @@ impl Editor {
             window: vec2(screen_width(), screen_height()),
             report: None,
             flash: None,
+            start_test: None,
         };
         ed.rebuild();
         ed.fit();
@@ -410,7 +447,8 @@ impl Editor {
     }
 
     /// Screenshot hook: open a window (help, new, open or unsaved), pick a
-    /// tool (draw), or run Validate (validate; broken adds a problem first).
+    /// tool (draw), run Validate (validate; broken adds a problem first), or
+    /// test-play (test opens the window, testplay starts a match).
     pub fn debug_show(&mut self, what: &str) {
         match what {
             "help" => self.modal = Some(Modal::Help),
@@ -419,6 +457,8 @@ impl Editor {
             "unsaved" => self.modal = Some(Modal::Unsaved(Leave::Menu)),
             "draw" => self.set_tool(Tool::Draw),
             "validate" => self.validate(),
+            "test" => self.modal = Some(Modal::TestPlay(TestSetup::default())),
+            "testplay" => self.start_test = Some(self.test_config(&TestSetup::default())),
             // A ledge high in the sky with a health pack bots can't reach.
             "broken" => {
                 self.doc.checkpoint();
@@ -477,6 +517,28 @@ impl Editor {
             Err(e) => format!("Could not save {}: {e}", path.display()),
         };
         self.note = Some((msg, 0.0));
+    }
+
+    /// A match on the map as it is now (even unsaved): the game data gets a
+    /// copy of it in place of any version with the same id.
+    pub fn test_session(&self, cfg: MatchConfig) -> Result<Session, String> {
+        let preview = self
+            .preview
+            .as_ref()
+            .ok_or("The map has problems: fix them to test-play")?;
+        let mut data = (*self.data).clone();
+        data.maps.retain(|m| m.id != preview.map.id);
+        data.maps.push(preview.map.clone());
+        let cfg = MatchConfig {
+            map_id: preview.map.id.clone(),
+            ..cfg
+        };
+        Session::new(Arc::new(data), cfg)
+    }
+
+    /// Show a short message under the top bar.
+    pub fn say(&mut self, msg: impl Into<String>) {
+        self.note = Some((msg.into(), 0.0));
     }
 
     /// Show the whole map, clear of the top bar and the toolbar.
@@ -573,11 +635,15 @@ impl Editor {
         if std::mem::take(&mut self.exit) {
             return Outcome::Menu;
         }
+        if let Some(cfg) = self.start_test.take() {
+            return Outcome::TestPlay(cfg);
+        }
         Outcome::Continue
     }
 
     fn enabled(&self, a: Action) -> bool {
         match a {
+            Action::TestPlay => self.preview.is_some() && self.problems.is_empty(),
             Action::Undo => self.doc.can_undo(),
             Action::Redo => self.doc.can_redo(),
             Action::Delete => self.tool == Tool::Select && self.sel.is_some(),
@@ -622,6 +688,7 @@ impl Editor {
             Action::Grid => self.grid = !self.grid,
             Action::Fit => self.fit(),
             Action::Validate => self.validate(),
+            Action::TestPlay => self.modal = Some(Modal::TestPlay(TestSetup::default())),
             Action::Help => self.modal = Some(Modal::Help),
             Action::Back => self.leave(Leave::Menu),
         }
