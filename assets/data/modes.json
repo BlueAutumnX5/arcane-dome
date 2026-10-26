@@ -6,5 +6,18 @@
   "elimination": {
     "teams": 4, "respawn": false, "rounds": 5, "time_limit_s": 180, "lives": 3, "team_lives": 15,
     "description": "No respawns. The last one standing takes the round (or the last team, with teams on)."
+  },
+  "gun_game": {
+    "teams": 4, "respawn": true, "time_limit_s": 600, "rules": "gun_game",
+    "ladder": [
+      "arc_rifle", "leechfang", "sunbeam", "scattergun", "peacekeeper", "cinder_spitter",
+      "needle_gun", "hellbarrel", "rail_spike", "thumper", "shock_baton"
+    ],
+    "description": "Each kill moves you to the next weapon; a kill with the last one wins. With teams on, the team moves up together."
+  },
+  "juggernaut": {
+    "teams": 1, "respawn": true, "score_limit": 10, "time_limit_s": 600, "rules": "juggernaut",
+    "juggernaut_health": 500, "juggernaut_shield": 200,
+    "description": "One fighter is the Juggernaut: red, 500 health, 200 shield. Whoever kills the Juggernaut becomes it."
   }
 }

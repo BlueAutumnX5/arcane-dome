@@ -2,7 +2,7 @@ use super::fighter::*;
 use super::physics::{line_of_sight, raycast};
 use super::world::Event;
 use super::{DT, Input, Phase, World};
-use crate::data::{Falloff, ProjectileKind, Special, WallHit, WeaponDef};
+use crate::data::{Falloff, ProjectileKind, Rules, Special, WallHit, WeaponDef};
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
 
@@ -71,6 +71,10 @@ impl World {
         }
 
         let def = &data.weapons[f.current];
+        if self.mode.rules == Rules::GunGame {
+            // One weapon at a time and no ammo pickups: never run dry.
+            f.inventory[f.current].reserve = def.reserve_ammo;
+        }
         if f.reload_timer > 0.0 {
             f.reload_timer -= DT;
             if f.reload_timer <= 0.0 {
@@ -484,7 +488,7 @@ impl World {
                     Special::Lifesteal { ratio } => {
                         let att = &mut self.fighters[a];
                         if att.alive {
-                            att.health = (att.health + amount * ratio).min(MAX_HEALTH);
+                            att.health = (att.health + amount * ratio).min(att.max_health);
                         }
                     }
                     Special::Burn { dps, duration_s } => {
@@ -530,8 +534,12 @@ impl World {
         v.died_at = time;
         v.burn = None;
         v.vel = Vec2::ZERO;
+        let rules = self.mode.rules;
         let credited = match attacker {
             Some(a) if a != victim => Some(a),
+            // A Juggernaut lost to the map or their own blast goes to
+            // someone at random, not to whoever last hit them.
+            _ if rules == Rules::Juggernaut => None,
             _ => v
                 .last_attacker
                 .filter(|(_, t)| time - t < ASSIST_WINDOW)
@@ -540,24 +548,32 @@ impl World {
         .filter(|&a| !self.allies(a, victim));
         self.spend_life(victim);
 
-        let playing = self.phase == Phase::Playing;
-        if let Some(k) = credited {
-            self.fighters[k].kills += 1;
-            if playing {
-                let side = self.side_of(k);
-                self.scores[side] += 1;
-            }
-        } else if playing && self.mode.respawn && !self.mode.is_team() {
-            // Free-for-all suicide penalty.
-            let side = self.side_of(victim);
-            self.scores[side] -= 1;
-        }
         self.events.push(Event::Kill {
             victim,
             killer: credited,
             weapon,
             headshot,
         });
+        let playing = self.phase == Phase::Playing;
+        if let Some(k) = credited {
+            self.fighters[k].kills += 1;
+        }
+        match rules {
+            Rules::Juggernaut => self.juggernaut_kill(victim, credited, playing),
+            Rules::GunGame => self.gun_game_kill(victim, credited, weapon, playing),
+            Rules::Standard => {
+                if let Some(k) = credited {
+                    if playing {
+                        let side = self.side_of(k);
+                        self.scores[side] += 1;
+                    }
+                } else if playing && self.mode.respawn && !self.mode.is_team() {
+                    // Free-for-all suicide penalty.
+                    let side = self.side_of(victim);
+                    self.scores[side] -= 1;
+                }
+            }
+        }
     }
 }
 

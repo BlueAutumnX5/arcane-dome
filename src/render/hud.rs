@@ -1,7 +1,7 @@
 use super::{Effects, GameCamera, RED, TEAM_COLORS, category_color, fighter_color};
 use crate::data::ProjectileKind;
 use crate::i18n::{t, tf};
-use crate::sim::{GO_SHOWN_S, MAX_HEALTH, MAX_SHIELD, Phase, World};
+use crate::sim::{GO_SHOWN_S, Phase, World};
 use macroquad::prelude::*;
 
 fn ui_scale() -> f32 {
@@ -234,8 +234,8 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     if blood && !f.alive && world.phase == Phase::Playing {
         let life = f.deaths.saturating_sub(1);
         draw_splatter(f.id, life, 1.0, Some(world.time - f.died_at));
-    } else if blood && f.alive && f.health < MAX_HEALTH {
-        let hurt = ((MAX_HEALTH - f.health) / (MAX_HEALTH - 1.0)).clamp(0.0, 1.0);
+    } else if blood && f.alive && f.health < f.max_health {
+        let hurt = ((f.max_health - f.health) / (f.max_health - 1.0)).clamp(0.0, 1.0);
         draw_splatter(f.id, f.deaths, HURT_BLOOD * hurt, None);
     }
 
@@ -261,7 +261,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     // Shield and powerups stack away from the screen edge.
     let stack = if touch { -1.0 } else { 1.0 };
     draw_rectangle(hx, hy, hw, hh, Color::new(0.0, 0.0, 0.0, 0.55));
-    let frac = (f.health / MAX_HEALTH).clamp(0.0, 1.0);
+    let frac = (f.health / f.max_health).clamp(0.0, 1.0);
     let hc = if frac > 0.5 {
         Color::new(0.35, 0.85, 0.45, 1.0)
     } else if frac > 0.25 {
@@ -289,7 +289,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         draw_rectangle(
             hx,
             sy,
-            hw * (f.shield / MAX_SHIELD).clamp(0.0, 1.0),
+            hw * (f.shield / f.max_shield).clamp(0.0, 1.0),
             6.0 * s,
             super::gadgets::SHIELD_COLOR,
         );
@@ -392,20 +392,25 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         text_right(t("RELOADING"), rx, sh - 84.0 * s, 16.0 * s, WHITE);
     }
 
-    // Weapon bar, bottom center.
-    let n = if touch {
-        0
+    // Weapon bar, bottom center: the weapons anyone can find, plus any other
+    // held. Gun Game hands out its own, so there it shows just those.
+    let slots: Vec<usize> = if touch {
+        Vec::new()
     } else {
-        world.data.weapons.len().min(10)
+        let gun_game = !world.ladder.is_empty();
+        (0..world.data.weapons.len())
+            .filter(|&w| f.owns(w) || (world.data.weapons[w].loot && !gun_game))
+            .take(10)
+            .collect()
     };
     let bw = 66.0 * s;
     let bh = 38.0 * s;
     let gap = 4.0 * s;
-    let total = n as f32 * (bw + gap) - gap;
+    let total = slots.len() as f32 * (bw + gap) - gap;
     let bx = (sw - total) / 2.0;
     let by = sh - bh - 14.0 * s;
-    for w in 0..n {
-        let x = bx + w as f32 * (bw + gap);
+    for (k, &w) in slots.iter().enumerate() {
+        let x = bx + k as f32 * (bw + gap);
         let d = &world.data.weapons[w];
         let owned = f.owns(w);
         let current = w == f.current;
@@ -420,10 +425,11 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             draw_rectangle_lines(x, by, bw, bh, 2.0 * s, cc);
         }
         let alpha = if owned { 1.0 } else { 0.28 };
-        let key = if w == 9 {
-            "0".to_owned()
-        } else {
-            (w + 1).to_string()
+        // Number keys pick by slot: 1 to 9, then 0.
+        let key = match w {
+            0..9 => (w + 1).to_string(),
+            9 => "0".to_owned(),
+            _ => String::new(),
         };
         text(
             &key,
@@ -530,6 +536,28 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         20.0 * s,
         Color::new(1.0, 1.0, 1.0, 0.9),
     );
+    // Juggernaut: who it is. Gun Game: the weapon your rung gives.
+    if let Some(j) = world.juggernaut {
+        let msg = if j == player {
+            t("You are the Juggernaut").to_owned()
+        } else {
+            tf(
+                "{} is the Juggernaut",
+                &[&t(&world.fighters[j].name).to_owned()],
+            )
+        };
+        let red = super::fighter_color(&world.fighters[j]);
+        text_center(&msg, cx, 84.0 * s, 18.0 * s, red);
+    } else if !world.ladder.is_empty() {
+        let side = world.side_of(player);
+        let rung = (world.scores[side].max(0) as usize).min(world.ladder.len() - 1);
+        let w = &world.data.weapons[world.rung_weapon(side)];
+        let msg = tf(
+            "Weapon {}/{}: {}",
+            &[&(rung + 1), &world.ladder.len(), &t(&w.name).to_owned()],
+        );
+        text_center(&msg, cx, 84.0 * s, 18.0 * s, category_color(w.category));
+    }
 
     // Kill feed, top right.
     for (i, l) in effects.feed.iter().enumerate() {

@@ -3,7 +3,7 @@ use super::gadgets::thruster_under;
 use super::physics::{self, hazard_dps, in_water, move_body, overlaps_solid, standing_on_hatch};
 use super::{DT, Input, ObjectState, Phase, Projectile, Rng};
 use crate::data::{
-    Category, GameData, MapDef, ModeDef, ObjectKind, PickupDef, PickupKind, ProjectileKind,
+    Category, GameData, MapDef, ModeDef, ObjectKind, PickupDef, PickupKind, ProjectileKind, Rules,
     SpawnDef,
 };
 use crate::i18n::tn;
@@ -88,6 +88,15 @@ pub struct MatchConfig {
     pub stations: bool,
     /// Magazines never empty.
     pub infinite_ammo: bool,
+    /// Juggernaut: what scores. At least one stays on (both off counts as
+    /// both on). The bonus makes a kill as the Juggernaut worth 2.
+    pub jugg_kills_score: bool,
+    pub killing_jugg_scores: bool,
+    pub jugg_bonus: bool,
+    /// Gun Game: a melee kill sends the victim back one weapon, and so does
+    /// dying with nobody to credit (your own fire, the map).
+    pub melee_demotes: bool,
+    pub suicide_demotes: bool,
     pub seed: u64,
     /// "3, 2, 1, GO" before the match and each elimination round, in
     /// seconds. Everyone can aim but not move or shoot until it ends.
@@ -116,6 +125,11 @@ impl Default for MatchConfig {
             powerups: true,
             stations: true,
             infinite_ammo: false,
+            jugg_kills_score: true,
+            killing_jugg_scores: true,
+            jugg_bonus: false,
+            melee_demotes: true,
+            suicide_demotes: true,
             seed: 1,
             countdown_s: 3.0,
             include_player: true,
@@ -197,6 +211,16 @@ pub enum Event {
         from: Vec2,
         to: Vec2,
     },
+    /// Juggernaut: this fighter just became it.
+    Juggernaut {
+        fighter: usize,
+    },
+    /// Gun Game: a side moved up (or was knocked down) to this rung.
+    Ladder {
+        side: usize,
+        rung: usize,
+        up: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -248,6 +272,10 @@ pub struct World {
     /// Seconds left before the fight starts. It keeps counting below zero
     /// for a moment (down to `-GO_SHOWN_S`) so the HUD can show "GO".
     pub countdown: f32,
+    /// Juggernaut: who it is.
+    pub juggernaut: Option<usize>,
+    /// Gun Game: the weapons in order. A side's rung is its score.
+    pub ladder: Vec<usize>,
 }
 
 /// Enough for the biggest match (4 teams of 7); beyond that names get a number.
@@ -295,6 +323,19 @@ impl World {
         }
         if let Some(t) = config.time_limit_s {
             mode.time_limit_s = if t > 0.0 { t.max(1.0) } else { f32::INFINITY };
+        }
+        let gun_game = mode.rules == Rules::GunGame;
+        let ladder: Vec<usize> = mode
+            .ladder
+            .iter()
+            .filter_map(|id| data.weapon_index(id))
+            .collect();
+        if gun_game {
+            if ladder.is_empty() {
+                return Err(format!("mode \"{}\" has no weapons in its ladder", mode.id));
+            }
+            // Win by finishing the ladder.
+            mode.score_limit = Some(ladder.len() as u32);
         }
         let style = match config.elim_style {
             _ if mode.respawn => ElimStyle::Rounds,
@@ -369,9 +410,11 @@ impl World {
             }
         }
 
+        // Gun Game hands out its own weapons, with ammo that never runs out.
         let pickups = map
             .pickups
             .iter()
+            .filter(|p| !gun_game || p.kind == PickupKind::Health)
             .map(|p| PickupState {
                 def: p.clone(),
                 pos: p.feet() - vec2(0.0, 0.4),
@@ -386,7 +429,8 @@ impl World {
             .iter()
             .filter(|o| match o.kind {
                 ObjectKind::PowerupSpot => config.powerups,
-                ObjectKind::WeaponStation | ObjectKind::ShieldStation => config.stations,
+                ObjectKind::WeaponStation => config.stations && !gun_game,
+                ObjectKind::ShieldStation => config.stations,
                 ObjectKind::Thruster => true,
             })
             .map(|o| ObjectState::new(o, &data))
@@ -424,6 +468,8 @@ impl World {
             lives_left: vec![lives_limit.unwrap_or(0); n_fighters],
             team_lives: vec![lives_limit.unwrap_or(0); sides],
             countdown: 0.0,
+            juggernaut: None,
+            ladder,
         };
         world.start_round();
         world.events.clear();
@@ -641,10 +687,10 @@ impl World {
         let f = &mut self.fighters[i];
         match p.def.kind {
             PickupKind::Health => {
-                if f.health >= MAX_HEALTH {
+                if f.health >= f.max_health {
                     return false;
                 }
-                f.health = (f.health + p.def.amount.unwrap_or(50.0)).min(MAX_HEALTH);
+                f.health = (f.health + p.def.amount.unwrap_or(50.0)).min(f.max_health);
                 f.burn = None;
                 true
             }
@@ -687,10 +733,11 @@ impl World {
         // Stand on the floor, not half sunk into it on a slope.
         let feet = spawn.feet();
         let rest = self.map.rest_height(feet, STAND_SIZE.x * 0.5);
+        let jugg = self.juggernaut == Some(i);
         let f = &mut self.fighters[i];
         f.feet = vec2(feet.x, rest.unwrap_or(feet.y));
         f.vel = Vec2::ZERO;
-        f.health = MAX_HEALTH;
+        f.health = f.max_health;
         f.alive = true;
         f.crouching = false;
         f.on_ground = false;
@@ -707,7 +754,8 @@ impl World {
         f.stun = 0.0;
         f.freeze = 0.0;
         f.last_attacker = None;
-        f.shield = 0.0;
+        // A Juggernaut comes with a full shield; anyone else starts without.
+        f.shield = if jugg { f.max_shield } else { 0.0 };
         f.buffs.clear();
         f.teleport_charges = 0;
         f.teleport_powerup = None;
@@ -777,11 +825,18 @@ impl World {
         best
     }
 
-    /// Starter weapons plus one random other weapon, which is equipped.
+    /// Starter weapons plus one random other weapon, which is equipped. In
+    /// Gun Game, just the weapon of the fighter's rung.
     fn give_loadout(&mut self, i: usize) {
+        if self.mode.rules == Rules::GunGame {
+            let f = &mut self.fighters[i];
+            f.inventory.fill(Slot::default());
+            self.arm_for_rung(i);
+            return;
+        }
         let data = Arc::clone(&self.data);
         let extras: Vec<usize> = (0..data.weapons.len())
-            .filter(|&w| data.weapons[w].category != Category::Starter)
+            .filter(|&w| data.weapons[w].is_loot())
             .collect();
         let extra = (!extras.is_empty()).then(|| extras[self.rng.below(extras.len())]);
         let f = &mut self.fighters[i];

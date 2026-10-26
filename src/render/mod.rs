@@ -12,7 +12,7 @@ pub use hud::{draw_crosshair, draw_hud, draw_scoreboard};
 
 use crate::data::{Category, MapDef, PickupKind, ProjectileKind};
 use crate::i18n::t;
-use crate::sim::{Fighter, HEAD_HEIGHT, MAX_HEALTH, MAX_SHIELD, MAX_TEAMS, World};
+use crate::sim::{Fighter, HEAD_HEIGHT, MAX_TEAMS, World};
 use macroquad::prelude::*;
 
 /// The team palette (Blue, Red, Green, Yellow); a team's colour is picked in
@@ -36,9 +36,11 @@ const FFA_COLORS: [Color; 8] = [
     Color::new(0.85, 0.85, 0.85, 1.0),
 ];
 
+/// Team colour, or in Juggernaut red for the Juggernaut and blue for the
+/// hunters; otherwise one colour each.
 pub fn fighter_color(f: &Fighter) -> Color {
-    match f.team {
-        Some(_) => TEAM_COLORS[f.tint.unwrap_or(0) as usize % MAX_TEAMS],
+    match f.tint {
+        Some(t) => TEAM_COLORS[t as usize % MAX_TEAMS],
         None => FFA_COLORS[f.id % FFA_COLORS.len()],
     }
 }
@@ -264,6 +266,11 @@ pub fn draw_world(
         }
     }
 
+    if let Some(j) = world.juggernaut
+        && world.fighters[j].alive
+    {
+        draw_spotlight(&world.fighters[j], world.time);
+    }
     for f in world.fighters.iter().filter(|f| f.alive) {
         draw_fighter(world, f, player == Some(f.id));
         gadgets::draw_shield_hint(f);
@@ -278,6 +285,77 @@ pub fn draw_world(
     use_screen();
     draw_labels(world, cam, player);
     gadgets::draw_object_labels(world, cam);
+}
+
+/// The Juggernaut stands in a red beam of light with a pulsing glow, so
+/// everyone can find them.
+fn draw_spotlight(f: &Fighter, time: f32) {
+    let c = fighter_color(f);
+    let feet = f.feet;
+    let pulse = 0.5 + 0.5 * (time * 4.0).sin();
+    // The beam widens toward the floor, fading as it goes up.
+    for (k, top_y) in [(0.0f32, 14.0f32), (1.0, 9.0), (2.0, 5.0)] {
+        let a = 0.05 + 0.03 * k;
+        let (top_w, base_w) = (0.35 + 0.1 * k, 1.1 - 0.15 * k);
+        let top = vec2(feet.x, feet.y - top_y);
+        let col = with_alpha(c, a);
+        draw_triangle(
+            vec2(top.x - top_w, top.y),
+            vec2(top.x + top_w, top.y),
+            vec2(feet.x + base_w, feet.y),
+            col,
+        );
+        draw_triangle(
+            vec2(top.x - top_w, top.y),
+            vec2(feet.x + base_w, feet.y),
+            vec2(feet.x - base_w, feet.y),
+            col,
+        );
+    }
+    let centre = f.center();
+    for (r, a) in [(1.9, 0.08), (1.5, 0.1), (1.1, 0.12)] {
+        draw_circle(centre.x, centre.y, r + 0.15 * pulse, with_alpha(c, a));
+    }
+}
+
+/// An arrow at the screen edge pointing toward the Juggernaut while they
+/// are off screen.
+fn draw_jugg_arrow(world: &World, cam: &GameCamera, player: Option<usize>, s: f32) {
+    let Some(j) = world.juggernaut else {
+        return;
+    };
+    let f = &world.fighters[j];
+    if !f.alive || player == Some(j) {
+        return;
+    }
+    let (sw, sh) = (screen_width(), screen_height());
+    let at = cam.world_to_screen(f.center());
+    let margin = 28.0 * s;
+    if at.x > 0.0 && at.x < sw && at.y > 0.0 && at.y < sh {
+        return;
+    }
+    let mid = vec2(sw, sh) * 0.5;
+    let dir = (at - mid).normalize_or_zero();
+    // Where the line from the centre leaves the inset screen rectangle.
+    let half = mid - Vec2::splat(margin);
+    let k = (half.x / dir.x.abs().max(1e-4)).min(half.y / dir.y.abs().max(1e-4));
+    let tip = mid + dir * k;
+    let side = vec2(-dir.y, dir.x);
+    let len = 22.0 * s;
+    let c = fighter_color(f);
+    draw_triangle(
+        tip,
+        tip - dir * len + side * len * 0.55,
+        tip - dir * len - side * len * 0.55,
+        c,
+    );
+    draw_triangle_lines(
+        tip,
+        tip - dir * len + side * len * 0.55,
+        tip - dir * len - side * len * 0.55,
+        1.5 * s,
+        Color::new(0.0, 0.0, 0.0, 0.6),
+    );
 }
 
 /// Nameplate size at 720p, in pixels; long names widen it.
@@ -298,7 +376,7 @@ fn draw_plate(f: &Fighter, at: Vec2, own: bool, s: f32) {
     let c = fighter_color(f);
     let a = if own { 1.0 } else { 0.6 };
     let shade = |k: f32, alpha: f32| Color::new(c.r * k, c.g * k, c.b * k, alpha);
-    let health = (f.health / MAX_HEALTH).clamp(0.0, 1.0);
+    let health = (f.health / f.max_health).clamp(0.0, 1.0);
     // The lost part stays as a dark band of the same colour.
     draw_rectangle(r.x, r.y, r.w, r.h, shade(0.22, 0.8 * a));
     draw_rectangle(r.x, r.y, r.w * health, r.h, shade(0.78, a));
@@ -310,7 +388,7 @@ fn draw_plate(f: &Fighter, at: Vec2, own: bool, s: f32) {
         Color::new(1.0, 1.0, 1.0, 0.13 * a),
     );
     if f.shield > 0.0 {
-        let k = (f.shield / MAX_SHIELD).clamp(0.0, 1.0);
+        let k = (f.shield / f.max_shield).clamp(0.0, 1.0);
         draw_rectangle(
             r.x,
             r.y,
@@ -488,6 +566,7 @@ fn draw_fighter(world: &World, f: &Fighter, is_player: bool) {
 /// Nameplates over fighters, weapon names over crates.
 fn draw_labels(world: &World, cam: &GameCamera, player: Option<usize>) {
     let s = (screen_height() / 720.0).max(0.6);
+    draw_jugg_arrow(world, cam, player, s);
     for f in world.fighters.iter().filter(|f| f.alive) {
         let top = cam.world_to_screen(vec2(f.feet.x, f.aabb().min.y));
         draw_plate(f, top - vec2(0.0, 8.0 * s), Some(f.id) == player, s);

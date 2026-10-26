@@ -1176,11 +1176,7 @@ impl Editor {
         let (_, layer, fields) = PLACE[k];
         let mut fields: Value = serde_json::from_str(fields).expect("PLACE fields are JSON");
         if fields.get("type").and_then(Value::as_str) == Some("weapon") {
-            let w = self
-                .data
-                .weapons
-                .iter()
-                .find(|w| w.category != crate::data::Category::Starter);
+            let w = self.data.weapons.iter().find(|w| w.is_loot());
             fields["weapon_id"] = json!(w.map_or("", |w| w.id.as_str()));
         }
         let at = self.snapped(self.cam.screen_to_world(mouse));
@@ -1844,7 +1840,7 @@ impl Prop {
                 let ids: Vec<&str> = data
                     .weapons
                     .iter()
-                    .filter(|w| w.category != crate::data::Category::Starter)
+                    .filter(|w| w.is_loot())
                     .map(|w| w.id.as_str())
                     .collect();
                 let id = t.get("weapon_id").and_then(Value::as_str).unwrap_or("");

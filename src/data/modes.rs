@@ -2,6 +2,18 @@ use super::{DataError, is_snake_case, parse_json};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
+/// A twist on how kills count, beyond plain scoring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Rules {
+    #[default]
+    Standard,
+    /// One fighter is the Juggernaut and everyone else hunts them.
+    Juggernaut,
+    /// Every kill moves the killer (or their team) to the next weapon.
+    GunGame,
+}
+
 /// Match rules. Behavior comes from the fields, not the id, so new modes
 /// (e.g. a free-for-all elimination) need only a new entry in `modes.json`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -35,6 +47,17 @@ pub struct ModeDef {
     /// Elimination, Attrition: default lives in each team's pool.
     #[serde(default)]
     pub team_lives: Option<u32>,
+    #[serde(default)]
+    pub rules: Rules,
+    /// Gun Game: weapon ids in order. A kill with the last one wins, so the
+    /// score limit is the ladder's length.
+    #[serde(default)]
+    pub ladder: Vec<String>,
+    /// Juggernaut: the Juggernaut's health and shield.
+    #[serde(default)]
+    pub juggernaut_health: Option<f32>,
+    #[serde(default)]
+    pub juggernaut_shield: Option<f32>,
 }
 
 impl ModeDef {
@@ -81,7 +104,14 @@ pub fn parse_modes(label: &str, text: &str) -> Result<Vec<ModeDef>, Vec<DataErro
         if !(1..=4).contains(&mode.teams) {
             bad(format!("teams: must be 1 to 4 (got {})", mode.teams));
         }
-        if mode.respawn && mode.score_limit.is_none_or(|s| s == 0) {
+        let gun_game = mode.rules == Rules::GunGame;
+        if gun_game && (mode.ladder.is_empty() || !mode.respawn) {
+            bad("ladder: gun_game needs respawn and at least one weapon".into());
+        }
+        if mode.rules == Rules::Juggernaut && (mode.teams != 1 || !mode.respawn) {
+            bad("teams: juggernaut is free-for-all (teams 1) with respawn".into());
+        }
+        if mode.respawn && !gun_game && mode.score_limit.is_none_or(|s| s == 0) {
             bad("score_limit: required and greater than 0 when respawn is true".into());
         }
         if !mode.respawn && mode.rounds.is_none_or(|r| r == 0) {
@@ -123,6 +153,18 @@ mod tests {
         assert_eq!(modes[1].match_name(), "Elimination");
         modes[1].teams = 3;
         assert_eq!(modes[1].match_name(), "Team Elimination");
+    }
+
+    #[test]
+    fn twists_check_their_fields() {
+        let text = r#"{
+          "gg": { "teams": 4, "respawn": true, "time_limit_s": 60, "rules": "gun_game" },
+          "jg": { "teams": 2, "respawn": true, "score_limit": 5, "time_limit_s": 60, "rules": "juggernaut" }
+        }"#;
+        let err = parse_modes("modes.json", text).unwrap_err();
+        assert_eq!(err.len(), 2, "{err:?}");
+        assert!(err[0].to_string().contains("gg.ladder"), "{}", err[0]);
+        assert!(err[1].to_string().contains("jg.teams"), "{}", err[1]);
     }
 
     #[test]

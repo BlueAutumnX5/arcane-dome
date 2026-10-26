@@ -6,7 +6,7 @@ mod settings;
 mod touch;
 mod ui;
 
-use crate::data::{GameData, ProjectileKind, find_assets_dir};
+use crate::data::{GameData, ProjectileKind, Rules, find_assets_dir};
 use crate::i18n::{t, tf, tn};
 use crate::render::{TEAM_COLORS, resync_texture_bindings, use_screen};
 use crate::sim::{Difficulty, ElimStyle, MAX_TEAMS, MatchConfig, TEAM_NAMES};
@@ -345,6 +345,13 @@ struct Setup {
     powerups: bool,
     stations: bool,
     infinite_ammo: bool,
+    /// Juggernaut scoring (at least one of the first two stays on).
+    jugg_kills_score: bool,
+    killing_jugg_scores: bool,
+    jugg_bonus: bool,
+    /// Gun Game knock-backs.
+    melee_demotes: bool,
+    suicide_demotes: bool,
 }
 
 struct App {
@@ -407,6 +414,11 @@ pub async fn run() {
             powerups: true,
             stations: true,
             infinite_ammo: false,
+            jugg_kills_score: true,
+            killing_jugg_scores: true,
+            jugg_bonus: false,
+            melee_demotes: true,
+            suicide_demotes: true,
         },
         ui: Ui::default(),
         seed: macroquad::miniquad::date::now() as u64,
@@ -1079,6 +1091,11 @@ impl App {
             powerups: c.powerups,
             stations: c.stations,
             infinite_ammo: c.infinite_ammo,
+            jugg_kills_score: c.jugg_kills_score,
+            killing_jugg_scores: c.killing_jugg_scores,
+            jugg_bonus: c.jugg_bonus,
+            melee_demotes: c.melee_demotes,
+            suicide_demotes: c.suicide_demotes,
             ..Default::default()
         };
         MatchConfig {
@@ -1198,10 +1215,41 @@ impl App {
                 count_or_off(TEAM_LIVES[self.setup.team_lives]),
             ),
         };
-        let d_limit = self
-            .ui
-            .stepper("s_limit", limit_label, &limit_value, row(y), false, true);
-        y += rh + 4.0 * s;
+        // Gun Game ends when a ladder is finished: its knock-back switches
+        // take the score limit's place.
+        let gun_game = mode.rules == Rules::GunGame;
+        let (mut d_limit, mut d_melee, mut d_suicide) = (0, 0, 0);
+        if gun_game {
+            let rows = [
+                (
+                    "s_melee",
+                    t("Melee Demotes"),
+                    self.setup.melee_demotes,
+                    t("A kill with a melee weapon also sends the victim back one weapon."),
+                ),
+                (
+                    "s_suicide",
+                    t("Suicide Demotes"),
+                    self.setup.suicide_demotes,
+                    t("Dying by your own fire or to the map sends you back one weapon."),
+                ),
+            ];
+            for (k, (id, label, on, tip)) in rows.into_iter().enumerate() {
+                let d = self.ui.stepper(id, label, &on_off(on), row(y), false, true);
+                self.ui.hint(&format!("{id}_tip"), row(y), tip);
+                if k == 0 {
+                    d_melee = d;
+                } else {
+                    d_suicide = d;
+                }
+                y += rh + 4.0 * s;
+            }
+        } else {
+            d_limit = self
+                .ui
+                .stepper("s_limit", limit_label, &limit_value, row(y), false, true);
+            y += rh + 4.0 * s;
+        }
         let tl = if !mode.respawn && style == ElimStyle::Rounds {
             t("Round Time")
         } else {
@@ -1343,6 +1391,63 @@ impl App {
             );
             total = 1 + self.setup.ffa_bots;
         }
+        let (mut d_jkills, mut d_jslay, mut d_jbonus) = (0, 0, 0);
+        if mode.rules == Rules::Juggernaut {
+            let y = top + 48.0 * s + 140.0 * s + 14.0 * s;
+            let rows_h = 3.0 * 38.0 * s;
+            ui::panel(
+                Rect::new(rx, y, rw, 30.0 * s + rows_h + 10.0 * s),
+                Some(t("Scoring")),
+            );
+            let r = |k: f32| {
+                Rect::new(
+                    rx + 10.0 * s,
+                    y + 38.0 * s + k * 38.0 * s,
+                    rw - 20.0 * s,
+                    32.0 * s,
+                )
+            };
+            let c = &self.setup;
+            d_jkills = self.ui.stepper(
+                "s_jkills",
+                t("Kills as Juggernaut"),
+                &on_off(c.jugg_kills_score),
+                r(0.0),
+                false,
+                true,
+            );
+            self.ui.hint(
+                "s_jkills_tip",
+                r(0.0),
+                t("Each kill you make while you are the Juggernaut scores a point."),
+            );
+            d_jslay = self.ui.stepper(
+                "s_jslay",
+                t("Killing the Juggernaut"),
+                &on_off(c.killing_jugg_scores),
+                r(1.0),
+                false,
+                true,
+            );
+            self.ui.hint(
+                "s_jslay_tip",
+                r(1.0),
+                t("Killing the Juggernaut scores a point. One way to score always stays on."),
+            );
+            d_jbonus = self.ui.stepper(
+                "s_jbonus",
+                t("Juggernaut Bonus"),
+                &on_off(c.jugg_bonus),
+                r(2.0),
+                false,
+                c.jugg_kills_score,
+            );
+            self.ui.hint(
+                "s_jbonus_tip",
+                r(2.0),
+                t("Kills made as the Juggernaut score 2 points instead of 1."),
+            );
+        }
         if let Some([lo, hi]) = map.recommended_players {
             let note = tf("{} players  (map suits {}-{})", &[&total, &lo, &hi]);
             let warn = total < lo || total > hi;
@@ -1357,6 +1462,7 @@ impl App {
         let c = &self.setup;
         let no_clock = TIME_LIMITS[c.time] == 0.0;
         let endless = no_clock
+            && !gun_game
             && match (mode.respawn, STYLES[c.elim_style]) {
                 (true, _) => SCORE_LIMITS[c.score] == 0,
                 (false, ElimStyle::Rounds) => false,
@@ -1424,6 +1530,24 @@ impl App {
         }
         if d_inf != 0 {
             c.infinite_ammo = !c.infinite_ammo;
+        }
+        if d_melee != 0 {
+            c.melee_demotes = !c.melee_demotes;
+        }
+        if d_suicide != 0 {
+            c.suicide_demotes = !c.suicide_demotes;
+        }
+        // Turning off the last way to score turns the other one back on.
+        if d_jkills != 0 {
+            c.jugg_kills_score = !c.jugg_kills_score;
+            c.killing_jugg_scores |= !c.jugg_kills_score;
+        }
+        if d_jslay != 0 {
+            c.killing_jugg_scores = !c.killing_jugg_scores;
+            c.jugg_kills_score |= !c.killing_jugg_scores;
+        }
+        if d_jbonus != 0 {
+            c.jugg_bonus = !c.jugg_bonus;
         }
         // Step through the team counts this map and mode allow, and keep
         // the choice on that list when the map or mode changes.

@@ -6,7 +6,7 @@ surface height (where feet stand); slabs extend downward by `thick`.
 import json
 
 class Map:
-    def __init__(self, id, name, description, size, theme, modes=("deathmatch", "elimination"), players=(4, 12)):
+    def __init__(self, id, name, description, size, theme, modes=("deathmatch", "elimination", "gun_game", "juggernaut"), players=(4, 12)):
         self.d = {"id": id, "name": name, "description": description, "tile_size": 32,
                   "size": list(size), "theme": theme, "modes": list(modes),
                   "recommended_players": list(players), "shapes": [], "decor": [],

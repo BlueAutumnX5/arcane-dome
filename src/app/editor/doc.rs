@@ -75,7 +75,7 @@ impl Doc {
             "size": [width, height],
             "theme": {"sky_top": "#1d2b4a", "sky_bottom": "#7fa6c9", "far": "#3d5070",
                       "skyline": "mountains"},
-            "modes": ["deathmatch", "elimination"],
+            "modes": ["deathmatch", "elimination", "gun_game", "juggernaut"],
             "recommended_players": [2, 8],
             "shapes": [
                 {"kind": "solid", "material": "rock",
@@ -435,7 +435,7 @@ mod tests {
             "blank_test",
             &doc.to_json(),
             &[],
-            &["deathmatch", "elimination"],
+            &["deathmatch", "elimination", "gun_game", "juggernaut"],
         )
         .unwrap_or_else(|e| panic!("{e:?}"));
         assert_eq!(map.spawns.len(), 8);

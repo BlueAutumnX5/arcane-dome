@@ -509,6 +509,10 @@ impl Brain {
                 .total_cmp(&eye.distance(b.center()))
         });
 
+        // Sides can change (a new Juggernaut): never keep a friend as target.
+        if self.target.is_some_and(|t| world.allies(self.id, t)) {
+            self.target = None;
+        }
         // Keep fighting the current target while it stays in view.
         if let Some(t) = self.target
             && let Some(o) = seen.iter().find(|o| o.id == t)

@@ -70,6 +70,10 @@ pub struct Fighter {
     pub jump_rising: bool,
 
     pub health: f32,
+    /// Health and shield caps: `MAX_HEALTH` and `MAX_SHIELD`, more for a
+    /// Juggernaut.
+    pub max_health: f32,
+    pub max_shield: f32,
     pub alive: bool,
     pub respawn_timer: f32,
     /// World time of the last death (for the death screen).
@@ -94,7 +98,7 @@ pub struct Fighter {
     pub freeze_slow: f32,
     pub last_attacker: Option<(usize, f32)>,
 
-    /// Damage-reducing shield, 0..=MAX_SHIELD.
+    /// Damage-reducing shield, 0..=max_shield.
     pub shield: f32,
     /// Timed powerups currently active.
     pub buffs: Vec<Buff>,
@@ -141,6 +145,8 @@ impl Fighter {
             drop_timer: 0.0,
             jump_rising: false,
             health: MAX_HEALTH,
+            max_health: MAX_HEALTH,
+            max_shield: MAX_SHIELD,
             alive: false,
             respawn_timer: 0.0,
             died_at: 0.0,

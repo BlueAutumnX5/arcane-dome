@@ -5,7 +5,7 @@
   "tile_size": 32,
   "size": [72, 44],
   "theme": {"sky_top": "#162540", "sky_bottom": "#a8c4de", "far": "#5d7591", "skyline": "mountains", "sun": [0.2, 0.22], "sun_color": "#eef6ff"},
-  "modes": ["deathmatch", "elimination"],
+  "modes": ["deathmatch", "elimination", "gun_game", "juggernaut"],
   "recommended_players": [4, 16],
   "team_counts": [2, 3, 4],
   "shapes": [

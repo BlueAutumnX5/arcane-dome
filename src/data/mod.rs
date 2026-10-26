@@ -14,7 +14,7 @@ pub use map::{
     Backdrop, BotHint, Decor, DecorKind, MapDef, MapObject, ObjectKind, PickupDef, PickupKind,
     Skyline, SpawnDef, Theme, TileKind, parse_map, shapes_from_tiles,
 };
-pub use modes::{ModeDef, parse_modes};
+pub use modes::{ModeDef, Rules, parse_modes};
 pub use powerups::{PowerupConfig, PowerupDef, PowerupEffect, parse_powerups};
 pub use weapon::{
     BULLET_GRAVITY, BULLET_SPEED_AT_RANGE, Category, ExplosionDef, Falloff, ProjectileDef,
@@ -71,6 +71,18 @@ impl GameData {
         let maps = load_dir(&data_dir, "maps", &mut errors, |label, stem, text| {
             parse_map(label, stem, text, &weapon_ids, &mode_ids)
         });
+
+        // A Gun Game ladder names weapons; they must exist.
+        for m in &modes {
+            for (i, id) in m.ladder.iter().enumerate() {
+                if !weapon_ids.contains(&id.as_str()) {
+                    errors.push(DataError::new(
+                        "modes.json",
+                        format!("{}.ladder[{i}]: weapon \"{id}\" does not exist", m.id),
+                    ));
+                }
+            }
+        }
 
         // Powerup spots may name a fixed powerup; it must exist.
         for m in &maps {

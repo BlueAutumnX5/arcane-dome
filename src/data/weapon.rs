@@ -235,6 +235,10 @@ pub struct WeaponDef {
     #[serde(default)]
     pub short_name: Option<String>,
     pub category: Category,
+    /// Handed out at random (spawn loadouts, weapon stations, map pickups).
+    /// Off for a weapon only some modes give, like Gun Game's last one.
+    #[serde(default = "yes")]
+    pub loot: bool,
     #[serde(default)]
     pub unlock_cost: u32,
     pub damage: f32,
@@ -265,6 +269,10 @@ pub struct WeaponDef {
 
 fn default_headshot() -> f32 {
     1.9
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn one_u32() -> u32 {
@@ -299,6 +307,11 @@ impl WeaponDef {
 
     pub fn uses_ammo(&self) -> bool {
         self.magazine > 0
+    }
+
+    /// Can a spawn loadout, weapon station or map pickup hand this out?
+    pub fn is_loot(&self) -> bool {
+        self.loot && self.category != Category::Starter
     }
 
     /// Starter weapons never run dry, so nobody is ever left unarmed.

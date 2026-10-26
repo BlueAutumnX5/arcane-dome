@@ -8,6 +8,7 @@ mod input;
 pub mod physics;
 mod rng;
 mod rules;
+mod variants;
 mod world;
 
 pub use combat::{MAX_PROJECTILES, Projectile};

@@ -47,6 +47,7 @@ pub const MAX_MARKS: usize = 512;
 
 impl Effects {
     pub fn consume(&mut self, world: &World, player: Option<usize>) {
+        let plain = Color::new(1.0, 1.0, 1.0, 0.85);
         for e in &world.events {
             match e {
                 Event::Tracer { from, to, kind } => self.tracers.push(Tracer {
@@ -104,7 +105,6 @@ impl Effects {
                         let f = &world.fighters[i];
                         (t(&f.name).to_owned(), super::fighter_color(f))
                     };
-                    let plain = Color::new(1.0, 1.0, 1.0, 0.85);
                     let mut parts = Vec::new();
                     match killer {
                         Some(k) => {
@@ -124,17 +124,41 @@ impl Effects {
                         }
                     }
                     let mine = player.is_some() && (*killer == player || Some(*victim) == player);
-                    self.feed.push(FeedLine {
-                        parts,
-                        mine,
-                        age: 0.0,
-                    });
-                    if self.feed.len() > 6 {
-                        self.feed.remove(0);
-                    }
+                    self.say(parts, mine);
+                }
+                Event::Juggernaut { fighter } => {
+                    let f = &world.fighters[*fighter];
+                    let red = super::fighter_color(f);
+                    let parts = if Some(*fighter) == player {
+                        vec![(t("You are the Juggernaut").to_owned(), red)]
+                    } else {
+                        vec![
+                            (t(&f.name).to_owned(), red),
+                            (t("is the Juggernaut").to_owned(), plain),
+                        ]
+                    };
+                    self.say(parts, Some(*fighter) == player);
+                }
+                Event::Ladder {
+                    side, up: false, ..
+                } if player.is_some_and(|p| world.side_of(p) == *side) => {
+                    let text = t("Knocked back a weapon").to_owned();
+                    self.say(vec![(text, Color::new(1.0, 0.55, 0.4, 1.0))], true);
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Add a line to the kill feed, dropping the oldest past six.
+    fn say(&mut self, parts: Vec<(String, Color)>, mine: bool) {
+        self.feed.push(FeedLine {
+            parts,
+            mine,
+            age: 0.0,
+        });
+        if self.feed.len() > 6 {
+            self.feed.remove(0);
         }
     }
 

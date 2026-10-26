@@ -2,6 +2,13 @@
 
 ## Next version (in progress)
 
+- New match type: **Juggernaut**. One random fighter is the Juggernaut: red, in a beam of light, with 500 health and 200 shield; everyone else is on the blue side, hunting them. Kill the Juggernaut to become it. If the Juggernaut dies to the map or their own blast, someone at random takes over. An arrow at the screen edge points to the Juggernaut when they are off screen
+  - Quick Match lets you choose what scores: kills as the Juggernaut, killing the Juggernaut, or both (one always stays on), plus a bonus that makes kills as the Juggernaut worth 2. The score limit is yours to set (10 to start)
+- New match type: **Gun Game**, free-for-all or in teams (Team Gun Game, where a kill by anyone on the team moves the whole team up). Every kill moves you to the next weapon, from easy to awkward: Assault Rifle, Leech SMG, Laser, Shotgun, Pistol, Flamethrower, Marksman Rifle, Rocket Launcher, Sniper Rifle, Grenade Launcher, then the Shock Baton. A kill with the Baton wins
+  - Everyone carries the Shock Baton beside their current weapon (switch with Q, E or the mouse wheel); it only exists in Gun Game
+  - Quick Match switches: a melee kill sends the victim back one weapon, and so does dying by your own fire or to the map
+  - Ammo never runs out in Gun Game, and weapon pickups, ammo boxes and weapon stations are left out
+- Easy bots see a little wider, notice you sooner, turn faster, and stand their ground more instead of strafing and running off
 - Bahasa Indonesia: pick it under Settings > Language (the game starts in it if your computer or phone is set to Indonesian). Menus, the match, weapons, maps and modes are all translated; the map editor and this page stay in English for now
 - Android version (Android 9 and newer), with touch controls:
   - Left stick walks, and down crouches or drops; a Jump button (tap again for the double jump)

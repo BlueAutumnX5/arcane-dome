@@ -12,12 +12,33 @@ fn shipped() -> GameData {
 #[test]
 fn shipped_content_loads() {
     let data = shipped();
-    assert_eq!(data.weapons.len(), 10);
+    assert_eq!(data.weapons.len(), 11);
     assert!(!data.maps.is_empty(), "at least one map");
-    // Deathmatch and Elimination, each playable free-for-all or in teams.
+    // Every mode but Juggernaut is playable free-for-all or in teams.
     let ids: Vec<&str> = data.modes.iter().map(|m| m.id.as_str()).collect();
-    assert_eq!(ids, vec!["deathmatch", "elimination"]);
-    assert!(data.modes.iter().all(|m| m.teams == 4));
+    assert_eq!(
+        ids,
+        vec!["deathmatch", "elimination", "gun_game", "juggernaut"]
+    );
+    for m in &data.modes {
+        let teams = if m.id == "juggernaut" { 1 } else { 4 };
+        assert_eq!(m.teams, teams, "{}", m.id);
+    }
+}
+
+#[test]
+fn gun_game_climbs_every_weapon_and_ends_on_melee() {
+    let data = shipped();
+    let gg = data.mode("gun_game").unwrap();
+    let mut ladder: Vec<&str> = gg.ladder.iter().map(String::as_str).collect();
+    let last = data.weapon_index(ladder[ladder.len() - 1]).unwrap();
+    assert_eq!(data.weapons[last].projectile.kind, ProjectileKind::MeleeArc);
+    ladder.sort();
+    let mut all: Vec<&str> = data.weapons.iter().map(|w| w.id.as_str()).collect();
+    all.sort();
+    assert_eq!(ladder, all, "each weapon once");
+    // The baton is only Gun Game's: never a random handout.
+    assert!(!data.weapons[last].is_loot());
 }
 
 #[test]
