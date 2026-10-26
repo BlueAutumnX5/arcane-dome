@@ -9,6 +9,8 @@ use std::sync::Arc;
 /// A moving shot: bullet, grenade or rocket.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Projectile {
+    /// Unique within a match, so a shooter can follow its own shots.
+    pub id: u32,
     pub owner: usize,
     pub weapon: usize,
     pub kind: ProjectileKind,
@@ -148,7 +150,9 @@ impl World {
                     } else {
                         pd.bounces
                     };
+                    self.next_shot = self.next_shot.wrapping_add(1);
                     self.projectiles.push(Projectile {
+                        id: self.next_shot,
                         owner: i,
                         weapon: w,
                         kind,
@@ -236,6 +240,14 @@ impl World {
         let mut projectiles = std::mem::take(&mut self.projectiles);
         for p in projectiles.iter_mut() {
             self.step_projectile(p, &data.weapons[p.weapon]);
+            if !p.alive {
+                self.events.push(Event::Impact {
+                    id: p.id,
+                    owner: p.owner,
+                    weapon: p.weapon,
+                    pos: p.pos,
+                });
+            }
         }
         projectiles.retain(|p| p.alive);
         projectiles.append(&mut self.projectiles);

@@ -156,6 +156,14 @@ pub enum Event {
     Mark {
         pos: Vec2,
     },
+    /// A projectile's flight ended here (hit, wall, fuse or off the map),
+    /// so its shooter can see where the shot went.
+    Impact {
+        id: u32,
+        owner: usize,
+        weapon: usize,
+        pos: Vec2,
+    },
     Pickup {
         fighter: usize,
         kind: PickupKind,
@@ -208,6 +216,8 @@ pub struct World {
     pub config: MatchConfig,
     pub fighters: Vec<Fighter>,
     pub projectiles: Vec<Projectile>,
+    /// Id for the next projectile fired.
+    pub next_shot: u32,
     pub pickups: Vec<PickupState>,
     /// Thrusters, stations and powerup spots.
     pub objects: Vec<ObjectState>,
@@ -397,6 +407,7 @@ impl World {
             config,
             fighters,
             projectiles: Vec::new(),
+            next_shot: 0,
             pickups,
             objects,
             stand_cells,

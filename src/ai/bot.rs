@@ -1,7 +1,7 @@
 use super::nav::{EdgeKind, NavGraph};
 use crate::data::{Category, ObjectKind, PickupKind, WeaponDef};
 use crate::sim::physics::{hazard_dps, line_of_sight, standing_on_hatch};
-use crate::sim::{DT, Difficulty, Fighter, Input, Rng, World};
+use crate::sim::{DT, Difficulty, Event, Fighter, Input, Rng, World};
 use macroquad::math::{Vec2, vec2};
 use std::f32::consts::PI;
 
@@ -23,6 +23,23 @@ const ESCAPE_RISE: f32 = 2.6;
 const HUNT_LOOK: f32 = 6.0;
 /// How long a bot keeps chasing a target it lost sight of.
 const MEMORY_S: f32 = 2.5;
+/// A shot needs at least this much drop (tiles) or flight time (seconds)
+/// before a bot judges its range; quicker shots just go where aimed.
+const RANGED_DROP: f32 = 0.4;
+const RANGED_FLIGHT_S: f32 = 0.3;
+/// Largest range correction, as a share of the distance.
+const RANGE_FIX_MAX: f32 = 0.45;
+/// Lobbed and long shots wobble this much of the usual amount.
+const LOB_STEADY: f32 = 0.35;
+/// A shot ending this close to its target counts as a hit: nothing to fix.
+const HIT_NEAR: f32 = 1.5;
+/// A shot that came back past its shooter (it hit something overhead)
+/// counts as this much too high, as a share of the distance.
+const BOUNCED_BACK: f32 = 0.2;
+/// How fast the first-swing overshoot settles (seconds to fade to ~37%).
+const SETTLE_S: f32 = 0.35;
+/// How long being hit shakes the aim.
+const FLINCH_S: f32 = 0.6;
 
 /// Everything that makes one difficulty feel different from another.
 struct Params {
@@ -50,6 +67,16 @@ struct Params {
     /// Chance to break away from a fight (instead of committing to it)
     /// each time the bot sizes one up.
     break_away: f32,
+    /// Lobbed and long shots: the chance the first shot at a new target is
+    /// misjudged, and how badly (share of the distance, min..max).
+    misjudge_chance: f32,
+    misjudge: (f32, f32),
+    /// Share of a seen miss the next shot corrects.
+    correct: f32,
+    /// First swing onto a new target overshoots by up to this, in degrees.
+    settle_deg: f32,
+    /// Aim wobble is multiplied by this just after being hit.
+    flinch: f32,
 }
 
 fn params(d: Difficulty) -> Params {
@@ -66,6 +93,11 @@ fn params(d: Difficulty) -> Params {
             burst: (0.5, 0.8),
             travel: (2.0, 4.5),
             break_away: 0.45,
+            misjudge_chance: 0.9,
+            misjudge: (0.25, 0.5),
+            correct: 0.45,
+            settle_deg: 18.0,
+            flinch: 2.0,
         },
         Difficulty::Normal => Params {
             reaction: (0.55, 0.85),
@@ -79,6 +111,11 @@ fn params(d: Difficulty) -> Params {
             burst: (0.8, 0.5),
             travel: (3.0, 6.0),
             break_away: 0.35,
+            misjudge_chance: 0.7,
+            misjudge: (0.15, 0.35),
+            correct: 0.65,
+            settle_deg: 11.0,
+            flinch: 1.6,
         },
         Difficulty::Hard => Params {
             reaction: (0.3, 0.5),
@@ -92,6 +129,11 @@ fn params(d: Difficulty) -> Params {
             burst: (1.2, 0.3),
             travel: (4.5, 8.0),
             break_away: 0.25,
+            misjudge_chance: 0.45,
+            misjudge: (0.08, 0.2),
+            correct: 0.85,
+            settle_deg: 6.0,
+            flinch: 1.3,
         },
     }
 }
@@ -170,6 +212,28 @@ pub(crate) struct Brain {
     ground_x: f32,
     weapon_timer: f32,
     was_alive: bool,
+    /// Lobbed or long shots: the aim correction learned from this bot's own
+    /// misses (per tile of distance), and the (target, weapon) it is for.
+    range_fix: Vec2,
+    range_for: Option<(usize, usize)>,
+    /// Extra aim angle after spotting a target, fading as the aim settles.
+    settle: f32,
+    /// This bot's shots in flight, being judged.
+    shots: Vec<Shot>,
+    /// The current shot is lobbed or long (see `aim_point`).
+    lobbing: bool,
+}
+
+/// One of a bot's own shots it is watching.
+struct Shot {
+    id: u32,
+    /// Which side of the target it started on (crossing means it passed).
+    side: f32,
+    /// Vertical speed last tick (falling turning to rising is a landing).
+    vy: f32,
+    /// How it was judged (where it came down, or how it passed), applied
+    /// when it goes off unless it went off on target.
+    miss: Option<f32>,
 }
 
 impl Brain {
@@ -212,6 +276,11 @@ impl Brain {
             ground_x: 0.0,
             weapon_timer: 0.0,
             was_alive: false,
+            range_fix: Vec2::ZERO,
+            range_for: None,
+            settle: 0.0,
+            shots: Vec::new(),
+            lobbing: false,
         }
     }
 
@@ -338,6 +407,7 @@ impl Brain {
             }
         }
 
+        self.learn_from_shots(world, me);
         // Where the bot wants to look; the real aim turns toward it gradually.
         let want = match (target, self.target_visible) {
             (Some(t), true) => Some(self.aim_point(world, me, t, def)),
@@ -467,6 +537,9 @@ impl Brain {
             Some((n, left)) if n == c => {
                 let left = left - DT;
                 if left <= 0.0 {
+                    // The first swing onto a new enemy overshoots a little.
+                    let side = if self.rng.chance(0.5) { 1.0 } else { -1.0 };
+                    self.settle = side * self.rng.range(0.5, 1.0) * self.p.settle_deg.to_radians();
                     self.target = Some(c);
                     self.target_visible = true;
                     self.seen_for = 0.0;
@@ -987,8 +1060,9 @@ impl Brain {
         input.jump_held = true;
     }
 
-    /// The point a bot tries to hit: chest or head, led by the target's motion,
-    /// plus a slowly changing wobble.
+    /// The point a bot tries to hit: chest or head, led by the target's
+    /// motion, plus a slowly changing wobble. Lobbed and long shots also
+    /// carry the bot's judgement of the range (see `learn_from_shots`).
     fn aim_point(&mut self, world: &World, me: &Fighter, t: usize, def: &WeaponDef) -> Vec2 {
         let them = &world.fighters[t];
         let eye = me.eye();
@@ -996,19 +1070,132 @@ impl Brain {
         let mut point = body.center();
         point.y += (body.min.y + 0.2 - point.y) * self.p.head_bias;
         let pd = &def.projectile;
+        self.lobbing = false;
         if pd.kind.is_physical() && pd.speed > 0.0 {
-            let tt = eye.distance(point) / pd.speed;
+            let dist = eye.distance(point);
+            let tt = dist / pd.speed;
+            let drop = 0.5 * def.gravity() * tt * tt;
             point += them.vel * tt * self.p.lead;
-            point.y -= 0.5 * def.gravity() * tt * tt;
+            point.y -= drop;
+            if drop >= RANGED_DROP || tt >= RANGED_FLIGHT_S {
+                self.lobbing = true;
+                // A new target or weapon: judge the range afresh, often a
+                // bit off (too high or too low), sometimes spot on.
+                let key = (t, me.current);
+                if self.range_for != Some(key) {
+                    self.range_for = Some(key);
+                    self.range_fix = Vec2::ZERO;
+                    self.shots.clear();
+                    if self.rng.chance(self.p.misjudge_chance) {
+                        let (lo, hi) = self.p.misjudge;
+                        let side = if self.rng.chance(0.5) { 1.0 } else { -1.0 };
+                        self.range_fix.y = side * self.rng.range(lo, hi);
+                    }
+                }
+                point += self.range_fix * dist;
+            }
         }
         self.jitter_timer -= DT;
         if self.jitter_timer <= 0.0 {
-            self.jitter = self.rng.range(-1.0, 1.0) * self.p.aim_error_deg.to_radians();
+            // Freshly hit: the hands shake more.
+            let hurt = me
+                .last_attacker
+                .is_some_and(|(_, at)| world.time - at < FLINCH_S);
+            let mut shake = if hurt { self.p.flinch } else { 1.0 };
+            // Lobbing is deliberate: steady hands, the error is in judging
+            // the range (see `range_fix`).
+            if self.lobbing {
+                shake *= LOB_STEADY;
+            }
+            self.jitter = self.rng.range(-1.0, 1.0) * self.p.aim_error_deg.to_radians() * shake;
             self.jitter_timer = self.rng.range(0.25, 0.5);
         }
+        self.settle *= (-DT / SETTLE_S).exp();
         let d = point - eye;
-        let a = d.y.atan2(d.x) + self.jitter;
+        let a = d.y.atan2(d.x) + self.jitter + self.settle;
         eye + vec2(a.cos(), a.sin()) * d.length().max(1.0)
+    }
+
+    /// Follow this bot's own lobbed or long shots and judge each one once,
+    /// the way a person would: where it first comes down (long or short),
+    /// or how high it passes the target, or where it ends if it ends first.
+    /// Once it goes off (and did not go off on target), the next shot
+    /// corrects by part of the miss, so shots walk onto the target.
+    fn learn_from_shots(&mut self, world: &World, me: &Fighter) {
+        let Some((t, weapon)) = self.range_for else {
+            self.shots.clear();
+            return;
+        };
+        let them = &world.fighters[t];
+        if !them.alive {
+            self.shots.clear();
+            return;
+        }
+        let target = them.aabb().center();
+        let dist = me.eye().distance(target).max(1.0);
+        // +1 when the target is to the right: positive range errors are long.
+        let toward = (target.x - me.feet.x).signum();
+        let side = |x: f32| (x - target.x).signum();
+        // Each miss as a share of the distance: positive means aim higher.
+        let mut misses: Vec<f32> = Vec::new();
+        for p in world
+            .projectiles
+            .iter()
+            .filter(|p| p.owner == self.id && p.weapon == weapon)
+        {
+            let Some(shot) = self.shots.iter_mut().find(|s| s.id == p.id) else {
+                self.shots.push(Shot {
+                    id: p.id,
+                    side: side(p.pos.x),
+                    vy: p.vel.y,
+                    miss: None,
+                });
+                continue;
+            };
+            if shot.miss.is_some() {
+                continue;
+            }
+            if shot.vy > 0.0 && p.vel.y <= 0.0 {
+                // First came down here: long or short of the target.
+                let long = (p.pos.x - target.x) * toward;
+                shot.miss = Some(-long * 0.5 / dist);
+            } else if side(p.pos.x) != shot.side {
+                // Passed the target in the air: above (aim lower) or below.
+                shot.miss = Some((p.pos.y - target.y) / dist);
+            }
+            shot.vy = p.vel.y;
+        }
+        for e in &world.events {
+            let Event::Impact { id, owner, pos, .. } = *e else {
+                continue;
+            };
+            if owner != self.id {
+                continue;
+            }
+            let Some(i) = self.shots.iter().position(|s| s.id == id) else {
+                continue;
+            };
+            let shot = self.shots.swap_remove(i);
+            // It went off on target (say, rolled in): nothing to fix.
+            if pos.distance(target) < HIT_NEAR {
+                continue;
+            }
+            if let Some(miss) = shot.miss {
+                misses.push(miss);
+            } else if (pos.x - target.x) * (me.feet.x - pos.x) >= 0.0 {
+                // Ended short, between us: raise the aim.
+                misses.push((pos.x - target.x).abs() * 0.5 / dist);
+            } else if (pos.x - me.feet.x) * toward < 0.0 {
+                // Came back past the shooter: it hit something overhead.
+                misses.push(-BOUNCED_BACK);
+            }
+        }
+        for miss in misses {
+            // A little noise in judging it: nobody measures exactly.
+            let gain = self.p.correct * self.rng.range(0.8, 1.2);
+            self.range_fix.y -= miss * gain;
+            self.range_fix = self.range_fix.clamp_length_max(RANGE_FIX_MAX);
+        }
     }
 
     /// Shoot only once the aim has actually swung onto the target, in bursts
@@ -1028,7 +1215,7 @@ impl Brain {
         if off > PI {
             off = 2.0 * PI - off;
         }
-        let on_target = off.to_degrees() < 8.0;
+        let on_target = off.to_degrees() < if self.lobbing { 3.0 } else { 8.0 };
         let safe = def
             .projectile
             .explosion

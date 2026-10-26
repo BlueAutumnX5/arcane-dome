@@ -13,6 +13,7 @@
 - Bullets leave marks where they hit walls and floors (the last 512 stay); flamethrower flames bounce
 - Each weapon's file can set what its shots do on walls (mark, bounce or vanish), plus their drag and drop
 - The camera looks further ahead with long-range weapons (sniper and marksman furthest)
+- Bots aim more like people: they often misjudge their first lob, watch where it lands, and walk their shots in (sometimes the first one is spot on); their first swing onto a new enemy overshoots a little; being hit shakes their aim for a moment
 
 ## v0.1.2
 
