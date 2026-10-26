@@ -1517,7 +1517,7 @@ impl App {
                     self.setup.map = i;
                 }
                 self.screen = self.open_editor();
-                // ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw opens a window.
+                // ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw|validate|broken.
                 if let (Screen::Editor(ed), Ok(what)) =
                     (&mut self.screen, std::env::var("ARCANE_SHOT_EDITOR"))
                 {

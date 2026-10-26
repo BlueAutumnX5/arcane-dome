@@ -2,6 +2,7 @@
 
 #[allow(dead_code)]
 mod doc;
+mod report;
 mod windows;
 
 use super::ui::{self, ACCENT, Ui};
@@ -9,6 +10,7 @@ use crate::data::{GameData, MapDef, ObjectKind, PickupKind, parse_map};
 use crate::render::{GameCamera, MapArt, TEAM_COLORS, draw_sky, use_camera, use_screen};
 use doc::{Doc, Layer};
 use macroquad::prelude::*;
+use report::Report;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -63,7 +65,7 @@ const HELP_PAGE: [(&str, &str); 8] = [
     ),
     (
         "Checking the map",
-        "The top bar always says whether the game can load the map: Map OK in green, or the first problem in red. A map needs 4 free-for-all spawns and 2 spawns per team.",
+        "The top bar always says whether the game can load the map: Map OK in green, or the first problem in red. Validate (V) checks more: can bots reach every spawn, pickup and gadget, and is any spawn in lava or water? Click a problem to fly to it.",
     ),
     (
         "Saving",
@@ -166,16 +168,18 @@ enum Action {
     Snap,
     Grid,
     Fit,
+    Validate,
     Help,
     Back,
 }
 
 /// The right-hand buttons, in groups.
-const ACTIONS: [&[Action]; 5] = [
+const ACTIONS: [&[Action]; 6] = [
     &[Action::New, Action::Open, Action::Save],
     &[Action::Undo, Action::Redo, Action::Delete],
     &[Action::Finish, Action::PopCorner],
     &[Action::Snap, Action::Grid, Action::Fit],
+    &[Action::Validate],
     &[Action::Help, Action::Back],
 ];
 
@@ -193,6 +197,7 @@ impl Action {
             Action::Snap => "Snap Grid (Shift)",
             Action::Grid => "Show Grid (G)",
             Action::Fit => "Fit View (F)",
+            Action::Validate => "Validate (V)",
             Action::Help => "Instructions (F1)",
             Action::Back => "Back to Menu (Esc)",
         }
@@ -217,6 +222,9 @@ impl Action {
             }
             Action::Grid => "Show or hide the grid lines. Bright lines are every 5 tiles.",
             Action::Fit => "Zoom and pan so the whole map fits on screen.",
+            Action::Validate => {
+                "Check the map: can bots reach every spawn, pickup and gadget, and is any spawn in lava or water? Click a problem to fly to it."
+            }
             Action::Help => "How the editor works.",
             Action::Back => {
                 "Leave the editor. Esc first cancels a shape you are drawing, then the tool."
@@ -244,6 +252,7 @@ impl Action {
             Action::Snap => !ctrl && (key(KeyCode::LeftShift) || key(KeyCode::RightShift)),
             Action::Grid => !ctrl && key(KeyCode::G),
             Action::Fit => !ctrl && key(KeyCode::F),
+            Action::Validate => !ctrl && key(KeyCode::V),
             Action::Help => key(KeyCode::F1),
             Action::Back => false,
         }
@@ -342,6 +351,10 @@ pub struct Editor {
     exit: bool,
     /// Window size last frame; the view refits when it changes.
     window: Vec2,
+    /// The last Validate's results, shown in a panel until closed.
+    report: Option<Report>,
+    /// A ring marking the problem the camera flew to, and its age.
+    flash: Option<(Vec2, f32)>,
 }
 
 impl Editor {
@@ -370,6 +383,8 @@ impl Editor {
             modal: None,
             exit: false,
             window: vec2(screen_width(), screen_height()),
+            report: None,
+            flash: None,
         };
         ed.rebuild();
         ed.fit();
@@ -388,12 +403,14 @@ impl Editor {
         self.drag = None;
         self.tool = Tool::Select;
         self.pending.clear();
+        self.report = None;
+        self.flash = None;
         self.rebuild();
         self.fit();
     }
 
-    /// Screenshot hook: open a window (help, new, open or unsaved) and pick
-    /// a tool (draw).
+    /// Screenshot hook: open a window (help, new, open or unsaved), pick a
+    /// tool (draw), or run Validate (validate; broken adds a problem first).
     pub fn debug_show(&mut self, what: &str) {
         match what {
             "help" => self.modal = Some(Modal::Help),
@@ -401,6 +418,22 @@ impl Editor {
             "open" => self.modal = Some(Modal::Open(self.map_list())),
             "unsaved" => self.modal = Some(Modal::Unsaved(Leave::Menu)),
             "draw" => self.set_tool(Tool::Draw),
+            "validate" => self.validate(),
+            // A ledge high in the sky with a health pack bots can't reach.
+            "broken" => {
+                self.doc.checkpoint();
+                let ledge = [
+                    vec2(2.0, 3.0),
+                    vec2(6.0, 3.0),
+                    vec2(6.0, 4.0),
+                    vec2(2.0, 4.0),
+                ];
+                self.doc.add_shape("solid", "rock", &ledge);
+                let fields = json!({"type": "health", "respawn_s": 25});
+                self.doc.add_thing(Layer::Pickups, vec2(4.0, 3.0), fields);
+                self.rebuild();
+                self.validate();
+            }
             _ => {}
         }
     }
@@ -425,6 +458,9 @@ impl Editor {
                 });
             }
             Err(errs) => self.problems = errs.into_iter().map(|e| e.message).collect(),
+        }
+        if let Some(r) = &mut self.report {
+            r.mark_stale();
         }
     }
 
@@ -467,6 +503,7 @@ impl Editor {
 
     pub fn frame(&mut self, dt: f32, ui: &mut Ui) -> Outcome {
         self.time += dt;
+        self.tick_flash(dt);
         if let Some((_, age)) = &mut self.note {
             *age += dt;
             if *age > NOTE_S {
@@ -485,11 +522,13 @@ impl Editor {
         if live {
             if is_key_pressed(KeyCode::Escape) {
                 // Step back one level: the shape being drawn, then the tool,
-                // then the editor.
+                // then the Validate panel, then the editor.
                 if !self.pending.is_empty() {
                     self.pending.clear();
                 } else if self.tool != Tool::Select {
                     self.tool = Tool::Select;
+                } else if self.report.is_some() {
+                    self.report = None;
                 } else {
                     self.leave(Leave::Menu);
                 }
@@ -525,6 +564,7 @@ impl Editor {
         if live {
             self.properties(ui);
         }
+        self.report_panel(ui, live);
         if self.modal.is_some() {
             self.modal_frame(ui, was_open);
         }
@@ -581,6 +621,7 @@ impl Editor {
             }
             Action::Grid => self.grid = !self.grid,
             Action::Fit => self.fit(),
+            Action::Validate => self.validate(),
             Action::Help => self.modal = Some(Modal::Help),
             Action::Back => self.leave(Leave::Menu),
         }
@@ -711,7 +752,7 @@ impl Editor {
     /// The action buttons (right), in groups.
     fn action_rects(&self) -> Vec<(Action, Rect)> {
         let s = ui::scale();
-        let (w, h, gap) = (220.0 * s, 26.0 * s, 4.0 * s);
+        let (w, h, gap) = (220.0 * s, 24.0 * s, 3.0 * s);
         let x = screen_width() - 10.0 * s - w;
         let mut y = self.bar_height() + 10.0 * s;
         let mut out = Vec::new();
@@ -720,7 +761,7 @@ impl Editor {
                 out.push((a, Rect::new(x, y, w, h)));
                 y += h + gap;
             }
-            y += 10.0 * s;
+            y += 8.0 * s;
         }
         out
     }
@@ -739,6 +780,7 @@ impl Editor {
                 let rows = self.property_rows();
                 rows > 0 && self.panel_rect(rows).contains(mouse)
             }
+            || self.report_rect().is_some_and(|r| r.contains(mouse))
     }
 
     fn toolbar(&mut self, ui: &mut Ui, live: bool) {
@@ -1141,6 +1183,7 @@ impl Editor {
         self.draw_things();
         self.draw_selection();
         self.draw_pending(mouse);
+        self.draw_flash();
         use_screen();
         self.draw_labels();
         self.draw_bar(mouse);
