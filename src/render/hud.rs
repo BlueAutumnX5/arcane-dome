@@ -4,7 +4,7 @@ use crate::sim::{GO_SHOWN_S, MAX_HEALTH, MAX_SHIELD, Phase, World};
 use macroquad::prelude::*;
 
 fn ui_scale() -> f32 {
-    (screen_height() / 720.0).max(0.6)
+    (screen_height() / crate::platform::ui_height()).max(0.6)
 }
 
 fn text(t: &str, x: f32, y: f32, size: f32, color: Color) {
@@ -226,8 +226,17 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         draw_rectangle(sw - t, 0.0, t, sh, c);
     }
 
-    // Health, bottom left.
-    let (hx, hy, hw, hh) = (20.0 * s, sh - 44.0 * s, 240.0 * s, 22.0 * s);
+    // Health, bottom left; with touch controls, top left beside the pause
+    // and scores buttons, out from under the thumbs (the touch weapon bar
+    // and its buttons are drawn by `app::touch`).
+    let touch = crate::platform::touch();
+    let (hx, hy, hw, hh) = if touch {
+        (128.0 * s, 26.0 * s, 220.0 * s, 22.0 * s)
+    } else {
+        (20.0 * s, sh - 44.0 * s, 240.0 * s, 22.0 * s)
+    };
+    // Shield and powerups stack away from the screen edge.
+    let stack = if touch { -1.0 } else { 1.0 };
     draw_rectangle(hx, hy, hw, hh, Color::new(0.0, 0.0, 0.0, 0.55));
     let frac = (f.health / MAX_HEALTH).clamp(0.0, 1.0);
     let hc = if frac > 0.5 {
@@ -246,9 +255,13 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         WHITE,
     );
 
-    // Shield, just above health.
+    // Shield, just above health (below, with touch).
     if f.shield > 0.0 {
-        let sy = hy - 10.0 * s;
+        let sy = if touch {
+            hy + hh + 4.0 * s
+        } else {
+            hy - 10.0 * s
+        };
         draw_rectangle(hx, sy, hw, 6.0 * s, Color::new(0.0, 0.0, 0.0, 0.55));
         draw_rectangle(
             hx,
@@ -271,7 +284,7 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     for b in &f.buffs {
         if let Some(p) = world.data.powerups.powerups.get(b.powerup) {
             let c = super::gadgets::rgb(p.color);
-            let y = hy - (34.0 + row * 24.0) * s;
+            let y = hy - stack * (34.0 + row * 24.0) * s;
             draw_rectangle(hx, y, 14.0 * s, 14.0 * s, c);
             text(
                 &format!("{}  {:.0}s", p.name, b.time_left.ceil()),
@@ -289,10 +302,11 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
             .and_then(|p| world.data.powerups.powerups.get(p))
     {
         let c = super::gadgets::rgb(p.color);
-        let y = hy - (34.0 + row * 24.0) * s;
+        let y = hy - stack * (34.0 + row * 24.0) * s;
         draw_rectangle(hx, y, 14.0 * s, 14.0 * s, c);
+        let key = if touch { "" } else { "  [F]" };
         text(
-            &format!("{} x{}  [F]", p.name, f.teleport_charges),
+            &format!("{} x{}{key}", p.name, f.teleport_charges),
             hx + 22.0 * s,
             y + 13.0 * s,
             18.0 * s,
@@ -303,14 +317,6 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     // Ammo, bottom right.
     let def = &world.data.weapons[f.current];
     let slot = f.inventory[f.current];
-    let rx = sw - 20.0 * s;
-    text_right(
-        &def.name,
-        rx,
-        sh - 52.0 * s,
-        22.0 * s,
-        category_color(def.category),
-    );
     let ammo = if !def.uses_ammo() {
         "-".to_owned()
     } else if def.infinite_reserve() {
@@ -318,8 +324,37 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     } else {
         format!("{} / {}", slot.mag, slot.reserve)
     };
-    text_right(&ammo, rx, sh - 22.0 * s, 30.0 * s, WHITE);
-    if f.is_reloading() {
+    if touch {
+        // Above the touch weapon bar (46 high, 10 from the bottom).
+        let y = sh - 66.0 * s;
+        let name = measure_text(&def.name, None, (22.0 * s) as u16, 1.0).width;
+        let count = measure_text(&ammo, None, (26.0 * s) as u16, 1.0).width;
+        let gap = 16.0 * s;
+        let x = sw / 2.0 - (name + gap + count) / 2.0;
+        text(&def.name, x, y, 22.0 * s, category_color(def.category));
+        text(&ammo, x + name + gap, y, 26.0 * s, WHITE);
+        if f.is_reloading() {
+            let total = def.reload_time_s.max(0.01);
+            let p = 1.0 - f.reload_timer / total;
+            let w = 160.0 * s;
+            let bx = sw / 2.0 - w / 2.0;
+            let by = y - 32.0 * s;
+            draw_rectangle(bx, by, w, 5.0 * s, Color::new(0.0, 0.0, 0.0, 0.5));
+            draw_rectangle(bx, by, w * p, 5.0 * s, WHITE);
+        }
+    }
+    let rx = sw - 20.0 * s;
+    if !touch {
+        text_right(
+            &def.name,
+            rx,
+            sh - 52.0 * s,
+            22.0 * s,
+            category_color(def.category),
+        );
+        text_right(&ammo, rx, sh - 22.0 * s, 30.0 * s, WHITE);
+    }
+    if f.is_reloading() && !touch {
         let total = def.reload_time_s.max(0.01);
         let p = 1.0 - f.reload_timer / total;
         let w = 140.0 * s;
@@ -335,7 +370,11 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
     }
 
     // Weapon bar, bottom center.
-    let n = world.data.weapons.len().min(10);
+    let n = if touch {
+        0
+    } else {
+        world.data.weapons.len().min(10)
+    };
     let bw = 66.0 * s;
     let bh = 38.0 * s;
     let gap = 4.0 * s;
@@ -584,7 +623,12 @@ pub fn draw_hud(world: &World, effects: &Effects, player: usize, blood: bool) {
         }
         Phase::Playing => {
             if def.projectile.kind == ProjectileKind::Beam && slot.mag == 0 && !f.is_reloading() {
-                text_center("Press R to reload", cx, sh * 0.62, 20.0 * s, WHITE);
+                let msg = if touch {
+                    "Tap Reload"
+                } else {
+                    "Press R to reload"
+                };
+                text_center(msg, cx, sh * 0.62, 20.0 * s, WHITE);
             }
         }
     }

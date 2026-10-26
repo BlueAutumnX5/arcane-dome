@@ -24,7 +24,7 @@ const BALLOON: Color = Color::new(1.0, 0.86, 0.38, 1.0);
 const TIP_DELAY: f32 = 0.45;
 
 pub fn scale() -> f32 {
-    (screen_height() / 720.0).max(0.6)
+    (screen_height() / crate::platform::ui_height()).max(0.6)
 }
 
 /// Which screen edge a tab belongs to; it slides toward that edge.
@@ -46,17 +46,121 @@ fn lerp_color(a: Color, b: Color, t: f32) -> Color {
 thread_local! {
     /// Screenshot runs can move a pretend mouse (see `set_fake_mouse`).
     static FAKE_MOUSE: std::cell::Cell<Option<Vec2>> = const { std::cell::Cell::new(None) };
+    /// Where the current press began, on screen (touch: a tap only counts
+    /// if the finger lifts near there).
+    static PRESS_AT: std::cell::Cell<Option<Vec2>> = const { std::cell::Cell::new(None) };
+    /// How far the page being drawn is scrolled (see `Scroll`).
+    static SCROLL_Y: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
 }
+
+/// How far a finger may slide and still tap, in UI units.
+const TAP_SLOP: f32 = 14.0;
 
 /// Make the menus see the mouse at `p` (screenshot runs only).
 pub fn set_fake_mouse(p: Option<Vec2>) {
     FAKE_MOUSE.with(|m| m.set(p));
 }
 
+/// The pointer, on the page being drawn. On a touch screen there is none
+/// while no finger is down, so nothing stays lit after a tap.
 fn mouse() -> Vec2 {
-    FAKE_MOUSE
-        .with(|m| m.get())
-        .unwrap_or_else(|| mouse_position().into())
+    if let Some(p) = FAKE_MOUSE.with(|m| m.get()) {
+        return p;
+    }
+    if crate::platform::touch()
+        && !is_mouse_button_down(MouseButton::Left)
+        && !is_mouse_button_released(MouseButton::Left)
+    {
+        return vec2(-1e5, -1e5);
+    }
+    Vec2::from(mouse_position()) + vec2(0.0, SCROLL_Y.with(|y| y.get()))
+}
+
+/// A click on something under the pointer (`hot`). With a mouse, the press;
+/// on a touch screen, lifting the finger near where it went down, so that
+/// dragging a page never presses what it started on.
+fn clicked(hot: bool) -> bool {
+    if !hot {
+        return false;
+    }
+    if !crate::platform::touch() {
+        return is_mouse_button_pressed(MouseButton::Left);
+    }
+    is_mouse_button_released(MouseButton::Left)
+        && PRESS_AT
+            .with(|p| p.get())
+            .is_some_and(|at| at.distance(mouse_position().into()) <= TAP_SLOP * scale())
+}
+
+/// A page taller than the screen, dragged up and down (and scrolled with
+/// the wheel). Draw it between `begin` and `end`, laid out as if the screen
+/// were `page_h` tall.
+#[derive(Default)]
+pub struct Scroll {
+    pub y: f32,
+    drag: Option<f32>,
+}
+
+impl Scroll {
+    /// Start drawing the page; widgets see the pointer on the page.
+    pub fn begin(&mut self, page_h: f32) {
+        let most = (page_h - screen_height()).max(0.0);
+        // Screenshot runs: ARCANE_SHOT_SCROLL=<0..1> of the way down.
+        if let Some(f) = std::env::var("ARCANE_SHOT_SCROLL")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+        {
+            self.y = most * f;
+        }
+        let drag = drag_y(&mut self.drag);
+        self.y = (self.y - drag - mouse_wheel().1.signum() * 40.0 * scale()).clamp(0.0, most);
+        SCROLL_Y.with(|y| y.set(self.y));
+        self.resume();
+    }
+
+    /// Put the page's view back after something drew off screen (say, a
+    /// map picture into its texture), which resets it.
+    pub fn resume(&self) {
+        let (sw, sh) = (screen_width(), screen_height());
+        if self.y > 0.0 {
+            crate::render::use_camera(&Camera2D {
+                target: vec2(sw / 2.0, sh / 2.0 + self.y),
+                zoom: vec2(2.0 / sw, 2.0 / sh),
+                ..Default::default()
+            });
+        }
+    }
+
+    /// Back to the screen (for what stays put), with a bar showing where
+    /// on the page the screen is.
+    pub fn end(&self, page_h: f32) {
+        crate::render::use_screen();
+        SCROLL_Y.with(|y| y.set(0.0));
+        let (sw, sh) = (screen_width(), screen_height());
+        if page_h > sh {
+            let s = scale();
+            let h = sh * sh / page_h;
+            let y = self.y / (page_h - sh) * (sh - h);
+            draw_rectangle(sw - 6.0 * s, y, 4.0 * s, h, Color::new(1.0, 1.0, 1.0, 0.35));
+        }
+    }
+}
+
+/// Escape, or the Back button on Android.
+pub fn back_pressed() -> bool {
+    is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Back)
+}
+
+/// How far a finger (or the mouse, button held) dragged up or down this
+/// frame, in pixels: for scrolling lists by dragging them.
+pub fn drag_y(last: &mut Option<f32>) -> f32 {
+    let y = mouse_position().1;
+    let dy = match *last {
+        Some(prev) if is_mouse_button_down(MouseButton::Left) => y - prev,
+        _ => 0.0,
+    };
+    *last = is_mouse_button_down(MouseButton::Left).then_some(y);
+    dy
 }
 
 fn hovered(r: Rect) -> bool {
@@ -148,15 +252,18 @@ struct Tip {
     text: String,
     /// How long the mouse has rested on it.
     age: f32,
-    /// A "Coming Soon!" balloon pointing at this button, instead of a plain
-    /// description at the mouse.
-    soon: Option<Rect>,
+    /// A balloon pointing at this button, with this title (like "Coming
+    /// Soon!"), instead of a plain description at the mouse.
+    soon: Option<(Rect, &'static str)>,
 }
 
 impl Ui {
     pub fn begin(&mut self, dt: f32) {
         self.dt = dt;
         self.tip_seen = false;
+        if is_mouse_button_pressed(MouseButton::Left) {
+            PRESS_AT.with(|p| p.set(Some(mouse_position().into())));
+        }
     }
 
     /// Pop up `text` when the mouse rests on `r`. Call each frame.
@@ -167,10 +274,16 @@ impl Ui {
     /// A "Coming Soon!" balloon with `text` under it, beside `r`, while the
     /// mouse is on it.
     pub fn soon(&mut self, id: &str, r: Rect, text: &str) {
-        self.tip_at(id, r, text, Some(r));
+        self.balloon(id, r, "Coming Soon!", text);
     }
 
-    fn tip_at(&mut self, id: &str, r: Rect, text: &str, soon: Option<Rect>) {
+    /// A balloon titled `title`, with `text` under it, beside `r`, while
+    /// the mouse is on it.
+    pub fn balloon(&mut self, id: &str, r: Rect, title: &'static str, text: &str) {
+        self.tip_at(id, r, text, Some((r, title)));
+    }
+
+    fn tip_at(&mut self, id: &str, r: Rect, text: &str, soon: Option<(Rect, &'static str)>) {
         if !hovered(r) {
             return;
         }
@@ -196,8 +309,8 @@ impl Ui {
         let Some(tip) = &self.tip else {
             return;
         };
-        if let Some(anchor) = tip.soon {
-            balloon(anchor, &tip.text, tip.age);
+        if let Some((anchor, title)) = tip.soon {
+            balloon(anchor, title, &tip.text, tip.age);
             return;
         }
         if tip.age < TIP_DELAY {
@@ -331,7 +444,7 @@ impl Ui {
             Side::Left => text_left(label, x + inset + stripe + 12.0 * s, ty, size, color),
             Side::Right => text_right(label, x + w - inset - stripe - 12.0 * s, ty, size, color),
         }
-        hot && is_mouse_button_pressed(MouseButton::Left)
+        clicked(hot)
     }
 
     /// A flat rectangular button in the menu style: hovering eases the fill
@@ -378,7 +491,7 @@ impl Ui {
             r.h * 0.56,
             color,
         );
-        hot && is_mouse_button_pressed(MouseButton::Left)
+        clicked(hot)
     }
 
     /// A button that switches something on and off, with a light at its
@@ -416,7 +529,7 @@ impl Ui {
             2.0 * s,
             Color::new(1.0, 1.0, 1.0, 0.35 + 0.65 * t),
         );
-        hot && is_mouse_button_pressed(MouseButton::Left)
+        clicked(hot)
     }
 
     /// A `label   <  value  >` row. Returns -1 / +1 on arrow clicks.
@@ -460,6 +573,17 @@ impl Ui {
         let left = Rect::new(r.x + r.w * 0.5, r.y, aw, r.h);
         let right = Rect::new(r.x + r.w - aw, r.y, aw, r.h);
         let mid = (left.x + left.w + right.x) / 2.0;
+        // Fingers are blunt: on a touch screen each half of the value side
+        // steps that way.
+        let (left_hit, right_hit) = if crate::platform::touch() {
+            let half = r.w * 0.25;
+            (
+                Rect::new(r.x + r.w * 0.5, r.y, half, r.h),
+                Rect::new(r.x + r.w * 0.75, r.y, half, r.h),
+            )
+        } else {
+            (left, right)
+        };
         text_center(
             value,
             mid,
@@ -471,15 +595,15 @@ impl Ui {
             return 0;
         }
         let mut delta = 0;
-        for (rect, d, glyph) in [(left, -1, "<"), (right, 1, ">")] {
-            let hot = hovered(rect);
+        for (rect, hit, d, glyph) in [(left, left_hit, -1, "<"), (right, right_hit, 1, ">")] {
+            let hot = hovered(hit);
             let c = if hot {
                 ACCENT
             } else {
                 Color::new(1.0, 1.0, 1.0, 0.6)
             };
             text_center(glyph, rect.x + rect.w / 2.0, r.y + r.h * 0.7, r.h * 0.6, c);
-            if hot && is_mouse_button_pressed(MouseButton::Left) {
+            if clicked(hot) {
                 delta = d;
             }
         }
@@ -502,15 +626,15 @@ fn round_rect(x: f32, y: f32, w: f32, h: f32, rad: f32, color: Color) {
     }
 }
 
-/// A speech balloon saying "Coming Soon!" (and `text`) beside `anchor`,
+/// A speech balloon titled `title_text` (and `text`) beside `anchor`,
 /// its tail pointing at it. Pops in over `age`.
-fn balloon(anchor: Rect, text: &str, age: f32) {
+fn balloon(anchor: Rect, title_text: &str, text: &str, age: f32) {
     let s = scale();
     let pop = (age * 7.0).min(1.0);
     let (title, body) = (21.0 * s, 14.0 * s);
     let pad = 10.0 * s;
     let lines = wrap(text, 250.0 * s, body);
-    let title_w = measure_text("Coming Soon!", None, title as u16, 1.0).width;
+    let title_w = measure_text(title_text, None, title as u16, 1.0).width;
     let w = lines
         .iter()
         .map(|l| measure_text(l, None, body as u16, 1.0).width)
@@ -541,7 +665,7 @@ fn balloon(anchor: Rect, text: &str, age: f32) {
     );
     round_rect(x, y, w, h, 8.0 * s, fill);
     let ink = Color::new(TEXT_DARK.r, TEXT_DARK.g, TEXT_DARK.b, pop);
-    draw_text("Coming Soon!", x + pad, y + pad + title * 0.8, title, ink);
+    draw_text(title_text, x + pad, y + pad + title * 0.8, title, ink);
     for (i, line) in lines.iter().enumerate() {
         let ly = y + pad + title + 6.0 * s + body * 0.8 + i as f32 * (body + 3.0 * s);
         draw_text(

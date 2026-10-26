@@ -51,8 +51,11 @@ impl Settings {
 
 /// `%APPDATA%\arcane-dome\settings.json` on Windows,
 /// `$XDG_CONFIG_HOME/arcane-dome/settings.json` (or `~/.config/...`)
-/// elsewhere.
+/// elsewhere; `settings.json` in the app folder on Android.
 fn path() -> Option<PathBuf> {
+    if let Some(dir) = crate::platform::app_dir() {
+        return Some(dir.join("settings.json"));
+    }
     let base = if cfg!(windows) {
         std::env::var_os("APPDATA").map(PathBuf::from)
     } else {

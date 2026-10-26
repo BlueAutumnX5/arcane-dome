@@ -147,8 +147,12 @@ impl GameData {
 }
 
 /// Find the `assets` folder: `$ARCANE_DOME_ASSETS`, the working directory,
-/// next to the executable, or the crate root (for `cargo run`).
+/// next to the executable, or the crate root (for `cargo run`). On Android,
+/// the data carried inside the app.
 pub fn find_assets_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "android") {
+        return crate::platform::bundled_assets();
+    }
     let mut candidates = Vec::new();
     if let Ok(p) = std::env::var("ARCANE_DOME_ASSETS") {
         candidates.push(PathBuf::from(p));

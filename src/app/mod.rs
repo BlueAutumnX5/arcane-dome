@@ -3,6 +3,7 @@
 mod editor;
 mod session;
 mod settings;
+mod touch;
 mod ui;
 
 use crate::data::{GameData, ProjectileKind, find_assets_dir};
@@ -79,10 +80,30 @@ enum Info {
 /// What the version history page shows.
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 
-/// Should the game open fullscreen? (The saved setting; screenshot runs
-/// always get a window.)
-pub fn start_fullscreen() -> bool {
-    std::env::var_os("ARCANE_SHOT").is_none() && Settings::load().fullscreen
+/// The game window: the saved fullscreen setting (screenshot runs always
+/// get a window), and on Android always the whole screen.
+pub fn window_conf() -> Conf {
+    let (width, height) = shot_size();
+    Conf {
+        window_title: "Arcane Dome".to_owned(),
+        window_width: width,
+        window_height: height,
+        high_dpi: true,
+        fullscreen: cfg!(target_os = "android")
+            || (std::env::var_os("ARCANE_SHOT").is_none() && Settings::load().fullscreen),
+        ..Default::default()
+    }
+}
+
+/// Window size: 1280 x 720, or ARCANE_SHOT_SIZE=<w>x<h> for screenshot runs.
+fn shot_size() -> (i32, i32) {
+    std::env::var("ARCANE_SHOT_SIZE")
+        .ok()
+        .and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some((w.parse().ok()?, h.parse().ok()?))
+        })
+        .unwrap_or((1280, 720))
 }
 
 /// Where a main menu button goes.
@@ -317,6 +338,11 @@ struct App {
     settings: Settings,
     /// How far the version history is scrolled, in pixels.
     changes_scroll: f32,
+    /// Where the finger was last frame, while dragging the history.
+    changes_drag: Option<f32>,
+    /// Pages that can be taller than the screen (on a phone).
+    setup_scroll: ui::Scroll,
+    info_scroll: ui::Scroll,
     /// Rendered map pictures for the setup screen, by map id.
     thumbs: std::collections::HashMap<String, crate::render::MapThumb>,
 }
@@ -363,6 +389,9 @@ pub async fn run() {
         quit: false,
         settings: Settings::load(),
         changes_scroll: 0.0,
+        changes_drag: None,
+        setup_scroll: Default::default(),
+        info_scroll: Default::default(),
         thumbs: Default::default(),
     };
     app.reset_mode_defaults();
@@ -423,6 +452,10 @@ pub async fn run() {
             break;
         }
         if app.quit {
+            // Android keeps a finished game's screen up: end the app instead.
+            if cfg!(target_os = "android") {
+                std::process::exit(0);
+            }
             break;
         }
         next_frame().await;
@@ -630,7 +663,7 @@ impl App {
                 Color::new(1.0, 0.75, 0.7, 1.0),
             );
         }
-        if is_key_pressed(KeyCode::Escape) {
+        if ui::back_pressed() {
             self.quit = true;
         }
     }
@@ -640,8 +673,13 @@ impl App {
         let s = ui::scale();
         let (sw, sh) = (screen_width(), screen_height());
 
+        // On a phone (bigger units) everything sits a little higher, to
+        // leave room for the credits under the buttons.
+        let touch = crate::platform::touch();
+        let lift = if touch { sh * 0.05 } else { 0.0 };
+
         // Title with a dome arc behind it.
-        let c = vec2(sw / 2.0, sh * 0.27);
+        let c = vec2(sw / 2.0, sh * 0.27 - lift);
         for k in 0..3 {
             let r = (120.0 + k as f32 * 22.0) * s;
             draw_circle_lines(
@@ -652,19 +690,19 @@ impl App {
                 Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.22 - k as f32 * 0.06),
             );
         }
-        ui::text_center("ARCANE DOME", sw / 2.0, sh * 0.25, 76.0 * s, WHITE);
+        ui::text_center("ARCANE DOME", sw / 2.0, sh * 0.25 - lift, 76.0 * s, WHITE);
         ui::text_center(
             "platform arena shooter",
             sw / 2.0,
-            sh * 0.25 + 34.0 * s,
+            sh * 0.25 - lift + 34.0 * s,
             22.0 * s,
             Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.8),
         );
 
         let bw = 300.0 * s;
         let bh = 38.0 * s;
-        let gap = 50.0 * s;
-        let y0 = sh * 0.4;
+        let gap = if touch { 46.0 * s } else { 50.0 * s };
+        let y0 = sh * 0.4 - lift * 1.4;
         let lx = 60.0 * s;
         let rx = sw - 60.0 * s - bw;
         let mut go = None;
@@ -676,6 +714,15 @@ impl App {
             for (i, &(id, label, tip, to)) in items.iter().enumerate() {
                 let r = Rect::new(x, y0 + gap * i as f32, bw, bh);
                 match to {
+                    Some(Go::Editor) if crate::platform::touch() => {
+                        self.ui.balloon(
+                            id,
+                            r,
+                            "PC Only",
+                            "The map editor needs a mouse and keyboard, so for now it is only in the PC version.",
+                        );
+                        self.ui.tab_locked(id, label, r, side);
+                    }
                     Some(to) => {
                         self.ui.hint(id, r, tip);
                         if self.ui.tab(id, label, r, side, false) {
@@ -732,7 +779,10 @@ impl App {
         match go? {
             Go::QuickMatch => Some(Screen::Setup),
             Go::Editor => Some(self.open_editor()),
-            Go::Info(page) => Some(Screen::Info(page)),
+            Go::Info(page) => {
+                self.info_scroll = Default::default();
+                Some(Screen::Info(page))
+            }
             Go::Settings => Some(Screen::Settings),
             Go::Changes => {
                 self.changes_scroll = 0.0;
@@ -751,8 +801,15 @@ impl App {
         let s = ui::scale();
         let (sw, sh) = (screen_width(), screen_height());
         ui::text_center("SETTINGS", sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
+        // A phone is always fullscreen: no row for it.
+        let first = if cfg!(target_os = "android") { 1 } else { 0 };
         let w = (640.0 * s).min(sw - 80.0 * s);
-        let r = Rect::new((sw - w) / 2.0, 90.0 * s, w, 208.0 * s);
+        let r = Rect::new(
+            (sw - w) / 2.0,
+            90.0 * s,
+            w,
+            (208.0 - 44.0 * first as f32) * s,
+        );
         ui::panel(r, None);
         let st = &self.settings;
         let rows = [
@@ -778,10 +835,10 @@ impl App {
             ),
         ];
         let mut flip = None;
-        for (i, (label, on, tip)) in rows.into_iter().enumerate() {
+        for (i, (label, on, tip)) in rows.into_iter().enumerate().skip(first) {
             let row = Rect::new(
                 r.x + 20.0 * s,
-                r.y + 22.0 * s + i as f32 * 44.0 * s,
+                r.y + 22.0 * s + (i - first) as f32 * 44.0 * s,
                 r.w - 40.0 * s,
                 34.0 * s,
             );
@@ -818,7 +875,7 @@ impl App {
             Rect::new(50.0 * s, sh - 76.0 * s, bw, 42.0 * s),
             Side::Left,
             false,
-        ) || is_key_pressed(KeyCode::Escape)
+        ) || ui::back_pressed()
         {
             return Some(Screen::Menu);
         }
@@ -857,8 +914,9 @@ impl App {
         let total: f32 = lines.iter().map(|l| l.1 + 8.0 * s).sum();
         let room = r.h - 40.0 * s;
         let most = (total - room).max(0.0);
+        let drag = ui::drag_y(&mut self.changes_drag);
         self.changes_scroll =
-            (self.changes_scroll - mouse_wheel().1.signum() * 40.0 * s).clamp(0.0, most);
+            (self.changes_scroll - mouse_wheel().1.signum() * 40.0 * s - drag).clamp(0.0, most);
         if is_key_down(KeyCode::Down) {
             self.changes_scroll = (self.changes_scroll + 8.0 * s).min(most);
         }
@@ -875,7 +933,11 @@ impl App {
         }
         if most > 0.0 {
             ui::text_right(
-                "Mouse wheel to scroll",
+                if crate::platform::touch() {
+                    "Drag to scroll"
+                } else {
+                    "Mouse wheel to scroll"
+                },
                 r.x + r.w - 16.0 * s,
                 r.y + r.h + 22.0 * s,
                 15.0 * s,
@@ -889,7 +951,7 @@ impl App {
             Rect::new(50.0 * s, sh - 76.0 * s, bw, 42.0 * s),
             Side::Left,
             false,
-        ) || is_key_pressed(KeyCode::Escape)
+        ) || ui::back_pressed()
         {
             return Some(Screen::Menu);
         }
@@ -982,7 +1044,11 @@ impl App {
         ui::backdrop(self.time);
         let data = self.data();
         let s = ui::scale();
-        let (sw, sh) = (screen_width(), screen_height());
+        let (sw, screen_h) = (screen_width(), screen_height());
+        // Laid out for a screen at least 720 units tall; on a phone (bigger
+        // units) that is taller than the screen, and the page scrolls.
+        let sh = (720.0 * s).max(screen_h);
+        self.setup_scroll.begin(sh);
         ui::text_center("QUICK MATCH", sw / 2.0, 58.0 * s, 40.0 * s, WHITE);
 
         let modes = self.modes_for_map();
@@ -1001,7 +1067,9 @@ impl App {
             .thumbs
             .entry(map.id.clone())
             .or_insert_with(|| crate::render::MapThumb::new(map, 768));
-        ui::map_preview(map, thumb.draw(map), pv);
+        let picture = thumb.draw(map);
+        self.setup_scroll.resume();
+        ui::map_preview(map, picture, pv);
         let ny = pv.y + pv.h + 26.0 * s;
         let mut map_delta = self.ui.stepper(
             "s_map",
@@ -1346,6 +1414,9 @@ impl App {
             }
         }
 
+        self.setup_scroll.end(sh);
+        let sh = screen_h;
+
         // Back (slides left) and Start (slides right).
         let bw = 240.0 * s;
         let bh = 42.0 * s;
@@ -1356,7 +1427,7 @@ impl App {
             Rect::new(50.0 * s, by, bw, bh),
             Side::Left,
             false,
-        ) || is_key_pressed(KeyCode::Escape)
+        ) || ui::back_pressed()
         {
             return Some(Screen::Menu);
         }
@@ -1378,7 +1449,10 @@ impl App {
         ui::backdrop(self.time);
         let data = self.data();
         let s = ui::scale();
-        let (sw, sh) = (screen_width(), screen_height());
+        let (sw, screen_h) = (screen_width(), screen_height());
+        // As the setup page: scrolls on a phone.
+        let sh = (720.0 * s).max(screen_h);
+        self.info_scroll.begin(sh);
         let title = match page {
             Info::HowTo => "HOW TO PLAY",
             Info::Weapons => "WEAPON INFO",
@@ -1397,15 +1471,28 @@ impl App {
         let soft = Color::new(1.0, 1.0, 1.0, 0.8);
         match page {
             Info::HowTo => {
-                for t in [
-                    "A / D  move        W or Space  jump (press again in the air to double jump)",
-                    "S  crouch          S + jump  drop through a thin platform",
-                    "Mouse  aim         Left click  fire        R  reload",
-                    "1 - 0, Q / E or mouse wheel  switch weapons",
-                    "F  use Shadowstep (when you hold one)",
-                    "Tab  scoreboard    P or Esc  pause",
-                    "F11  fullscreen on / off",
-                ] {
+                let keys: &[&str] = if crate::platform::touch() {
+                    &[
+                        "Left stick  walk; push up to jump (again in the air to double jump)",
+                        "            push down to crouch, or to drop through a thin platform",
+                        "Right stick  aim; push past the red ring to fire",
+                        "Reload, Switch  the buttons above the right stick",
+                        "Weapons  tap one in the bar at the bottom",
+                        "Step  use Shadowstep (the button shows while you hold one)",
+                        "Top left  pause and scoreboard (Back also pauses)",
+                    ]
+                } else {
+                    &[
+                        "A / D  move        W or Space  jump (press again in the air to double jump)",
+                        "S  crouch          S + jump  drop through a thin platform",
+                        "Mouse  aim         Left click  fire        R  reload",
+                        "1 - 0, Q / E or mouse wheel  switch weapons",
+                        "F  use Shadowstep (when you hold one)",
+                        "Tab  scoreboard    P or Esc  pause",
+                        "F11  fullscreen on / off",
+                    ]
+                };
+                for t in keys {
                     line(t, WHITE);
                 }
                 line("", WHITE);
@@ -1422,7 +1509,12 @@ impl App {
                     let what = if p.duration_s > 0.0 {
                         format!("   {}  ({:.0} s)", p.name, p.duration_s)
                     } else {
-                        format!("   {}  (one teleport, press F)", p.name)
+                        let key = if crate::platform::touch() {
+                            "tap Step"
+                        } else {
+                            "press F"
+                        };
+                        format!("   {}  (one teleport, {key})", p.name)
                     };
                     line(&what, c);
                 }
@@ -1497,6 +1589,8 @@ impl App {
                 }
             }
         }
+        self.info_scroll.end(sh);
+        let sh = screen_h;
         let bw = 240.0 * s;
         if self.ui.tab(
             "i_back",
@@ -1504,7 +1598,7 @@ impl App {
             Rect::new(50.0 * s, sh - 76.0 * s, bw, 42.0 * s),
             Side::Left,
             false,
-        ) || is_key_pressed(KeyCode::Escape)
+        ) || ui::back_pressed()
         {
             return Some(Screen::Menu);
         }

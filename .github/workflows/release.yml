@@ -1,7 +1,8 @@
 name: Release
 
-# Push a tag like v0.1.1 to build the game for Linux and Windows and publish
-# a GitHub release with ready-to-play archives (game + assets).
+# Push a tag like v0.1.1 to build the game for Linux, Windows and Android
+# and publish a GitHub release with ready-to-play archives (game + assets)
+# and the APK.
 on:
   push:
     tags: ["v*"]
@@ -65,8 +66,47 @@ jobs:
             dist/*.tar.gz
           if-no-files-found: error
 
+  android:
+    name: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Signed with the release key from the repository secrets when they
+      # are set (so each release installs over the last), else a debug key.
+      - name: Build APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ARCANE_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ARCANE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export ARCANE_KEYSTORE="$RUNNER_TEMP/release.keystore"
+          fi
+          android/build-apk.sh
+          mkdir -p dist
+          cp target/android/arcane-dome-*.apk "dist/arcane-dome-${GITHUB_REF_NAME}-android.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/*.apk
+          if-no-files-found: error
+
   release:
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

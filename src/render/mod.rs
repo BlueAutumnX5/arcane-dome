@@ -81,7 +81,7 @@ pub fn resync_texture_bindings() {
 /// Follows a point with look-ahead toward the mouse, clamped to the map.
 /// Share of the mouse's distance from the screen centre the camera shifts
 /// toward it.
-const LOOK_FOLLOW: f32 = 0.7;
+pub const LOOK_FOLLOW: f32 = 0.7;
 
 /// How far, in tiles, the camera may look ahead with a weapon of this range:
 /// long guns see further, like a scope.

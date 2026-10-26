@@ -49,3 +49,35 @@ jobs:
             target/release/arcane-dome
             target/release/arcane-dome.exe
           if-no-files-found: ignore
+
+  android:
+    name: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Clippy (Android)
+        run: cargo clippy --lib --target aarch64-linux-android -- -D warnings
+
+      # The runner image comes with the Android SDK and NDK.
+      - name: Build APK (debug key)
+        run: android/build-apk.sh
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: arcane-dome-android
+          path: target/android/*.apk
+          if-no-files-found: error

@@ -2,6 +2,13 @@
 
 ## Next version (in progress)
 
+- Android version (Android 9 and newer), with touch controls:
+  - Left stick walks; push it up to jump (again for the double jump), down to crouch or drop
+  - Right stick aims; push it past the red ring to fire
+  - Reload and Switch buttons, a tap-to-pick weapon bar, and Pause and Scoreboard buttons; the phone's Back button pauses and goes back
+  - Menus and the HUD are bigger on a phone; long pages scroll by dragging; buttons press when you lift your finger, so dragging never presses one
+  - The match pauses itself when you leave the app
+  - The map editor stays on the PC version for now
 - Map editor is complete:
   - Validate (V): checks that bots can reach every spawn, pickup and gadget, and that no spawn stands in lava or water; click a problem to fly the camera to it
   - Test Play (T): play the map against bots straight from the editor, then come back with nothing lost

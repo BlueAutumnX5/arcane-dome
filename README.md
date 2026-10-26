@@ -41,6 +41,8 @@ weapons, maps and modes all defined in JSON.
   it, and Instructions (F1) covers the rest.
 - **Settings**: fullscreen, menu slides, blood effects and an FPS counter,
   remembered between runs. View Changes on the main menu shows what is new.
+- **Android** (9 and newer): the same game with touch controls. The map
+  editor stays on the PC version for now.
 - Placeholder art: shapes and colours drawn in code. No sound yet.
 
 ## Controls
@@ -58,6 +60,22 @@ weapons, maps and modes all defined in JSON.
 | Scoreboard | Hold Tab |
 | Pause | P or Esc |
 | Fullscreen | F11 |
+
+On Android, two thumbs do it all:
+
+| Action | Touch |
+|---|---|
+| Move | Left stick, left / right |
+| Jump, double jump | Push the left stick up (flick up again in the air) |
+| Crouch, drop through a hatch | Push the left stick down |
+| Aim | Right stick |
+| Fire | Push the right stick past its red ring |
+| Reload, switch weapon | The buttons above the right stick |
+| Pick a weapon | Tap it in the bar at the bottom |
+| Use Shadowstep | Step (shows while you hold one) |
+| Pause, scoreboard | Top left buttons (Back also pauses) |
+
+Both sticks float: put your thumb down anywhere on that half of the screen.
 
 ## Inspiration and credits
 
@@ -83,6 +101,24 @@ cargo test
 
 On Linux, Macroquad needs the usual system libraries: ALSA, X11, Xi and an
 OpenGL driver (for example `alsa-lib libx11 libxi mesa` on Arch).
+
+### Android
+
+`android/build-apk.sh` builds `target/android/arcane-dome-<version>.apk`. It
+needs the Android SDK (`ANDROID_HOME`) with an NDK, build-tools and a
+platform, a JDK, and the Rust targets:
+
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi
+```
+
+```bash
+ANDROID_HOME=~/Android/Sdk android/build-apk.sh
+```
+
+Without a release key it signs with the standard Android debug key, which is
+fine for trying it on your own phone. `ARCANE_TOUCH=1` shows the touch
+controls on the desktop, to check their layout.
 
 ## Adding content
 

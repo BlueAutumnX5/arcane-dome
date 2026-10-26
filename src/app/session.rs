@@ -1,6 +1,7 @@
-//! One running match: reads the keyboard and mouse, steps the sim at a fixed
-//! 60 Hz, and draws it.
+//! One running match: reads the keyboard and mouse (or the touch
+//! controls), steps the sim at a fixed 60 Hz, and draws it.
 
+use super::touch::{self, Button, TouchControls};
 use super::ui::{self, Side, Ui};
 use crate::ai::BotSet;
 use crate::data::GameData;
@@ -44,7 +45,17 @@ pub struct Session {
     /// The button that leaves the match ("Main Menu", or "Back to Editor"
     /// when test-playing a map).
     pub exit_label: &'static str,
+    /// On-screen sticks and buttons, on touch screens.
+    touch: Option<TouchControls>,
 }
+
+/// How far, in tiles, the touch crosshair sits from the eye: this much at a
+/// light push, plus up to the weapon's look reach at a full one.
+const TOUCH_AIM_NEAR: f32 = 2.5;
+
+/// A frame this long means the game was away (on Android, sent to the
+/// background); a match pauses itself then.
+const AWAY_S: f32 = 0.5;
 
 const SLOT_KEYS: [KeyCode; 10] = [
     KeyCode::Key1,
@@ -79,6 +90,7 @@ impl Session {
             over_for: 0.0,
             blood: true,
             exit_label: "Main Menu",
+            touch: crate::platform::touch().then(TouchControls::default),
         })
     }
 
@@ -115,23 +127,55 @@ impl Session {
 
     pub fn frame(&mut self, dt: f32, ui: &mut Ui) -> Outcome {
         let over = matches!(self.world.phase, Phase::MatchOver { .. });
-        if !over && Self::pressed(&[KeyCode::P, KeyCode::Escape]) {
+        let layout = self
+            .touch
+            .is_some()
+            .then(|| touch::Layout::for_player(&self.world, self.player));
+        let fingers = touch::fingers();
+        let mut taps = Vec::new();
+        if let (Some(t), Some(layout)) = (&mut self.touch, &layout) {
+            if !self.paused && !over {
+                t.update(&fingers, layout);
+            }
+            taps = t.take_taps();
+            if get_frame_time() > AWAY_S && !over {
+                self.paused = true;
+            }
+        }
+        if !over
+            && (Self::pressed(&[KeyCode::P, KeyCode::Escape, KeyCode::Back])
+                || taps.contains(&Button::Pause))
+        {
             self.paused = !self.paused;
         }
-        let mouse: Vec2 = mouse_position().into();
+        if let Some(t) = &mut self.touch
+            && (self.paused || over)
+        {
+            t.release(&fingers);
+        }
+        let me = &self.world.fighters[self.player];
+        let reach = render::look_reach(self.world.data.weapons[me.current].range_tiles);
+        // With touch, the aim stick stands in for the mouse: the camera
+        // looks along it, further the harder it is pushed.
+        let mouse: Vec2 = match &self.touch {
+            Some(t) => {
+                let centre = vec2(screen_width(), screen_height()) * 0.5;
+                let look = t.aim_dir().unwrap_or(Vec2::ZERO) * t.aim_push() * reach;
+                centre + look * self.cam.ppt / render::LOOK_FOLLOW
+            }
+            None => mouse_position().into(),
+        };
 
         if !self.paused {
-            self.collect_edges();
+            self.collect_edges(&taps);
             self.acc += dt;
             while self.acc >= DT {
                 self.acc -= DT;
-                self.tick(mouse);
+                self.tick(mouse, reach);
             }
         }
         self.effects.update(if self.paused { 0.0 } else { dt });
         let focus = self.focus_point();
-        let me = &self.world.fighters[self.player];
-        let reach = render::look_reach(self.world.data.weapons[me.current].range_tiles);
         self.cam.update(&self.world, focus, mouse, reach, dt);
 
         render::draw_world(
@@ -143,10 +187,21 @@ impl Session {
         );
         render::draw_hud(&self.world, &self.effects, self.player, self.blood);
         if !self.paused && !over {
-            render::draw_crosshair(&self.world, &self.cam, &self.effects, self.player, mouse);
+            let at = match &self.touch {
+                Some(_) => self.cam.world_to_screen(self.touch_aim(reach)),
+                None => mouse,
+            };
+            render::draw_crosshair(&self.world, &self.cam, &self.effects, self.player, at);
+            if let (Some(t), Some(layout)) = (&self.touch, &layout) {
+                t.draw(layout, &self.world, self.player, ui::scale());
+            }
         }
         let debug_tab = std::env::var_os("ARCANE_SHOT_TAB").is_some();
-        if over || is_key_down(KeyCode::Tab) || debug_tab {
+        let scores = self
+            .touch
+            .as_ref()
+            .is_some_and(|t| t.holding(Button::Scores));
+        if over || is_key_down(KeyCode::Tab) || scores || debug_tab {
             render::draw_scoreboard(&self.world, Some(self.player));
         }
 
@@ -160,7 +215,31 @@ impl Session {
         Outcome::Continue
     }
 
-    fn collect_edges(&mut self) {
+    /// Where the touch controls aim, in world tiles: along the aim stick
+    /// (or the way the player faces, before the first aim).
+    fn touch_aim(&self, reach: f32) -> Vec2 {
+        let f = &self.world.fighters[self.player];
+        let Some(t) = &self.touch else {
+            return f.eye();
+        };
+        let dir = t.aim_dir().unwrap_or(vec2(f.facing, 0.0));
+        f.eye() + dir * (TOUCH_AIM_NEAR + t.aim_push() * reach)
+    }
+
+    fn collect_edges(&mut self, taps: &[Button]) {
+        if let Some(t) = &mut self.touch {
+            self.edges.jump |= t.take_jump();
+            self.edges.drop |= t.take_drop();
+        }
+        for tap in taps {
+            match *tap {
+                Button::Reload => self.edges.reload = true,
+                Button::Switch => self.edges.cycle = 1,
+                Button::Ability => self.edges.ability = true,
+                Button::Weapon(w) => self.edges.select = Some(w),
+                Button::Pause | Button::Scores => {}
+            }
+        }
         if Self::pressed(&[KeyCode::W, KeyCode::Up, KeyCode::Space]) {
             self.edges.jump = true;
         }
@@ -192,11 +271,11 @@ impl Session {
         }
     }
 
-    fn tick(&mut self, mouse: Vec2) {
+    fn tick(&mut self, mouse: Vec2, reach: f32) {
         let left = Self::held(&[KeyCode::A, KeyCode::Left]);
         let right = Self::held(&[KeyCode::D, KeyCode::Right]);
         let edges = std::mem::take(&mut self.edges);
-        let player = Input {
+        let mut player = Input {
             move_x: right as i32 as f32 - left as i32 as f32,
             jump: edges.jump,
             jump_held: Self::held(&[KeyCode::W, KeyCode::Up, KeyCode::Space]),
@@ -209,6 +288,17 @@ impl Session {
             cycle: edges.cycle,
             ability: edges.ability,
         };
+        // Touch: the sticks (a keyboard, if one is plugged in, still works;
+        // the mouse does not, as every touch also moves it).
+        if let Some(t) = &self.touch {
+            if t.move_x() != 0.0 {
+                player.move_x = t.move_x();
+            }
+            player.jump_held |= t.jump_held();
+            player.crouch |= t.crouch();
+            player.aim = self.touch_aim(reach);
+            player.fire = t.firing();
+        }
         let mut inputs = vec![Input::default(); self.world.fighters.len()];
         inputs[self.player] = player;
         self.bots.think(&self.world, &mut inputs);
@@ -268,8 +358,13 @@ impl Session {
         ) {
             return Outcome::Menu;
         }
+        let help = if self.touch.is_some() {
+            "Left stick: walk, push up to jump (again for a double jump), down to crouch.   Right stick: aim, push past the ring to fire."
+        } else {
+            "Move A/D  Jump W/Space (twice to double jump)  Crouch S  Fire mouse  Reload R  Shadowstep F  Weapons 1-0 / Q E / wheel  Scores Tab"
+        };
         ui::text_center(
-            "Move A/D  Jump W/Space (twice to double jump)  Crouch S  Fire mouse  Reload R  Shadowstep F  Weapons 1-0 / Q E / wheel  Scores Tab",
+            help,
             sw / 2.0,
             sh - 30.0 * s,
             16.0 * s,
@@ -294,7 +389,7 @@ impl Session {
             Rect::new(50.0 * s, y, bw, bh),
             Side::Left,
             false,
-        ) || is_key_pressed(KeyCode::Escape)
+        ) || Self::pressed(&[KeyCode::Escape, KeyCode::Back])
         {
             return Outcome::Menu;
         }
