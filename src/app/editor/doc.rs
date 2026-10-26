@@ -101,6 +101,22 @@ impl Doc {
         self.file.get("id").and_then(Value::as_str).unwrap_or("")
     }
 
+    pub fn name(&self) -> &str {
+        self.file.get("name").and_then(Value::as_str).unwrap_or("")
+    }
+
+    /// A top-level field (`id`, `name`, ...). Not an undoable edit by
+    /// itself: call `checkpoint` first if it should be.
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        self.file.get(key)
+    }
+
+    /// Set a top-level field (see `get`).
+    pub fn set(&mut self, key: &str, value: Value) {
+        self.file.insert(key.to_owned(), value);
+        self.dirty = true;
+    }
+
     pub fn size(&self) -> Vec2 {
         let s = self.file.get("size").and_then(Value::as_array);
         let at = |i| {

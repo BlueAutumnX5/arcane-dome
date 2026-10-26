@@ -28,6 +28,12 @@ pub(super) struct Report {
 }
 
 impl Report {
+    /// Nothing blocks publishing (warnings are fine) and the map is
+    /// unchanged since.
+    pub(super) fn passed(&self) -> bool {
+        !self.stale && self.issues.iter().all(|i| i.warning)
+    }
+
     pub(super) fn mark_stale(&mut self) {
         self.stale = true;
     }

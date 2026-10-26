@@ -2,6 +2,7 @@
 
 #[allow(dead_code)]
 mod doc;
+mod files;
 mod report;
 mod windows;
 
@@ -67,11 +68,11 @@ const HELP_PAGE: [(&str, &str); 8] = [
     ),
     (
         "Checking the map",
-        "The top bar always says whether the game can load the map: Map OK in green, or the first problem in red. Validate (V) checks more: can bots reach every spawn, pickup and gadget, and is any spawn in lava or water? Click a problem to fly to it.",
+        "The top bar always says whether the game can load the map: Map OK in green, or the first problem in red. Validate (V) checks more: can bots reach every spawn, pickup and gadget, and is any spawn in lava or water? Click a problem to fly to it. Test Play (T) plays the map against bots right away.",
     ),
     (
-        "Saving",
-        "Save Draft (Ctrl+S) keeps your work in assets/editor/ without touching the game's own maps. Open Map (Ctrl+O) opens drafts and the game's maps; New Map (Ctrl+N) starts an empty one.",
+        "Saving and sharing",
+        "Save Draft (Ctrl+S) keeps your work in assets/editor/ without touching the game's maps. Publish (Ctrl+P) adds a map that passes Validate to Quick Match. Export Map (Ctrl+E) and Import Map (Ctrl+I) share maps through the Arcane Dome Maps folder in Documents, and you can drop a map file onto the editor too.",
     ),
     (
         "Undo",
@@ -98,6 +99,8 @@ pub enum Outcome {
     Menu,
     /// Start a test match on the map being edited (see `test_session`).
     TestPlay(MatchConfig),
+    /// A map was published: the game data, reloaded with it, and its id.
+    Published(Arc<GameData>, String),
 }
 
 /// Shape kinds, and the material a new shape of that kind starts with.
@@ -164,6 +167,8 @@ enum Action {
     New,
     Open,
     Save,
+    Import,
+    Export,
     Undo,
     Redo,
     Delete,
@@ -174,17 +179,24 @@ enum Action {
     Fit,
     Validate,
     TestPlay,
+    Publish,
     Help,
     Back,
 }
 
 /// The right-hand buttons, in groups.
 const ACTIONS: [&[Action]; 6] = [
-    &[Action::New, Action::Open, Action::Save],
+    &[
+        Action::New,
+        Action::Open,
+        Action::Save,
+        Action::Import,
+        Action::Export,
+    ],
     &[Action::Undo, Action::Redo, Action::Delete],
     &[Action::Finish, Action::PopCorner],
     &[Action::Snap, Action::Grid, Action::Fit],
-    &[Action::Validate, Action::TestPlay],
+    &[Action::Validate, Action::TestPlay, Action::Publish],
     &[Action::Help, Action::Back],
 ];
 
@@ -194,6 +206,8 @@ impl Action {
             Action::New => "New Map (Ctrl+N)",
             Action::Open => "Open Map (Ctrl+O)",
             Action::Save => "Save Draft (Ctrl+S)",
+            Action::Import => "Import Map (Ctrl+I)",
+            Action::Export => "Export Map (Ctrl+E)",
             Action::Undo => "Undo (Ctrl+Z)",
             Action::Redo => "Redo (Ctrl+Y)",
             Action::Delete => "Delete (Del)",
@@ -204,6 +218,7 @@ impl Action {
             Action::Fit => "Fit View (F)",
             Action::Validate => "Validate (V)",
             Action::TestPlay => "Test Play (T)",
+            Action::Publish => "Publish (Ctrl+P)",
             Action::Help => "Instructions (F1)",
             Action::Back => "Back to Menu (Esc)",
         }
@@ -215,6 +230,12 @@ impl Action {
             Action::Open => "Open one of the game's maps, or a draft you saved.",
             Action::Save => {
                 "Save your work as a draft in assets/editor/. The game's own maps are not touched."
+            }
+            Action::Import => {
+                "Open a map file someone shared with you (from the Arcane Dome Maps folder in Documents). You can also drop a map file onto the editor."
+            }
+            Action::Export => {
+                "Save a copy of this map to the Arcane Dome Maps folder in Documents, to share it or keep it safe."
             }
             Action::Undo => "Take back the last edit.",
             Action::Redo => "Put back the edit you just took back.",
@@ -234,6 +255,9 @@ impl Action {
             Action::TestPlay => {
                 "Play this map against bots right now, even before saving. Leave the match to come back here."
             }
+            Action::Publish => {
+                "Add this map to Quick Match. It must pass Validate first, and is only written if the game can load it."
+            }
             Action::Help => "How the editor works.",
             Action::Back => {
                 "Leave the editor. Esc first cancels a shape you are drawing, then the tool."
@@ -251,6 +275,8 @@ impl Action {
             Action::New => ctrl && key(KeyCode::N),
             Action::Open => ctrl && key(KeyCode::O),
             Action::Save => ctrl && key(KeyCode::S),
+            Action::Import => ctrl && key(KeyCode::I),
+            Action::Export => ctrl && key(KeyCode::E),
             Action::Undo => ctrl && !shift && key(KeyCode::Z),
             Action::Redo => ctrl && (key(KeyCode::Y) || shift && key(KeyCode::Z)),
             Action::Delete => {
@@ -263,6 +289,7 @@ impl Action {
             Action::Fit => !ctrl && key(KeyCode::F),
             Action::Validate => !ctrl && key(KeyCode::V),
             Action::TestPlay => !ctrl && key(KeyCode::T),
+            Action::Publish => ctrl && key(KeyCode::P),
             Action::Help => key(KeyCode::F1),
             Action::Back => false,
         }
@@ -277,6 +304,18 @@ enum Modal {
     /// Leaving would lose edits: save, discard or stay.
     Unsaved(Leave),
     TestPlay(TestSetup),
+    /// Maps in the share folder to import.
+    Import(Vec<files::SharedMap>),
+    /// An imported map has the id of a map or draft already here.
+    ImportClash(Doc),
+    /// Publishing would replace one of the game's maps: go ahead?
+    ConfirmPublish,
+    /// A message with OK, and an Open Folder button when `folder` is set.
+    Info {
+        title: String,
+        text: String,
+        folder: Option<PathBuf>,
+    },
 }
 
 /// The Test Play window's choices.
@@ -308,6 +347,8 @@ enum Leave {
     Menu,
     NewMap,
     Open(String),
+    /// A map file to import, from the Import window or dropped on the editor.
+    Import(PathBuf),
 }
 
 /// The New Map window's choices.
@@ -389,6 +430,8 @@ pub struct Editor {
     report: Option<Report>,
     /// A test match to start at the end of the frame.
     start_test: Option<MatchConfig>,
+    /// Just published: the reloaded game data, for the app.
+    published: Option<Arc<GameData>>,
     /// A ring marking the problem the camera flew to, and its age.
     flash: Option<(Vec2, f32)>,
 }
@@ -422,6 +465,7 @@ impl Editor {
             report: None,
             flash: None,
             start_test: None,
+            published: None,
         };
         ed.rebuild();
         ed.fit();
@@ -447,9 +491,17 @@ impl Editor {
     }
 
     /// Screenshot hook: open a window (help, new, open or unsaved), pick a
-    /// tool (draw), run Validate (validate; broken adds a problem first), or
-    /// test-play (test opens the window, testplay starts a match).
+    /// tool (draw), run Validate (validate; broken adds a problem first),
+    /// test-play (test opens the window, testplay starts a match), export,
+    /// importlist, import:<path> or publish. Comma-separate several.
     pub fn debug_show(&mut self, what: &str) {
+        // Several steps, comma separated, run in order.
+        if what.contains(',') {
+            for step in what.split(',') {
+                self.debug_show(step);
+            }
+            return;
+        }
         match what {
             "help" => self.modal = Some(Modal::Help),
             "new" => self.go(Leave::NewMap),
@@ -458,6 +510,10 @@ impl Editor {
             "draw" => self.set_tool(Tool::Draw),
             "validate" => self.validate(),
             "test" => self.modal = Some(Modal::TestPlay(TestSetup::default())),
+            "export" => self.export(),
+            "importlist" => self.act(Action::Import),
+            "publish" => self.try_publish(),
+            w if w.starts_with("import:") => self.leave(Leave::Import(PathBuf::from(&w[7..]))),
             "testplay" => self.start_test = Some(self.test_config(&TestSetup::default())),
             // A ledge high in the sky with a health pack bots can't reach.
             "broken" => {
@@ -519,6 +575,116 @@ impl Editor {
         self.note = Some((msg, 0.0));
     }
 
+    /// Save a copy to the share folder and say where.
+    fn export(&mut self) {
+        let dir = files::share_dir();
+        match files::export(&dir, self.doc.id(), &self.doc.to_json()) {
+            Ok(path) => {
+                let mut text = format!(
+                    "Saved a copy to {}. Send this file to share the map: Import Map (Ctrl+I) in another copy of the game opens it.",
+                    path.display()
+                );
+                if !self.problems.is_empty() {
+                    text.push_str(
+                        " Note: the map still has problems to fix before it can be played.",
+                    );
+                }
+                self.modal = Some(Modal::Info {
+                    title: "Map Exported".into(),
+                    text,
+                    folder: Some(dir),
+                });
+            }
+            Err(e) => self.info("Export Failed", e),
+        }
+    }
+
+    /// Publish after a clean Validate; ask first if it replaces one of the
+    /// game's maps.
+    fn try_publish(&mut self) {
+        self.validate();
+        if !self.report.as_ref().is_some_and(|r| r.passed()) {
+            self.say("Publish needs a clean Validate: fix the errors below first");
+        } else if self.data.maps.iter().any(|m| m.id == self.doc.id()) {
+            self.modal = Some(Modal::ConfirmPublish);
+        } else {
+            self.publish();
+        }
+    }
+
+    /// Write the map into the game's map list (undone if the game could not
+    /// load it), then drop the draft, which now matches.
+    fn publish(&mut self) {
+        match files::publish(&self.assets, self.doc.id(), &self.doc.to_json()) {
+            Ok(data) => {
+                let _ = std::fs::remove_file(draft_path(&self.assets, self.doc.id()));
+                self.doc.dirty = false;
+                let data = Arc::new(data);
+                self.data = data.clone();
+                self.published = Some(data);
+                self.say(format!(
+                    "Published {}: it is in Quick Match now",
+                    self.doc.name()
+                ));
+            }
+            Err(e) => self.info("Not Published", e),
+        }
+    }
+
+    /// Read a shared map file. If a map or draft here has its id, ask what
+    /// to do; otherwise open it.
+    fn import(&mut self, path: &std::path::Path) {
+        let doc = std::fs::read_to_string(path)
+            .map_err(|e| format!("Could not read {}: {e}", path.display()))
+            .and_then(|t| Doc::from_json(&t));
+        let mut doc = match doc {
+            Ok(doc) => doc,
+            Err(e) => return self.info("Can't Import", e),
+        };
+        // Ids name files: keep them plain.
+        let id = slug(if doc.id().is_empty() {
+            doc.name()
+        } else {
+            doc.id()
+        });
+        if id != doc.id() {
+            doc.set("id", json!(id));
+        }
+        let taken =
+            self.data.maps.iter().any(|m| m.id == id) || draft_path(&self.assets, &id).exists();
+        if taken {
+            self.modal = Some(Modal::ImportClash(doc));
+        } else {
+            self.accept_import(doc);
+        }
+    }
+
+    /// Open an imported map as unsaved work.
+    fn accept_import(&mut self, mut doc: Doc) {
+        doc.dirty = true;
+        let name = doc.name().to_owned();
+        self.replace(doc);
+        self.say(format!("Imported {name}: Save Draft (Ctrl+S) to keep it"));
+    }
+
+    /// Import under a fresh id, with "(copy)" after the name.
+    fn import_copy(&mut self, mut doc: Doc) {
+        let name = format!("{} (copy)", doc.name());
+        let id = self.new_id(&name);
+        doc.set("id", json!(id));
+        doc.set("name", json!(name));
+        self.accept_import(doc);
+    }
+
+    /// A message window with OK.
+    fn info(&mut self, title: &str, text: impl Into<String>) {
+        self.modal = Some(Modal::Info {
+            title: title.into(),
+            text: text.into(),
+            folder: None,
+        });
+    }
+
     /// A match on the map as it is now (even unsaved): the game data gets a
     /// copy of it in place of any version with the same id.
     pub fn test_session(&self, cfg: MatchConfig) -> Result<Session, String> {
@@ -578,6 +744,8 @@ impl Editor {
             self.fit();
         }
         let mouse: Vec2 = mouse_position().into();
+        // Read every frame: macroquad forgets dropped files at frame end.
+        let dropped = get_dropped_files();
         // A window opened this frame waits for the next one before it takes
         // input, so the click that opened it does not land in it.
         let live = self.modal.is_none();
@@ -594,6 +762,15 @@ impl Editor {
                 } else {
                     self.leave(Leave::Menu);
                 }
+            }
+            // A map file dropped on the window imports it.
+            if let Some(path) = dropped.iter().filter_map(|f| f.path.clone()).find(|p| {
+                p.extension()
+                    .is_some_and(|x| x.eq_ignore_ascii_case("json"))
+            }) {
+                self.leave(Leave::Import(path));
+            } else if !dropped.is_empty() {
+                self.say("Only map files (.json) can be dropped here");
             }
             self.tool_keys();
             for a in ACTIONS.into_iter().flatten() {
@@ -638,12 +815,17 @@ impl Editor {
         if let Some(cfg) = self.start_test.take() {
             return Outcome::TestPlay(cfg);
         }
+        if let Some(data) = self.published.take() {
+            return Outcome::Published(data, self.doc.id().to_owned());
+        }
         Outcome::Continue
     }
 
     fn enabled(&self, a: Action) -> bool {
         match a {
-            Action::TestPlay => self.preview.is_some() && self.problems.is_empty(),
+            Action::TestPlay | Action::Publish => {
+                self.preview.is_some() && self.problems.is_empty()
+            }
             Action::Undo => self.doc.can_undo(),
             Action::Redo => self.doc.can_redo(),
             Action::Delete => self.tool == Tool::Select && self.sel.is_some(),
@@ -658,6 +840,12 @@ impl Editor {
             Action::New => self.leave(Leave::NewMap),
             Action::Open => self.modal = Some(Modal::Open(self.map_list())),
             Action::Save => self.save_draft(),
+            Action::Import => {
+                let dir = files::share_dir();
+                self.modal = Some(Modal::Import(files::list_shared(&dir)));
+            }
+            Action::Export => self.export(),
+            Action::Publish => self.try_publish(),
             Action::Undo | Action::Redo => {
                 let done = if a == Action::Undo {
                     self.doc.undo()
@@ -717,6 +905,7 @@ impl Editor {
                 Ok(doc) => self.replace(doc),
                 Err(e) => self.note = Some((e, 0.0)),
             },
+            Leave::Import(path) => self.import(&path),
         }
     }
 

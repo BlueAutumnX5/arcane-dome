@@ -528,6 +528,12 @@ impl App {
             Screen::Editor(ed) => match ed.frame(dt, &mut self.ui) {
                 editor::Outcome::Continue => None,
                 editor::Outcome::Menu => Some(Screen::Menu),
+                editor::Outcome::Published(data, id) => {
+                    // Quick Match sees the map now; its picture is redrawn.
+                    self.data = Some(data);
+                    self.thumbs.remove(&id);
+                    None
+                }
                 editor::Outcome::TestPlay(cfg) => {
                     match ed.test_session(cfg) {
                         Ok(s) => start_test = Some(test_match(s, blood)),
@@ -1569,7 +1575,7 @@ impl App {
                     self.setup.map = i;
                 }
                 self.screen = self.open_editor();
-                // ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw|validate|broken|test|testplay.
+                // ARCANE_SHOT_EDITOR=help|new|validate|testplay|export|publish|import:<path>|... (see Editor::debug_show).
                 if let (Screen::Editor(ed), Ok(what)) =
                     (&mut self.screen, std::env::var("ARCANE_SHOT_EDITOR"))
                 {
@@ -1613,7 +1619,7 @@ impl App {
 /// Optional screenshot hook for checking visuals without a person at the keyboard:
 /// `ARCANE_SHOT=out.png ARCANE_SHOT_SCENE=menu|setup|howto|weapons|about|settings|changes|editor[:map_id]|game[:map_id[@x,y]]|slide:<scene>|tour:<scene>,<scene>,... ARCANE_SHOT_AFTER=2`,
 /// optionally `ARCANE_SHOT_MODE=<mode id> ARCANE_SHOT_TEAMS=<n> ARCANE_SHOT_BOTS=<per team> ARCANE_SHOT_COLORS=3,0,2,1
-/// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_EDITOR=help|new|open|unsaved|draw`, `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`,
+/// ARCANE_SHOT_TAB=1` (scoreboard), `ARCANE_SHOT_EDITOR=<steps>` (see `Editor::debug_show`), `ARCANE_SHOT_HP=<n>`, `ARCANE_SHOT_KILL=1`,
 /// `ARCANE_SHOT_SIZE=<w>x<h>` (window size), `ARCANE_SHOT_RESIZE=1` (keep resizing for 3 s),
 /// `ARCANE_SHOT_SWEEP=1` (pretend mouse down the right-hand menu buttons).
 mod debug {

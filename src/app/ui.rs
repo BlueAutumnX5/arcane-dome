@@ -84,8 +84,10 @@ pub fn text_right(t: &str, rx: f32, y: f32, size: f32, color: Color) {
     draw_text(t, rx - d.width, y, size, color);
 }
 
-/// Greedy word wrap into lines no wider than `width`.
+/// Greedy word wrap into lines no wider than `width`. A word wider than a
+/// whole line (a long file path) is split wherever it must be.
 pub fn wrap(t: &str, width: f32, size: f32) -> Vec<String> {
+    let fits = |s: &str| measure_text(s, None, size as u16, 1.0).width <= width;
     let mut lines = Vec::new();
     let mut cur = String::new();
     for word in t.split_whitespace() {
@@ -94,10 +96,19 @@ pub fn wrap(t: &str, width: f32, size: f32) -> Vec<String> {
         } else {
             format!("{cur} {word}")
         };
-        if measure_text(&next, None, size as u16, 1.0).width > width && !cur.is_empty() {
-            lines.push(std::mem::replace(&mut cur, word.to_owned()));
-        } else {
+        if fits(&next) {
             cur = next;
+            continue;
+        }
+        if !cur.is_empty() {
+            lines.push(std::mem::take(&mut cur));
+        }
+        for c in word.chars() {
+            cur.push(c);
+            if !fits(&cur) && cur.chars().count() > 1 {
+                cur.pop();
+                lines.push(std::mem::replace(&mut cur, c.to_string()));
+            }
         }
     }
     if !cur.is_empty() {
