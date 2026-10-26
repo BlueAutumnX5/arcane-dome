@@ -130,7 +130,9 @@ impl Session {
         }
         self.effects.update(if self.paused { 0.0 } else { dt });
         let focus = self.focus_point();
-        self.cam.update(&self.world, focus, mouse, dt);
+        let me = &self.world.fighters[self.player];
+        let reach = render::look_reach(self.world.data.weapons[me.current].range_tiles);
+        self.cam.update(&self.world, focus, mouse, reach, dt);
 
         render::draw_world(
             &self.world,

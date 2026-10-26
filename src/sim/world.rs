@@ -152,6 +152,10 @@ pub enum Event {
         pos: Vec2,
         radius: f32,
     },
+    /// A bullet hit a wall or floor here and left a mark.
+    Mark {
+        pos: Vec2,
+    },
     Pickup {
         fighter: usize,
         kind: PickupKind,

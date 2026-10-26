@@ -17,8 +17,8 @@ pub use map::{
 pub use modes::{ModeDef, parse_modes};
 pub use powerups::{PowerupConfig, PowerupDef, PowerupEffect, parse_powerups};
 pub use weapon::{
-    Category, ExplosionDef, Falloff, ProjectileDef, ProjectileKind, Special, WeaponDef,
-    parse_weapon,
+    BULLET_GRAVITY, BULLET_SPEED_AT_RANGE, Category, ExplosionDef, Falloff, ProjectileDef,
+    ProjectileKind, Special, WallHit, WeaponDef, parse_weapon,
 };
 
 use serde::de::DeserializeOwned;

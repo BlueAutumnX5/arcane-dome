@@ -11,6 +11,6 @@
   "reserve_ammo": 180,
   "reload_time_s": 2.0,
   "range_tiles": 10,
-  "projectile": { "type": "bullet", "speed": 25.0, "gravity": 8.0, "lifetime_s": 0.6 },
+  "projectile": { "type": "bullet", "speed": 25.0, "gravity": 8.0, "lifetime_s": 0.6, "on_wall": "bounce" },
   "specials": [{ "type": "burn", "dps": 8.0, "duration_s": 2.5 }]
 }

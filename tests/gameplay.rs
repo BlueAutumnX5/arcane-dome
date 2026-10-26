@@ -2,8 +2,8 @@
 
 use arcane_dome::data::{GameData, parse_map, parse_modes, parse_powerups, parse_weapon};
 use arcane_dome::sim::{
-    DT, ElimStyle, Event, Input, MAX_HEALTH, MAX_SHIELD, MatchConfig, Phase, RESPAWN_DELAY,
-    SPAWN_PROTECT, STAND_SIZE, World,
+    DT, ElimStyle, Event, Input, MAX_HEALTH, MAX_PROJECTILES, MAX_SHIELD, MatchConfig, Phase,
+    RESPAWN_DELAY, SPAWN_PROTECT, STAND_SIZE, World,
 };
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
@@ -343,7 +343,66 @@ fn bullets_travel_and_hit() {
     assert_eq!(w.fighters[1].health, MAX_HEALTH);
     run(&mut w, 15);
     assert!(w.projectiles.is_empty());
-    assert_eq!(w.fighters[1].health, MAX_HEALTH - 10.0);
+    // Slowed a little by the air on the way: a bit under the full 10.
+    let dealt = MAX_HEALTH - w.fighters[1].health;
+    assert!(dealt > 9.0 && dealt < 10.0, "dealt {dealt}");
+}
+
+/// Damage one pistol shot from x 5 deals to a target standing at `x`.
+fn pistol_damage_at(x: f32) -> f32 {
+    let mut w = world("deathmatch", 1, 0);
+    place(&mut w, 0, 5.0, "pistol");
+    place(&mut w, 1, x, "pistol");
+    let i = aim_at(&w, 0, vec2(x, 6.2));
+    w.step(&[i]);
+    run(&mut w, 60);
+    MAX_HEALTH - w.fighters[1].health
+}
+
+#[test]
+fn far_shots_hit_softer() {
+    // (Clear of the health pickup at x 8, which would heal the hit back.)
+    let near = pistol_damage_at(10.5);
+    let far = pistol_damage_at(26.0);
+    assert!(near > 9.5, "near {near}");
+    assert!(far > 0.0 && far < near - 0.5, "near {near}, far {far}");
+}
+
+#[test]
+fn bullets_mark_the_wall_they_hit() {
+    let mut w = world("deathmatch", 1, 0);
+    place(&mut w, 0, 5.0, "pistol");
+    place(&mut w, 1, 20.0, "pistol");
+    w.fighters[1].feet.y = 3.0;
+    // Straight at the right wall, over the other fighter's head.
+    let i = aim_at(&w, 0, vec2(29.0, 5.6));
+    w.step(&[i]);
+    let mut mark = None;
+    for _ in 0..90 {
+        w.step(&idle(2));
+        for e in &w.events {
+            if let Event::Mark { pos } = e {
+                mark = Some(*pos);
+            }
+        }
+    }
+    let mark = mark.expect("the bullet marked the wall");
+    assert!((mark.x - 29.0).abs() < 0.3, "mark at {mark:?}");
+    assert!(w.projectiles.is_empty());
+}
+
+#[test]
+fn projectiles_in_flight_are_capped() {
+    let mut w = world("deathmatch", 1, 0);
+    place(&mut w, 0, 5.0, "pistol");
+    let i = aim_at(&w, 0, vec2(28.0, 2.0));
+    w.step(&[i]);
+    let one = w.projectiles[0].clone();
+    w.projectiles = vec![one; MAX_PROJECTILES];
+    place(&mut w, 0, 5.0, "pistol");
+    w.fighters[0].fire_cooldown = 0.0;
+    w.step(&[aim_at(&w, 0, vec2(28.0, 2.0))]);
+    assert!(w.projectiles.len() <= MAX_PROJECTILES);
 }
 
 #[test]

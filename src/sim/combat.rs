@@ -2,7 +2,7 @@ use super::fighter::*;
 use super::physics::{line_of_sight, raycast};
 use super::world::Event;
 use super::{DT, Input, Phase, World};
-use crate::data::{Falloff, ProjectileKind, Special, WeaponDef};
+use crate::data::{Falloff, ProjectileKind, Special, WallHit, WeaponDef};
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
 
@@ -14,13 +14,24 @@ pub struct Projectile {
     pub kind: ProjectileKind,
     pub pos: Vec2,
     pub vel: Vec2,
+    /// Seconds left (infinite for projectiles without a lifetime).
     pub life: f32,
     pub travelled: f32,
+    /// Speed when fired; bullets do damage in proportion to how much of it
+    /// they still have.
+    pub speed0: f32,
     pub bounces_left: u32,
     pub pierce_left: u32,
     pub hit: Vec<usize>,
     pub alive: bool,
 }
+
+/// Most projectiles in flight at once; firing past it drops the oldest.
+pub const MAX_PROJECTILES: usize = 512;
+/// A bouncing projectile slower than this (tiles/s) stops and is gone.
+const MIN_BOUNCE_SPEED: f32 = 1.5;
+/// How far outside the map's sides and bottom a projectile may go.
+const OFF_MAP: f32 = 10.0;
 
 /// Credit a kill to whoever damaged the victim within this many seconds
 /// (covers deaths by spikes or burning after the shooter is gone).
@@ -126,15 +137,27 @@ impl World {
                     } else {
                         Vec2::ZERO
                     };
+                    if self.projectiles.len() >= MAX_PROJECTILES {
+                        self.projectiles.remove(0);
+                    }
+                    let vel = dir * def.projectile.speed + inherit;
+                    let pd = &def.projectile;
+                    // Bouncers without a bounce count go on until too slow.
+                    let bounces = if pd.bounces == 0 && pd.wall_hit() == WallHit::Bounce {
+                        u32::MAX
+                    } else {
+                        pd.bounces
+                    };
                     self.projectiles.push(Projectile {
                         owner: i,
                         weapon: w,
                         kind,
                         pos: origin,
-                        vel: dir * def.projectile.speed + inherit,
-                        life: def.projectile.lifetime_s,
+                        vel,
+                        life: pd.lifetime_s.unwrap_or(f32::INFINITY),
                         travelled: 0.0,
-                        bounces_left: def.projectile.bounces,
+                        speed0: vel.length(),
+                        bounces_left: bounces,
                         pierce_left: def.projectile.pierce,
                         hit: Vec::new(),
                         alive: true,
@@ -173,6 +196,13 @@ impl World {
             to: origin + dir * end_t,
             kind: def.projectile.kind,
         });
+        // A shot that ends on a wall marks it (beams sweep, so they don't).
+        if def.projectile.kind == ProjectileKind::Hitscan && end_t == wall && wall < def.range_tiles
+        {
+            self.events.push(Event::Mark {
+                pos: origin + dir * wall,
+            });
+        }
     }
 
     fn melee(&mut self, i: usize, w: usize, origin: Vec2) {
@@ -225,10 +255,12 @@ impl World {
             p.vel = (cur + (want - cur) * turn).normalize_or(cur) * speed;
         }
 
+        let (gravity, drag) = (def.gravity(), def.drag());
         let steps = ((p.vel.length() * DT / PROJECTILE_STEP).ceil() as i32).max(1);
         let sub_dt = DT / steps as f32;
         for _ in 0..steps {
-            p.vel.y += pd.gravity * sub_dt;
+            p.vel *= (-drag * sub_dt).exp();
+            p.vel.y += gravity * sub_dt;
             let next = p.pos + p.vel * sub_dt;
             if self.solid_at(next) {
                 if p.bounces_left > 0 {
@@ -248,7 +280,15 @@ impl World {
                     if p.vel.length() > 4.0 {
                         p.bounces_left -= 1;
                     }
+                    // Without a fuse to wait for, a slow bouncer is spent.
+                    if pd.explosion.is_none() && p.vel.length() < MIN_BOUNCE_SPEED {
+                        p.alive = false;
+                        return;
+                    }
                     continue;
+                }
+                if pd.explosion.is_none() && pd.wall_hit() == WallHit::Mark {
+                    self.events.push(Event::Mark { pos: p.pos });
                 }
                 self.end_projectile(p, def);
                 return;
@@ -267,7 +307,11 @@ impl World {
                     continue;
                 }
                 let headshot = o.is_headshot_point(p.pos);
-                let dmg = def.damage * if headshot { def.headshot_mult } else { 1.0 };
+                let mut dmg = def.damage * if headshot { def.headshot_mult } else { 1.0 };
+                // Bullets hit as hard as they are still fast.
+                if p.kind == ProjectileKind::Bullet && p.speed0 > 0.0 {
+                    dmg *= (p.vel.length() / p.speed0).clamp(0.0, 1.0);
+                }
                 self.damage(j, Some(p.owner), Some(p.weapon), dmg, headshot, true);
                 if pd.explosion.is_some() {
                     self.end_projectile(p, def);
@@ -282,8 +326,12 @@ impl World {
                 }
             }
         }
-        let out_of_range = p.kind == ProjectileKind::Bullet && p.travelled >= def.range_tiles;
-        if p.life <= 0.0 || out_of_range {
+        let off_map = p.pos.x < -OFF_MAP
+            || p.pos.x > self.map.width + OFF_MAP
+            || p.pos.y > self.map.height + OFF_MAP;
+        if off_map {
+            p.alive = false;
+        } else if p.life <= 0.0 {
             self.end_projectile(p, def);
         }
     }

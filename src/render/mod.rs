@@ -79,6 +79,16 @@ pub fn resync_texture_bindings() {
 }
 
 /// Follows a point with look-ahead toward the mouse, clamped to the map.
+/// Share of the mouse's distance from the screen centre the camera shifts
+/// toward it.
+const LOOK_FOLLOW: f32 = 0.7;
+
+/// How far, in tiles, the camera may look ahead with a weapon of this range:
+/// long guns see further, like a scope.
+pub fn look_reach(range_tiles: f32) -> f32 {
+    (range_tiles / 4.0).clamp(6.0, 14.0)
+}
+
 pub struct GameCamera {
     pub pos: Vec2,
     /// Screen pixels per world tile.
@@ -90,10 +100,12 @@ impl GameCamera {
         Self { pos, ppt: 32.0 }
     }
 
-    pub fn update(&mut self, world: &World, focus: Vec2, mouse: Vec2, dt: f32) {
+    /// Follow `focus`, shifted toward the mouse by up to `reach` tiles (see
+    /// `look_reach`).
+    pub fn update(&mut self, world: &World, focus: Vec2, mouse: Vec2, reach: f32, dt: f32) {
         let screen = vec2(screen_width(), screen_height());
         self.ppt = world.map.tile_size as f32 * (screen.y / 720.0).max(0.5);
-        let look = ((mouse - screen * 0.5) / self.ppt * 0.35).clamp_length_max(6.0);
+        let look = ((mouse - screen * 0.5) / self.ppt * LOOK_FOLLOW).clamp_length_max(reach);
         let desired = focus + look;
         let t = 1.0 - (-8.0 * dt).exp();
         self.pos = self.pos.lerp(desired, t);
@@ -204,6 +216,7 @@ pub fn draw_world(
     let half = vec2(screen_width(), screen_height()) / cam.ppt * 0.5;
     let (view_min, view_max) = (cam.pos - half - Vec2::ONE, cam.pos + half + Vec2::ONE);
     art.draw_back(map, view_min, view_max, world.time);
+    effects.draw_marks();
 
     draw_pickups(world);
     gadgets::draw_objects(world);

@@ -26,6 +26,8 @@ pub struct FeedLine {
 #[derive(Default)]
 pub struct Effects {
     tracers: Vec<Tracer>,
+    /// Where bullets hit walls and floors; the oldest goes past MAX_MARKS.
+    marks: std::collections::VecDeque<Vec2>,
     blasts: Vec<Blast>,
     pub feed: Vec<FeedLine>,
     /// Seconds left on the "you hit someone" crosshair marker.
@@ -39,6 +41,8 @@ const TRACER_LIFE: f32 = 0.1;
 const BEAM_LIFE: f32 = 0.08;
 const BLAST_LIFE: f32 = 0.35;
 const FEED_LIFE: f32 = 6.0;
+/// Most bullet marks kept on walls and floors.
+pub const MAX_MARKS: usize = 512;
 
 impl Effects {
     pub fn consume(&mut self, world: &World, player: Option<usize>) {
@@ -50,6 +54,12 @@ impl Effects {
                     kind: *kind,
                     age: 0.0,
                 }),
+                Event::Mark { pos } => {
+                    if self.marks.len() >= MAX_MARKS {
+                        self.marks.pop_front();
+                    }
+                    self.marks.push_back(*pos);
+                }
                 Event::Explosion { pos, radius } => self.blasts.push(Blast {
                     pos: *pos,
                     radius: *radius,
@@ -152,6 +162,15 @@ impl Effects {
     }
 
     /// Draw in world space (camera already set).
+    /// Bullet marks on walls and floors (world space, drawn over the
+    /// terrain and under everything else).
+    pub fn draw_marks(&self) {
+        for p in &self.marks {
+            draw_circle(p.x, p.y, 0.13, Color::new(0.0, 0.0, 0.0, 0.22));
+            draw_circle(p.x, p.y, 0.07, Color::new(0.06, 0.05, 0.05, 0.85));
+        }
+    }
+
     pub fn draw_world(&self) {
         for t in &self.tracers {
             let (color, width, life) = match t.kind {

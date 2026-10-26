@@ -10,7 +10,7 @@ mod rng;
 mod rules;
 mod world;
 
-pub use combat::Projectile;
+pub use combat::{MAX_PROJECTILES, Projectile};
 pub use fighter::{Buff, Fighter, Slot};
 pub use fighter::{
     CROUCH_SIZE, HEAD_HEIGHT, MAX_HEALTH, MAX_SHIELD, RESPAWN_DELAY, SPAWN_PROTECT, STAND_SIZE,

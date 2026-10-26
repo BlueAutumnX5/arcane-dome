@@ -9,6 +9,10 @@
   - Export (Ctrl+E) and Import (Ctrl+I): share maps through the Arcane Dome Maps folder in Documents, or drop a map file onto the editor
   - Map Settings (M): name, description, size, team counts and match types
 - Long text in windows (like file paths) now wraps instead of running off the edge
+- Bullets fly on past their range: they slow in the air, drop a little, and hit softer the slower they are
+- Bullets leave marks where they hit walls and floors (the last 512 stay); flamethrower flames bounce
+- Each weapon's file can set what its shots do on walls (mark, bounce or vanish), plus their drag and drop
+- The camera looks further ahead with long-range weapons (sniper and marksman furthest)
 
 ## v0.1.2
 

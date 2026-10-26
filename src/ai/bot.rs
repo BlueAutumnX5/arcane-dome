@@ -999,7 +999,7 @@ impl Brain {
         if pd.kind.is_physical() && pd.speed > 0.0 {
             let tt = eye.distance(point) / pd.speed;
             point += them.vel * tt * self.p.lead;
-            point.y -= 0.5 * pd.gravity * tt * tt;
+            point.y -= 0.5 * def.gravity() * tt * tt;
         }
         self.jitter_timer -= DT;
         if self.jitter_timer <= 0.0 {

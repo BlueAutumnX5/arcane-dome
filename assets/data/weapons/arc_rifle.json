@@ -12,5 +12,5 @@
   "reserve_ammo": 150,
   "reload_time_s": 1.6,
   "range_tiles": 28,
-  "projectile": { "type": "bullet", "speed": 90.0, "lifetime_s": 1.2 }
+  "projectile": { "type": "bullet", "speed": 90.0 }
 }

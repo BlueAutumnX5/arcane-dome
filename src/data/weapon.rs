@@ -34,6 +34,24 @@ impl ProjectileKind {
     }
 }
 
+/// What a projectile does when it hits terrain (explosives always explode).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WallHit {
+    /// Stops and leaves a mark on the wall or floor.
+    Mark,
+    /// Bounces off, losing speed, until it is too slow to go on.
+    Bounce,
+    /// Just disappears.
+    Vanish,
+}
+
+/// How fast bullets drop when a weapon gives no `gravity`, in tiles/s².
+pub const BULLET_GRAVITY: f32 = 6.0;
+/// Without a `drag`, bullets keep this share of their speed at the weapon's
+/// `range_tiles` (and their damage with it), then keep slowing beyond.
+pub const BULLET_SPEED_AT_RANGE: f32 = 0.75;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Falloff {
@@ -60,10 +78,19 @@ pub struct ProjectileDef {
     pub kind: ProjectileKind,
     #[serde(default)]
     pub speed: f32,
+    /// Pull downward, tiles/s² (see `WeaponDef::gravity` for the default).
     #[serde(default)]
-    pub gravity: f32,
-    #[serde(default = "default_lifetime")]
-    pub lifetime_s: f32,
+    pub gravity: Option<f32>,
+    /// Seconds before it ends (a grenade's fuse, a flame burning out). None:
+    /// it flies until it hits something or leaves the map.
+    #[serde(default)]
+    pub lifetime_s: Option<f32>,
+    /// Speed lost per second, as a rate (see `WeaponDef::drag`).
+    #[serde(default)]
+    pub drag: Option<f32>,
+    /// What it does on hitting terrain (see `ProjectileDef::wall_hit`).
+    #[serde(default)]
+    pub on_wall: Option<WallHit>,
     #[serde(default)]
     pub bounces: u32,
     #[serde(default)]
@@ -74,8 +101,16 @@ pub struct ProjectileDef {
     pub explosion: Option<ExplosionDef>,
 }
 
-fn default_lifetime() -> f32 {
-    1.0
+impl ProjectileDef {
+    /// What it does on hitting terrain: bullets mark, grenades bounce,
+    /// others vanish, unless the weapon says otherwise.
+    pub fn wall_hit(&self) -> WallHit {
+        self.on_wall.unwrap_or(match self.kind {
+            ProjectileKind::Bullet => WallHit::Mark,
+            ProjectileKind::Grenade => WallHit::Bounce,
+            _ => WallHit::Vanish,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -237,6 +272,31 @@ fn one_u32() -> u32 {
 }
 
 impl WeaponDef {
+    /// The projectile's pull downward: its own, else a gentle drop for
+    /// bullets and none for anything else.
+    pub fn gravity(&self) -> f32 {
+        let p = &self.projectile;
+        p.gravity.unwrap_or(if p.kind == ProjectileKind::Bullet {
+            BULLET_GRAVITY
+        } else {
+            0.0
+        })
+    }
+
+    /// The projectile's slowing rate: its own, else for bullets the rate that
+    /// leaves `BULLET_SPEED_AT_RANGE` of their speed at `range_tiles`.
+    pub fn drag(&self) -> f32 {
+        let p = &self.projectile;
+        p.drag
+            .unwrap_or(if p.kind == ProjectileKind::Bullet && p.speed > 0.0 {
+                // Distance with drag k: d = v0 (1 - e^-kt) / k, speed v0 e^-kt,
+                // so the speed share at distance d is 1 - k d / v0.
+                (1.0 - BULLET_SPEED_AT_RANGE) * p.speed / self.range_tiles
+            } else {
+                0.0
+            })
+    }
+
     pub fn uses_ammo(&self) -> bool {
         self.magazine > 0
     }
@@ -359,12 +419,19 @@ fn validate(w: &WeaponDef, stem: &str) -> Vec<String> {
                 p.kind, p.speed
             ),
         );
+        if let Some(life) = p.lifetime_s {
+            check(
+                life > 0.0,
+                format!("projectile.lifetime_s: must be greater than 0 (got {life})"),
+            );
+        }
         check(
-            p.lifetime_s > 0.0,
-            format!(
-                "projectile.lifetime_s: must be greater than 0 (got {})",
-                p.lifetime_s
-            ),
+            p.kind != ProjectileKind::Grenade || p.lifetime_s.is_some(),
+            "projectile.lifetime_s: grenades need one (their fuse)".to_owned(),
+        );
+        check(
+            p.drag.is_none_or(|d| d >= 0.0),
+            format!("projectile.drag: must be 0 or more (got {:?})", p.drag),
         );
     }
     if matches!(p.kind, ProjectileKind::Grenade | ProjectileKind::Rocket) {
