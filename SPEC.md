@@ -69,7 +69,7 @@ a death screen, and bot-behaviour tools (`map_check`, `bot_watch`).
 - [ ] Sound: CC0 packs and generated effects, credited in CREDITS.md
 - [ ] Maybe: Capture the Flag and King of the Hill
 
-### Map editor v1 (Milestone 2, step 1)
+### Map editor v1 (Milestone 2, step 1) (done)
 An in-game screen ("Map Editor" on the main menu). It reuses the map renderer,
 physics and nav graph, and writes the same map JSON the game loads.
 
@@ -90,6 +90,9 @@ physics and nav graph, and writes the same map JSON the game loads.
   time, even if broken. "Publish" copies it to `assets/data/maps/<id>.json`
   only when Validate passes, because one broken file in `maps/` stops the game
   from loading. Published maps show up in the setup map list.
+- **Sharing**: Export writes `<id>.json` to "Arcane Dome Maps" in Documents
+  (or `ARCANE_DOME_MAPS`); Import reads from there or from a file dropped on
+  the window. An id clash asks: replace your draft, or import as a copy.
 - **v2 (later)**: decor, themes and sky editing, hand-placed bot jump links.
 
 ## Suggested layout

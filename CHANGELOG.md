@@ -1,5 +1,15 @@
 # Changes
 
+## Next version (in progress)
+
+- Map editor is complete:
+  - Validate (V): checks that bots can reach every spawn, pickup and gadget, and that no spawn stands in lava or water; click a problem to fly the camera to it
+  - Test Play (T): play the map against bots straight from the editor, then come back with nothing lost
+  - Publish (Ctrl+P): put a map that passes Validate into Quick Match (never writes a map the game could not load)
+  - Export (Ctrl+E) and Import (Ctrl+I): share maps through the Arcane Dome Maps folder in Documents, or drop a map file onto the editor
+  - Map Settings (M): name, description, size, team counts and match types
+- Long text in windows (like file paths) now wraps instead of running off the edge
+
 ## v0.1.2
 
 - Map editor: draw terrain shapes, place spawns, pickups and gadgets, undo and redo, save drafts, open any map or start a new one
