@@ -119,6 +119,18 @@ m.decor("girder", 46, 32, w=0.5, h=14.5)
 m.decor("girder", 52.6, 32, w=0.5, h=14.5)
 m.decor("lamp", 62.5, 12, h=1.8, flip=True)
 
+# --- Objectives ----------------------------------------------------------------
+# Zones, left to right: the tower's middle floor, the long bridge over the
+# pit, the ledge below the right catwalks. Territories runs Blue's tower to
+# Red's hill along them.
+m.zone(12, 20, w=8).zone(32, 18, w=10).zone(50, 24.5, w=6)
+# Flags at each team's corner. Green's moves to the centre perch with 3 teams.
+m.flag(3.5, 32, team=0)
+m.flag(63, 30, team=1)
+m.flag(7.5, 8, team=2, by_teams={"3": None})
+m.flag(35.2, 11.5, by_teams={"3": 2})
+m.flag(62.5, 12, team=3)
+
 problems = m.headroom_report()
 for p in problems:
     print("HEADROOM:", p)

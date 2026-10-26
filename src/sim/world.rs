@@ -1,5 +1,6 @@
 use super::fighter::*;
 use super::gadgets::thruster_under;
+use super::objectives::{FlagEvent, FlagState, ZoneState};
 use super::physics::{self, hazard_dps, in_water, move_body, overlaps_solid, standing_on_hatch};
 use super::{DT, Input, ObjectState, Phase, Projectile, Rng};
 use crate::data::{
@@ -97,6 +98,9 @@ pub struct MatchConfig {
     /// dying with nobody to credit (your own fire, the map).
     pub melee_demotes: bool,
     pub suicide_demotes: bool,
+    /// King of the Hill: seconds before the hill moves (`Some(0.0)` = never;
+    /// `None` = the mode's).
+    pub hill_move_s: Option<f32>,
     pub seed: u64,
     /// "3, 2, 1, GO" before the match and each elimination round, in
     /// seconds. Everyone can aim but not move or shoot until it ends.
@@ -130,6 +134,7 @@ impl Default for MatchConfig {
             jugg_bonus: false,
             melee_demotes: true,
             suicide_demotes: true,
+            hill_move_s: None,
             seed: 1,
             countdown_s: 3.0,
             include_player: true,
@@ -221,6 +226,26 @@ pub enum Event {
         rung: usize,
         up: bool,
     },
+    /// Domination and Territories: a side captured a zone.
+    ZoneTaken {
+        zone: usize,
+        side: usize,
+    },
+    /// King of the Hill: the hill moved to this zone.
+    HillMoved {
+        zone: usize,
+    },
+    /// Territories: a side held every zone and scored; the line resets.
+    Pushed {
+        side: usize,
+    },
+    /// Capture the Flag: something happened to a team's flag (index into
+    /// `World::flags`), with the fighter who did it.
+    Flag {
+        flag: usize,
+        fighter: Option<usize>,
+        what: FlagEvent,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -276,6 +301,16 @@ pub struct World {
     pub juggernaut: Option<usize>,
     /// Gun Game: the weapons in order. A side's rung is its score.
     pub ladder: Vec<usize>,
+    /// Zone modes: the map's zones, left to right.
+    pub zones: Vec<ZoneState>,
+    /// King of the Hill: the zone that is the hill, and seconds before it
+    /// moves.
+    pub hill: Option<usize>,
+    pub hill_timer: f32,
+    /// Capture the Flag: one flag per team.
+    pub flags: Vec<FlagState>,
+    /// Fractions of a point earned over time, per side.
+    pub score_acc: Vec<f32>,
 }
 
 /// Enough for the biggest match (4 teams of 7); beyond that names get a number.
@@ -304,8 +339,13 @@ impl World {
         // Teams are a setting, not a mode: stamp the actual count into this
         // match's copy of the mode (1 = free-for-all), so `mode.is_team()`
         // answers for this match.
-        let num_teams = if mode.teams >= 2 && config.teams >= 2 {
-            (config.teams as usize).clamp(2, (mode.teams as usize).min(MAX_TEAMS))
+        let wanted = if mode.team_only {
+            config.teams.max(2)
+        } else {
+            config.teams
+        };
+        let num_teams = if mode.teams >= 2 && wanted >= 2 {
+            (wanted as usize).clamp(2, (mode.teams as usize).min(MAX_TEAMS))
         } else {
             0
         };
@@ -470,7 +510,13 @@ impl World {
             countdown: 0.0,
             juggernaut: None,
             ladder,
+            zones: Vec::new(),
+            hill: None,
+            hill_timer: 0.0,
+            flags: Vec::new(),
+            score_acc: Vec::new(),
         };
+        world.setup_objectives();
         world.start_round();
         world.events.clear();
         Ok(world)
@@ -513,6 +559,7 @@ impl World {
         self.update_pickups();
         self.update_objects();
         self.update_respawns();
+        self.update_objectives();
         self.check_rules();
     }
 

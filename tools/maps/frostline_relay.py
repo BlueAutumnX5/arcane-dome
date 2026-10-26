@@ -109,6 +109,18 @@ for x, h in [(14.5, 1.6), (26.5, 2.2), (44.5, 1.8), (57, 1.5), (35.8, 1.2)]:
 m.decor("girder", 16.3, 28, w=0.4, h=5.4)                       # ledge struts
 m.decor("girder", 55.3, 28, w=0.4, h=5.4)
 
+# --- Objectives ----------------------------------------------------------------
+# Zones: the two terraces and the ice island between them.
+m.zone(20, 22, w=6).zone(36, 31, w=8).zone(52, 22, w=6)
+# Flags: Blue and Red on their plateaus (in the valley with 3 teams), Green on
+# the tower, Gold in the valley.
+m.flag(2.5, 28, team=0, by_teams={"3": None})
+m.flag(69.5, 28, team=1, by_teams={"3": None})
+m.flag(27.5, 40, by_teams={"3": 0})
+m.flag(44.5, 40, by_teams={"3": 1})
+m.flag(31.5, 15, team=2)
+m.flag(33.5, 40, team=3, by_teams={"3": None})
+
 problems = m.headroom_report()
 for p in problems:
     print("HEADROOM:", p)

@@ -40,7 +40,7 @@ impl Problem {
     }
 }
 
-/// Every spawn, pickup and object, with a name for messages.
+/// Every spawn, pickup, object, zone and flag, with a name for messages.
 fn spots(map: &MapDef) -> Vec<(String, Vec2)> {
     let mut spots = Vec::new();
     for (i, s) in map.spawns.iter().enumerate() {
@@ -54,6 +54,12 @@ fn spots(map: &MapDef) -> Vec<(String, Vec2)> {
     }
     for (i, o) in map.objects.iter().enumerate() {
         spots.push((format!("{} {}", o.kind.name(), i + 1), o.feet()));
+    }
+    for (i, z) in map.zones.iter().enumerate() {
+        spots.push((format!("Zone {}", i + 1), z.feet()));
+    }
+    for (i, f) in map.flags.iter().enumerate() {
+        spots.push((format!("Flag {}", i + 1), f.feet()));
     }
     spots
 }

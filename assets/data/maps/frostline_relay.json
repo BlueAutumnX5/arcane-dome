@@ -5,7 +5,7 @@
   "tile_size": 32,
   "size": [72, 44],
   "theme": {"sky_top": "#162540", "sky_bottom": "#a8c4de", "far": "#5d7591", "skyline": "mountains", "sun": [0.2, 0.22], "sun_color": "#eef6ff"},
-  "modes": ["deathmatch", "elimination", "gun_game", "juggernaut"],
+  "modes": ["deathmatch", "elimination", "gun_game", "juggernaut", "king_of_the_hill", "domination", "territories", "capture_the_flag"],
   "recommended_players": [4, 16],
   "team_counts": [2, 3, 4],
   "shapes": [
@@ -99,5 +99,18 @@
     {"type": "shield_station", "x": 22, "y": 22},
     {"type": "shield_station", "x": 50, "y": 22},
     {"type": "shield_station", "x": 39.5, "y": 31, "shield": 100, "min_delay_s": 90, "max_delay_s": 120}
+  ],
+  "zones": [
+    {"x": 20, "y": 22, "w": 6, "h": 4},
+    {"x": 36, "y": 31, "w": 8, "h": 4},
+    {"x": 52, "y": 22, "w": 6, "h": 4}
+  ],
+  "flags": [
+    {"x": 2.5, "y": 28, "team": 0, "by_teams": {"3": null}},
+    {"x": 69.5, "y": 28, "team": 1, "by_teams": {"3": null}},
+    {"x": 27.5, "y": 40, "team": null, "by_teams": {"3": 0}},
+    {"x": 44.5, "y": 40, "team": null, "by_teams": {"3": 1}},
+    {"x": 31.5, "y": 15, "team": 2},
+    {"x": 33.5, "y": 40, "team": 3, "by_teams": {"3": null}}
   ]
 }

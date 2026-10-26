@@ -2,10 +2,12 @@
 //! `cargo run --release --example mode_watch -- <map_id> [matches]`.
 //! Juggernaut: how long a reign lasts and how many kills it brings.
 //! Gun Game: how long a match takes and how often fighters get knocked back.
+//! Objective modes: zones taken, flags taken and captured, final scores.
+//! `MODES=domination,capture_the_flag` picks which to watch.
 
 use arcane_dome::ai::BotSet;
 use arcane_dome::data::{GameData, find_assets_dir};
-use arcane_dome::sim::{DT, Difficulty, Event, Input, MatchConfig, Phase, World};
+use arcane_dome::sim::{DT, Difficulty, Event, FlagEvent, Input, MatchConfig, Phase, World};
 use std::sync::Arc;
 
 fn main() {
@@ -15,10 +17,27 @@ fn main() {
     let map = args.next().unwrap_or_else(|| "foundry_ascent".into());
     let matches: u64 = args.next().and_then(|s| s.parse().ok()).unwrap_or(4);
 
-    for (mode, teams) in [("juggernaut", 0), ("gun_game", 0), ("gun_game", 2)] {
+    let all = [
+        ("juggernaut", 0),
+        ("gun_game", 0),
+        ("gun_game", 2),
+        ("king_of_the_hill", 0),
+        ("king_of_the_hill", 2),
+        ("domination", 2),
+        ("territories", 2),
+        ("capture_the_flag", 2),
+    ];
+    let wanted = std::env::var("MODES").unwrap_or_default();
+    for (mode, teams) in all {
+        if !wanted.is_empty() && !wanted.split(',').any(|m| m == mode) {
+            continue;
+        }
         for difficulty in [Difficulty::Easy, Difficulty::Normal, Difficulty::Hard] {
             let (mut reigns, mut reign_s, mut reign_kills) = (0u32, 0.0f32, 0u32);
             let (mut length_s, mut climbs, mut knocks, mut finished) = (0.0f32, 0u32, 0u32, 0u32);
+            let (mut zones_taken, mut pushes, mut taken, mut captured, mut returned) =
+                (0u32, 0u32, 0u32, 0u32, 0u32);
+            let mut top_scores: Vec<i32> = Vec::new();
             for seed in 0..matches {
                 let cfg = MatchConfig {
                     map_id: map.clone(),
@@ -53,18 +72,38 @@ fn main() {
                             } if w.juggernaut == Some(k) => reign_kills += 1,
                             Event::Ladder { up: true, .. } => climbs += 1,
                             Event::Ladder { up: false, .. } => knocks += 1,
+                            Event::ZoneTaken { .. } => zones_taken += 1,
+                            Event::Pushed { .. } => pushes += 1,
+                            Event::Flag { what, .. } => match what {
+                                FlagEvent::Taken => taken += 1,
+                                FlagEvent::Captured => captured += 1,
+                                FlagEvent::Returned => returned += 1,
+                                FlagEvent::Dropped => {}
+                            },
                             _ => {}
                         }
                     }
                 }
                 length_s += w.time;
+                top_scores.push(w.scores.iter().copied().max().unwrap_or(0));
                 if w.time < w.mode.time_limit_s - 1.0 {
                     finished += 1;
                 }
             }
             let n = matches as f32;
             let label = format!("{mode} {teams} teams {difficulty:?}");
-            if mode == "juggernaut" {
+            if !matches!(mode, "juggernaut" | "gun_game") {
+                println!(
+                    "{label}: {:.0}s matches, {finished}/{matches} reached the limit, best scores {top_scores:?}; \
+                     per match {:.1} zones taken, {:.1} pushes, flags {:.1} taken {:.1} captured {:.1} returned",
+                    length_s / n,
+                    zones_taken as f32 / n,
+                    pushes as f32 / n,
+                    taken as f32 / n,
+                    captured as f32 / n,
+                    returned as f32 / n,
+                );
+            } else if mode == "juggernaut" {
                 println!(
                     "{label}: {:.0}s matches, {:.1} reigns each, {:.0}s and {:.1} kills a reign",
                     length_s / n,

@@ -2,7 +2,7 @@
 
 use arcane_dome::ai::BotSet;
 use arcane_dome::data::GameData;
-use arcane_dome::sim::{Difficulty, Event, Input, MatchConfig, Phase, TICK_RATE, World};
+use arcane_dome::sim::{Difficulty, Event, FlagEvent, Input, MatchConfig, Phase, TICK_RATE, World};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -110,6 +110,62 @@ fn bots_hunt_the_juggernaut_and_climb_the_gun_game_ladder() {
                 );
             } else {
                 assert!(climbs >= 3, "{label}: only {climbs} climbs in 120s");
+            }
+        }
+    }
+}
+
+#[test]
+fn bots_play_the_objective_modes_on_every_map() {
+    let data = shipped();
+    for map in &data.maps {
+        let most = *map.team_counts.iter().max().unwrap();
+        let cases = [
+            ("king_of_the_hill", 0),
+            ("king_of_the_hill", 2),
+            ("domination", 2),
+            ("domination", most),
+            ("territories", 2),
+            ("capture_the_flag", 2),
+            ("capture_the_flag", most),
+        ];
+        for (mode, teams) in cases {
+            let cfg = MatchConfig {
+                map_id: map.id.clone(),
+                mode_id: mode.into(),
+                bots: 7,
+                teams,
+                team_bots: [2; 4],
+                difficulty: Difficulty::Normal,
+                include_player: false,
+                seed: 5,
+                countdown_s: 0.0,
+                ..Default::default()
+            };
+            let mut world = World::new(Arc::clone(&data), cfg).unwrap();
+            let mut bots = BotSet::new(&world);
+            let mut inputs = vec![Input::default(); world.fighters.len()];
+            let (mut zones, mut flags) = (0, 0);
+            for _ in 0..150 * TICK_RATE {
+                bots.think(&world, &mut inputs);
+                world.step(&inputs);
+                for e in &world.events {
+                    match e {
+                        Event::ZoneTaken { .. } => zones += 1,
+                        Event::Flag {
+                            what: FlagEvent::Taken,
+                            ..
+                        } => flags += 1,
+                        _ => {}
+                    }
+                }
+            }
+            let label = format!("{} / {mode} ({teams} teams)", map.id);
+            let scored: i32 = world.scores.iter().sum();
+            match mode {
+                "king_of_the_hill" => assert!(scored >= 20, "{label}: {scored} points"),
+                "capture_the_flag" => assert!(flags >= 2, "{label}: {flags} flags taken"),
+                _ => assert!(zones >= 3, "{label}: {zones} zones taken"),
             }
         }
     }

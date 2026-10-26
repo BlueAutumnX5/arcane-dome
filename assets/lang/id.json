@@ -231,5 +231,13 @@
   "is the Juggernaut": "jadi Juggernaut",
   "Knocked back a weapon": "Mundur satu senjata",
   "{} is the Juggernaut": "{} jadi Juggernaut",
-  "Weapon {}/{}: {}": "Senjata {}/{}: {}"
+  "Weapon {}/{}: {}": "Senjata {}/{}: {}",
+  "King of the Hill": "King of the Hill",
+  "Score a point for every second your side alone holds the hill. With more than one zone, the hill moves now and then.": "Dapat satu poin setiap detik pihakmu sendirian menguasai bukit. Jika ada lebih dari satu zona, bukitnya sesekali pindah.",
+  "Domination": "Dominasi",
+  "Stand in a zone to capture it. Every zone your team holds earns points over time.": "Berdiri di zona untuk merebutnya. Setiap zona yang dikuasai timmu menghasilkan poin seiring waktu.",
+  "Territories": "Wilayah",
+  "Capture the zone next to yours to push toward the enemy's end. Hold every zone to score; then the line resets.": "Rebut zona di sebelah zonamu untuk mendesak ke ujung musuh. Kuasai semua zona untuk mencetak skor; lalu garisnya diatur ulang.",
+  "Capture the Flag": "Rebut Bendera",
+  "Bring an enemy flag to your own while yours is home. A dropped flag returns after 15 seconds, or when its team touches it.": "Bawa bendera musuh ke benderamu saat benderamu ada di markas. Bendera yang jatuh kembali setelah 15 detik, atau saat disentuh timnya."
 }

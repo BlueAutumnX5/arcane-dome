@@ -561,6 +561,9 @@ impl World {
         match rules {
             Rules::Juggernaut => self.juggernaut_kill(victim, credited, playing),
             Rules::GunGame => self.gun_game_kill(victim, credited, weapon, playing),
+            // The objective scores, not the kills.
+            Rules::CaptureTheFlag => self.drop_flags(victim),
+            Rules::KingOfTheHill | Rules::Domination | Rules::Territories => {}
             Rules::Standard => {
                 if let Some(k) = credited {
                     if playing {

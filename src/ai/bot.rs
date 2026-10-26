@@ -1,5 +1,5 @@
 use super::nav::{EdgeKind, NavGraph};
-use crate::data::{Category, ObjectKind, PickupKind, WeaponDef};
+use crate::data::{Category, ObjectKind, PickupKind, Rules, WeaponDef, ZoneDef};
 use crate::sim::physics::{hazard_dps, line_of_sight, standing_on_hatch};
 use crate::sim::{DT, Difficulty, Event, Fighter, Input, Rng, World};
 use macroquad::math::{Vec2, vec2};
@@ -152,6 +152,8 @@ enum Goal {
     Retreat(usize),
     /// A station or the powerup spot (index into `World::objects`).
     Object(usize),
+    /// Where the match's objective wants the bot: a zone, a flag, home.
+    Objective(Vec2),
 }
 
 /// What a bot does with its legs while in a fight.
@@ -633,6 +635,78 @@ impl Brain {
         }
     }
 
+    /// Where the objective calls this bot, if anywhere: the hill; a zone to
+    /// take (or, for some, one of ours under attack); an enemy flag, home
+    /// with one, or after our own flag. `None` leaves it to fight and roam.
+    fn objective_spot(&mut self, world: &World) -> Option<Vec2> {
+        let me = &world.fighters[self.id];
+        let side = world.side_of(self.id);
+        let near = |p: Vec2| me.feet.distance(p);
+        // Spread out inside a zone instead of piling onto one spot.
+        let mut inside = |z: &ZoneDef| vec2(z.x + self.rng.range(-0.3, 0.3) * z.w, z.y);
+        match world.mode.rules {
+            Rules::KingOfTheHill => world.hill.map(|h| inside(&world.zones[h].def)),
+            Rules::Domination | Rules::Territories => {
+                let zones = &world.zones;
+                let nearest = |list: Vec<usize>| {
+                    list.into_iter().min_by(|&a, &b| {
+                        near(zones[a].def.feet()).total_cmp(&near(zones[b].def.feet()))
+                    })
+                };
+                let take = nearest(
+                    (0..zones.len())
+                        .filter(|&k| zones[k].owner != Some(side) && world.can_push(k, side))
+                        .collect(),
+                );
+                let threatened = nearest(
+                    (0..zones.len())
+                        .filter(|&k| {
+                            zones[k].owner == Some(side)
+                                && (zones[k].capturer.is_some_and(|c| c != side)
+                                    || zones[k].present.iter().any(|&s| s != side))
+                        })
+                        .collect(),
+                );
+                // About a third of each team stays back to guard.
+                let guard = self.id.is_multiple_of(3);
+                let k = if guard {
+                    threatened.or(take)
+                } else {
+                    take.or(threatened)
+                }?;
+                Some(inside(&zones[k].def))
+            }
+            Rules::CaptureTheFlag => {
+                let flags = &world.flags;
+                let mine = flags.iter().find(|f| f.side == side);
+                if world.carried_flag(self.id).is_some() {
+                    return mine.map(|f| f.home);
+                }
+                // Our flag is out: half the team goes after it (the carrier,
+                // or where it lies to send it home).
+                if let Some(f) = mine
+                    && !f.at_home()
+                    && self.id.is_multiple_of(2)
+                {
+                    return Some(f.pos);
+                }
+                // A quarter guards home; the rest go for the nearest enemy
+                // flag nobody on our side has yet.
+                if self.id % 4 == 3 {
+                    return mine.map(|f| f.home + vec2(self.rng.range(-2.0, 2.0), 0.0));
+                }
+                flags
+                    .iter()
+                    .filter(|f| {
+                        f.side != side && f.carrier.is_none_or(|c| world.side_of(c) != side)
+                    })
+                    .map(|f| f.pos)
+                    .min_by(|a, b| near(*a).total_cmp(&near(*b)))
+            }
+            _ => None,
+        }
+    }
+
     /// The best station or powerup worth walking to right now.
     fn wanted_object(&self, world: &World, armed: bool) -> Option<usize> {
         let me = &world.fighters[self.id];
@@ -664,6 +738,7 @@ impl Brain {
             Goal::Pickup(k) => world.pickups[k].active,
             Goal::Object(k) => world.objects[k].ready,
             Goal::Hunt(j) => world.fighters[j].alive,
+            Goal::Objective(_) => true,
             Goal::Wander(n) | Goal::Retreat(n) => {
                 world.fighters[self.id].feet.distance(nav.pos(n)) > 1.0
             }
@@ -675,6 +750,7 @@ impl Brain {
             Goal::Pickup(k) => world.pickups[k].pos + vec2(0.0, 0.4),
             Goal::Object(k) => world.objects[k].pos,
             Goal::Hunt(_) => self.hunt_spot,
+            Goal::Objective(p) => p,
             Goal::Wander(n) | Goal::Retreat(n) => nav.pos(n),
         }
     }
@@ -697,6 +773,11 @@ impl Brain {
     /// commit to it or break away (still firing while backing off). The
     /// choice comes up again now and then during a long fight.
     fn size_up_fight(&mut self, world: &World, nav: &NavGraph, me: &Fighter) {
+        // A flag carrier runs home whatever happens.
+        if world.carried_flag(self.id).is_some() {
+            self.engaged = None;
+            return;
+        }
         let t = match (self.target, self.target_visible) {
             (Some(t), true) => t,
             _ => {
@@ -735,6 +816,12 @@ impl Brain {
         nearest: Option<usize>,
     ) -> Goal {
         let me = &world.fighters[self.id];
+        // A flag carrier heads home before anything else.
+        if world.carried_flag(self.id).is_some()
+            && let Some(home) = self.objective_spot(world)
+        {
+            return Goal::Objective(home);
+        }
         let closest_pickup = |want: &dyn Fn(usize) -> bool| {
             (0..world.pickups.len())
                 .filter(|&k| world.pickups[k].active && want(k))
@@ -779,6 +866,9 @@ impl Brain {
             return Goal::Pickup(k);
         }
 
+        if let Some(spot) = self.objective_spot(world) {
+            return Goal::Objective(spot);
+        }
         if let Some(k) = self.wanted_object(world, armed) {
             return Goal::Object(k);
         }
