@@ -167,6 +167,7 @@ enum Action {
     New,
     Open,
     Save,
+    Settings,
     Import,
     Export,
     Undo,
@@ -190,6 +191,7 @@ const ACTIONS: [&[Action]; 6] = [
         Action::New,
         Action::Open,
         Action::Save,
+        Action::Settings,
         Action::Import,
         Action::Export,
     ],
@@ -206,6 +208,7 @@ impl Action {
             Action::New => "New Map (Ctrl+N)",
             Action::Open => "Open Map (Ctrl+O)",
             Action::Save => "Save Draft (Ctrl+S)",
+            Action::Settings => "Map Settings (M)",
             Action::Import => "Import Map (Ctrl+I)",
             Action::Export => "Export Map (Ctrl+E)",
             Action::Undo => "Undo (Ctrl+Z)",
@@ -230,6 +233,9 @@ impl Action {
             Action::Open => "Open one of the game's maps, or a draft you saved.",
             Action::Save => {
                 "Save your work as a draft in assets/editor/. The game's own maps are not touched."
+            }
+            Action::Settings => {
+                "The map's name, description and size, and which team counts and match types it offers."
             }
             Action::Import => {
                 "Open a map file someone shared with you (from the Arcane Dome Maps folder in Documents). You can also drop a map file onto the editor."
@@ -275,6 +281,7 @@ impl Action {
             Action::New => ctrl && key(KeyCode::N),
             Action::Open => ctrl && key(KeyCode::O),
             Action::Save => ctrl && key(KeyCode::S),
+            Action::Settings => !ctrl && key(KeyCode::M),
             Action::Import => ctrl && key(KeyCode::I),
             Action::Export => ctrl && key(KeyCode::E),
             Action::Undo => ctrl && !shift && key(KeyCode::Z),
@@ -304,6 +311,7 @@ enum Modal {
     /// Leaving would lose edits: save, discard or stay.
     Unsaved(Leave),
     TestPlay(TestSetup),
+    Settings(MapSettings),
     /// Maps in the share folder to import.
     Import(Vec<files::SharedMap>),
     /// An imported map has the id of a map or draft already here.
@@ -316,6 +324,55 @@ enum Modal {
         text: String,
         folder: Option<PathBuf>,
     },
+}
+
+/// Longest description a map can have.
+const DESCRIPTION_MAX: usize = 140;
+/// Map size limits, in tiles, and the step the size changes by.
+const MAP_SIZE_MIN: Vec2 = vec2(24.0, 16.0);
+const MAP_SIZE_MAX: Vec2 = vec2(200.0, 120.0);
+const MAP_SIZE_STEP: f32 = 4.0;
+
+/// The Map Settings window's choices, applied as one edit.
+struct MapSettings {
+    name: String,
+    description: String,
+    size: Vec2,
+    /// Offers 2, 3 and 4 team matches.
+    teams: [bool; 3],
+    /// Every match type in the game: (id, display name, offered).
+    modes: Vec<(String, String, bool)>,
+    /// Which text box takes typing: 0 name, 1 description.
+    focus: usize,
+}
+
+impl MapSettings {
+    fn from_doc(doc: &Doc, data: &GameData) -> Self {
+        let list = |key: &str| -> Vec<Value> {
+            doc.get(key)
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        };
+        let counts = list("team_counts");
+        let modes = list("modes");
+        Self {
+            name: doc.name().to_owned(),
+            description: doc
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned(),
+            size: doc.size(),
+            teams: [2, 3, 4].map(|n| counts.contains(&json!(n))),
+            modes: data
+                .modes
+                .iter()
+                .map(|m| (m.id.clone(), m.display_name(), modes.contains(&json!(m.id))))
+                .collect(),
+            focus: 0,
+        }
+    }
 }
 
 /// The Test Play window's choices.
@@ -511,6 +568,7 @@ impl Editor {
             "validate" => self.validate(),
             "test" => self.modal = Some(Modal::TestPlay(TestSetup::default())),
             "export" => self.export(),
+            "settings" => self.act(Action::Settings),
             "importlist" => self.act(Action::Import),
             "publish" => self.try_publish(),
             w if w.starts_with("import:") => self.leave(Leave::Import(PathBuf::from(&w[7..]))),
@@ -840,6 +898,11 @@ impl Editor {
             Action::New => self.leave(Leave::NewMap),
             Action::Open => self.modal = Some(Modal::Open(self.map_list())),
             Action::Save => self.save_draft(),
+            Action::Settings => {
+                self.modal = Some(Modal::Settings(MapSettings::from_doc(
+                    &self.doc, &self.data,
+                )))
+            }
             Action::Import => {
                 let dir = files::share_dir();
                 self.modal = Some(Modal::Import(files::list_shared(&dir)));

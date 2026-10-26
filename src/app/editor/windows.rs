@@ -82,6 +82,19 @@ impl Editor {
                 }
                 None => Some(Modal::TestPlay(setup)),
             },
+            Modal::Settings(mut ms) => match self.settings_window(ui, &mut ms, input) {
+                Some(true) => {
+                    self.apply_settings(&ms);
+                    None
+                }
+                Some(false) => None,
+                None if esc => None,
+                None if enter => {
+                    self.apply_settings(&ms);
+                    None
+                }
+                None => Some(Modal::Settings(ms)),
+            },
             Modal::Import(list) => match self.import_window(ui, &list, input) {
                 Some(Some(path)) => {
                     self.leave(Leave::Import(path));
@@ -268,63 +281,10 @@ impl Editor {
         let x = r.x + 20.0 * s;
         let w = r.w - 40.0 * s;
         if input {
-            while let Some(c) = get_char_pressed() {
-                let ok = c.is_alphanumeric() || c == ' ' || c == '-' || c == '\'';
-                if ok && nm.name.chars().count() < NAME_MAX {
-                    nm.name.push(c);
-                }
-            }
-            if is_key_pressed(KeyCode::Backspace) {
-                nm.name.pop();
-            }
+            type_into(&mut nm.name, NAME_MAX);
         }
-        // Name box with a blinking caret.
-        let size = 16.0 * s;
-        ui::text_left(
-            "Name",
-            x,
-            r.y + 62.0 * s,
-            size,
-            Color::new(1.0, 1.0, 1.0, 0.75),
-        );
-        let field = Rect::new(x + 90.0 * s, r.y + 44.0 * s, w - 90.0 * s, 26.0 * s);
-        draw_rectangle(
-            field.x,
-            field.y,
-            field.w,
-            field.h,
-            Color::new(1.0, 1.0, 1.0, 0.08),
-        );
-        draw_rectangle_lines(field.x, field.y, field.w, field.h, 1.5, ACCENT);
-        let shown = if nm.name.is_empty() && self.time % 1.0 > 0.5 {
-            "Type a name".to_owned()
-        } else {
-            nm.name.clone()
-        };
-        let text_col = if nm.name.is_empty() {
-            Color::new(1.0, 1.0, 1.0, 0.35)
-        } else {
-            WHITE
-        };
-        ui::text_left(
-            &shown,
-            field.x + 8.0 * s,
-            field.y + field.h * 0.7,
-            size,
-            text_col,
-        );
-        if !nm.name.is_empty() && self.time % 1.0 < 0.5 {
-            let tw = measure_text(&nm.name, None, size as u16, 1.0).width;
-            let cx = field.x + 10.0 * s + tw;
-            draw_line(
-                cx,
-                field.y + 5.0 * s,
-                cx,
-                field.y + field.h - 5.0 * s,
-                1.5,
-                WHITE,
-            );
-        }
+        let field = Rect::new(x, r.y + 44.0 * s, w, 26.0 * s);
+        self.text_field("Name", &nm.name, "Type a name", field, true);
         let row = |n: f32| Rect::new(x, r.y + (84.0 + n * 32.0) * s, w, 28.0 * s);
         let d = ui.stepper(
             "ed_new_w",
@@ -725,5 +685,256 @@ impl Editor {
             pick = Some(None);
         }
         pick
+    }
+
+    /// A text box: `label`, then the text (its end, if long) with a blinking
+    /// caret when `focused`, or `placeholder` while empty. Returns true when
+    /// clicked.
+    fn text_field(
+        &self,
+        label: &str,
+        text: &str,
+        placeholder: &str,
+        r: Rect,
+        focused: bool,
+    ) -> bool {
+        let s = ui::scale();
+        let size = 16.0 * s;
+        let label_w = 120.0 * s;
+        ui::text_left(
+            label,
+            r.x,
+            r.y + r.h * 0.7,
+            size,
+            Color::new(1.0, 1.0, 1.0, 0.75),
+        );
+        let field = Rect::new(r.x + label_w, r.y, r.w - label_w, r.h);
+        draw_rectangle(
+            field.x,
+            field.y,
+            field.w,
+            field.h,
+            Color::new(1.0, 1.0, 1.0, 0.08),
+        );
+        let edge = if focused {
+            ACCENT
+        } else {
+            Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.35)
+        };
+        draw_rectangle_lines(field.x, field.y, field.w, field.h, 1.5, edge);
+        let room = field.w - 20.0 * s;
+        let width = |t: &str| measure_text(t, None, size as u16, 1.0).width;
+        // Long text: while typing show its end, else its start and "...".
+        let mut shown = text.to_owned();
+        if width(&shown) > room {
+            if focused {
+                while width(&shown) > room && shown.chars().count() > 1 {
+                    shown.remove(0);
+                }
+            } else {
+                while width(&format!("{shown}...")) > room && shown.pop().is_some() {}
+                shown.push_str("...");
+            }
+        }
+        let (shown, color) = if text.is_empty() {
+            (placeholder.to_owned(), Color::new(1.0, 1.0, 1.0, 0.35))
+        } else {
+            (shown, WHITE)
+        };
+        ui::text_left(
+            &shown,
+            field.x + 8.0 * s,
+            field.y + field.h * 0.7,
+            size,
+            color,
+        );
+        if focused && self.time % 1.0 < 0.5 {
+            let cx = field.x + 10.0 * s + if text.is_empty() { 0.0 } else { width(&shown) };
+            draw_line(
+                cx,
+                field.y + 5.0 * s,
+                cx,
+                field.y + field.h - 5.0 * s,
+                1.5,
+                WHITE,
+            );
+        }
+        field.contains(mouse_position().into()) && is_mouse_button_pressed(MouseButton::Left)
+    }
+}
+
+/// Read typed characters into `text` (letters, digits, spaces and common
+/// punctuation), up to `max` characters; Backspace deletes the last one.
+fn type_into(text: &mut String, max: usize) {
+    while let Some(c) = get_char_pressed() {
+        let ok = c.is_alphanumeric() || " -'.,!?:;()&".contains(c);
+        if ok && text.chars().count() < max {
+            text.push(c);
+        }
+    }
+    if is_key_pressed(KeyCode::Backspace) {
+        text.pop();
+    }
+}
+
+impl Editor {
+    /// The Map Settings window. Returns Some(true) for Apply, Some(false)
+    /// for Cancel.
+    fn settings_window(&self, ui: &mut Ui, ms: &mut MapSettings, input: bool) -> Option<bool> {
+        let s = ui::scale();
+        let r = Self::window(560.0 * s, 336.0 * s, "Map Settings");
+        let x = r.x + 20.0 * s;
+        let w = r.w - 40.0 * s;
+        if input {
+            if is_key_pressed(KeyCode::Tab) {
+                ms.focus = 1 - ms.focus;
+            }
+            if ms.focus == 0 {
+                type_into(&mut ms.name, NAME_MAX);
+            } else {
+                type_into(&mut ms.description, DESCRIPTION_MAX);
+            }
+        }
+        let row = |n: f32| Rect::new(x, r.y + (46.0 + n * 34.0) * s, w, 28.0 * s);
+        if self.text_field("Name", &ms.name, "Type a name", row(0.0), ms.focus == 0) && input {
+            ms.focus = 0;
+        }
+        let desc = self.text_field(
+            "Description",
+            &ms.description,
+            "One line about the map (Tab to switch)",
+            row(1.0),
+            ms.focus == 1,
+        );
+        if desc && input {
+            ms.focus = 1;
+        }
+        let mut size = |id: &str, label: &str, v: &mut f32, lo: f32, hi: f32, n: f32| {
+            let d = ui.stepper(id, label, &format!("{} tiles", *v), row(n), false, input);
+            *v = (*v + d as f32 * MAP_SIZE_STEP).clamp(lo, hi);
+        };
+        size(
+            "ed_set_w",
+            "Width",
+            &mut ms.size.x,
+            MAP_SIZE_MIN.x,
+            MAP_SIZE_MAX.x,
+            2.0,
+        );
+        size(
+            "ed_set_h",
+            "Height",
+            &mut ms.size.y,
+            MAP_SIZE_MIN.y,
+            MAP_SIZE_MAX.y,
+            3.0,
+        );
+
+        // Toggle rows: team counts, then match types. The last one on
+        // cannot be switched off (a map offers at least one of each).
+        let label = |n: f32, text: &str| {
+            ui::text_left(
+                text,
+                x,
+                r.y + (46.0 + n * 34.0) * s + 20.0 * s,
+                16.0 * s,
+                Color::new(1.0, 1.0, 1.0, 0.75),
+            );
+        };
+        label(4.0, "Team Matches");
+        let toggle_w = (w - 130.0 * s - 20.0 * s) / 3.0;
+        let on = ms.teams.iter().filter(|t| **t).count();
+        for (i, team) in ms.teams.iter_mut().enumerate() {
+            let b = Rect::new(
+                x + 130.0 * s + i as f32 * (toggle_w + 10.0 * s),
+                row(4.0).y,
+                toggle_w,
+                row(4.0).h,
+            );
+            let id = format!("ed_set_t{i}");
+            if ui.toggle(&id, &format!("{} Teams", i + 2), b, *team, input) && (!*team || on > 1) {
+                *team = !*team;
+            }
+            if input {
+                ui.hint(
+                    &id,
+                    b,
+                    "Offer this many teams in Quick Match. Each team needs at least 2 spawns of its own.",
+                );
+            }
+        }
+        label(5.0, "Match Types");
+        let mode_w = (w - 130.0 * s - 10.0 * s) / ms.modes.len().max(1) as f32;
+        let on = ms.modes.iter().filter(|m| m.2).count();
+        for (i, (_, name, offered)) in ms.modes.iter_mut().enumerate() {
+            let b = Rect::new(
+                x + 130.0 * s + i as f32 * (mode_w + 10.0 * s),
+                row(5.0).y,
+                mode_w - 10.0 * s,
+                row(5.0).h,
+            );
+            let id = format!("ed_set_m{i}");
+            if ui.toggle(&id, name, b, *offered, input) && (!*offered || on > 1) {
+                *offered = !*offered;
+            }
+            if input {
+                ui.hint(&id, b, "Offer this match type for the map in Quick Match.");
+            }
+        }
+        ui::text_left(
+            &format!(
+                "File: {}.json (the name can change, the file keeps its id)",
+                self.doc.id()
+            ),
+            x,
+            r.y + 266.0 * s,
+            14.0 * s,
+            Color::new(ACCENT.r, ACCENT.g, ACCENT.b, 0.8),
+        );
+        let bw = (w - 10.0 * s) / 2.0;
+        let by = r.y + r.h - 46.0 * s;
+        let apply = Rect::new(x, by, bw, 30.0 * s);
+        let cancel = Rect::new(x + bw + 10.0 * s, by, bw, 30.0 * s);
+        if ui.button("ed_set_apply", "Apply (Enter)", apply, false, input) {
+            return Some(true);
+        }
+        if input {
+            ui.hint(
+                "ed_set_apply",
+                apply,
+                "Change the map's settings. Undo (Ctrl+Z) takes it back in one step.",
+            );
+        }
+        if ui.button("ed_set_cancel", "Cancel (Esc)", cancel, false, input) {
+            return Some(false);
+        }
+        None
+    }
+
+    /// Write the Map Settings window's choices as one undoable edit.
+    fn apply_settings(&mut self, ms: &MapSettings) {
+        self.doc.checkpoint();
+        let name = ms.name.trim();
+        if !name.is_empty() {
+            self.doc.set("name", json!(name));
+        }
+        self.doc.set("description", json!(ms.description.trim()));
+        self.doc
+            .set("size", json!([ms.size.x as u32, ms.size.y as u32]));
+        let counts: Vec<u8> = (0..3)
+            .filter(|&i| ms.teams[i])
+            .map(|i| i as u8 + 2)
+            .collect();
+        self.doc.set("team_counts", json!(counts));
+        let modes: Vec<&str> = ms
+            .modes
+            .iter()
+            .filter(|m| m.2)
+            .map(|m| m.0.as_str())
+            .collect();
+        self.doc.set("modes", json!(modes));
+        self.rebuild();
+        self.fit();
+        self.say("Map settings changed (Undo takes it back)");
     }
 }
