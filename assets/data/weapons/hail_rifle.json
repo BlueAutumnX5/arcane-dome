@@ -17,7 +17,7 @@
     "speed": 9.0,
     "gravity": 2.0,
     "drag": 0.0,
-    "lifetime_s": 8.0,
+    "lifetime_s": 30.0,
     "on_wall": "bounce",
     "bounciness": 0.9,
     "full_damage": true,
