@@ -1,0 +1,27 @@
+{
+  "id": "hail_rifle",
+  "name": "Hail Rifle",
+  "short_name": "Hail",
+  "category": "automatic",
+  "icon": "hail",
+  "damage": 4.5,
+  "fire_rate_rps": 8.0,
+  "spread_deg": 3.0,
+  "recoil": 0.2,
+  "magazine": 100,
+  "reserve_ammo": 100,
+  "reload_time_s": 2.0,
+  "range_tiles": 22,
+  "projectile": {
+    "type": "bullet",
+    "speed": 9.0,
+    "gravity": 2.0,
+    "drag": 0.0,
+    "lifetime_s": 8.0,
+    "on_wall": "bounce",
+    "bounciness": 0.9,
+    "full_damage": true,
+    "color": "#f2f8ff",
+    "size": 0.13
+  }
+}

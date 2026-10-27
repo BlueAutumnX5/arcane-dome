@@ -1,4 +1,4 @@
-use super::{DataError, is_snake_case, parse_json};
+use super::{DataError, is_snake_case, parse_hex_color, parse_json};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -49,6 +49,7 @@ pub enum Icon {
     Grenade,
     Laser,
     Baton,
+    Hail,
 }
 
 /// What a projectile does when it hits terrain (explosives always explode).
@@ -110,6 +111,20 @@ pub struct ProjectileDef {
     pub on_wall: Option<WallHit>,
     #[serde(default)]
     pub bounces: u32,
+    /// Share of its speed a bouncer keeps on each bounce, with no rolling
+    /// friction. None: walls keep 0.6, floors 0.5 up and 0.8 along.
+    #[serde(default)]
+    pub bounciness: Option<f32>,
+    /// Hits for full damage however much it has slowed (bullets otherwise
+    /// hit as hard as they are still fast).
+    #[serde(default)]
+    pub full_damage: bool,
+    /// Drawn as a ball of this `#rrggbb` color instead of a tracer.
+    #[serde(default)]
+    pub color: Option<String>,
+    /// The ball's radius in tiles, with `color`.
+    #[serde(default = "default_ball_size")]
+    pub size: f32,
     #[serde(default)]
     pub homing_strength: f32,
     #[serde(default)]
@@ -299,6 +314,10 @@ fn one_u32() -> u32 {
     1
 }
 
+fn default_ball_size() -> f32 {
+    0.1
+}
+
 impl WeaponDef {
     /// The projectile's pull downward: its own, else a gentle drop for
     /// bullets and none for anything else.
@@ -481,6 +500,26 @@ fn validate(w: &WeaponDef, stem: &str) -> Vec<String> {
             p.drag.is_none_or(|d| d >= 0.0),
             format!("projectile.drag: must be 0 or more (got {:?})", p.drag),
         );
+        check(
+            p.bounciness.is_none_or(|b| (0.0..=1.0).contains(&b)),
+            format!(
+                "projectile.bounciness: must be between 0 and 1 (got {:?})",
+                p.bounciness
+            ),
+        );
+        if let Some(c) = &p.color {
+            check(
+                parse_hex_color(c).is_some(),
+                format!("projectile.color: \"{c}\" is not a #rrggbb color"),
+            );
+        }
+        check(
+            p.size > 0.0 && p.size <= 0.5,
+            format!(
+                "projectile.size: must be above 0 and at most 0.5 (got {})",
+                p.size
+            ),
+        );
     }
     if matches!(p.kind, ProjectileKind::Grenade | ProjectileKind::Rocket) {
         check(
@@ -614,6 +653,20 @@ mod tests {
         assert_eq!(err.len(), 2, "{err:?}");
         assert!(err[0].message.starts_with("fire_rate_rps"));
         assert!(err[1].message.starts_with("magazine"));
+    }
+
+    #[test]
+    fn ball_settings_are_checked() {
+        let text = VALID.replace(
+            "\"lifetime_s\": 1.2",
+            "\"lifetime_s\": 1.2, \"bounciness\": 1.5, \"color\": \"white\", \"size\": 0",
+        );
+        let err = parse_weapon("weapons/arc_rifle.json", "arc_rifle", &text).unwrap_err();
+        let fields: Vec<&str> = err.iter().map(|e| e.message.as_str()).collect();
+        assert_eq!(err.len(), 3, "{fields:?}");
+        assert!(fields[0].starts_with("projectile.bounciness"));
+        assert!(fields[1].starts_with("projectile.color"));
+        assert!(fields[2].starts_with("projectile.size"));
     }
 
     #[test]

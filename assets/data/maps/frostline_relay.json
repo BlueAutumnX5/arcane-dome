@@ -85,7 +85,7 @@
     {"type": "weapon", "x": 54.5, "y": 22, "respawn_s": 25, "weapon_id": "needle_gun"},
     {"type": "weapon", "x": 41, "y": 15, "respawn_s": 30, "weapon_id": "thumper"},
     {"type": "weapon", "x": 32, "y": 40, "respawn_s": 25, "weapon_id": "scattergun"},
-    {"type": "weapon", "x": 40, "y": 40, "respawn_s": 25, "weapon_id": "arc_rifle"},
+    {"type": "weapon", "x": 40, "y": 40, "respawn_s": 25, "weapon_id": "hail_rifle"},
     {"type": "weapon", "x": 37.5, "y": 8, "respawn_s": 40, "weapon_id": "rail_spike"}
   ],
   "objects": [

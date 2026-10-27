@@ -71,7 +71,7 @@ m.pickup("weapon", 17.5, 22, weapon="needle_gun", respawn=25)
 m.pickup("weapon", 54.5, 22, weapon="needle_gun", respawn=25)
 m.pickup("weapon", 41, 15, weapon="thumper", respawn=30)
 m.pickup("weapon", 32, 40, weapon="scattergun", respawn=25)
-m.pickup("weapon", 40, 40, weapon="arc_rifle", respawn=25)
+m.pickup("weapon", 40, 40, weapon="hail_rifle", respawn=25)
 m.pickup("weapon", 37.5, 8, weapon="rail_spike", respawn=40)
 
 # --- Gadgets ---------------------------------------------------------------------------------

@@ -244,6 +244,33 @@ pub fn draw_world(
                 );
                 draw_circle(p.pos.x, p.pos.y, 0.15, Color::from_rgba(255, 120, 40, 255));
             }
+            _ if def.projectile.color.is_some() => {
+                let [r, g, b] = def
+                    .projectile
+                    .color
+                    .as_deref()
+                    .and_then(crate::data::parse_color)
+                    .unwrap_or([255, 255, 255]);
+                let color = Color::from_rgba(r, g, b, 255);
+                let size = def.projectile.size;
+                // A short frosty smear behind, then the ball and its shine.
+                let back = p.pos - p.vel * 0.03;
+                draw_line(
+                    back.x,
+                    back.y,
+                    p.pos.x,
+                    p.pos.y,
+                    size * 1.4,
+                    with_alpha(color, 0.25),
+                );
+                draw_circle(p.pos.x, p.pos.y, size, color);
+                draw_circle(
+                    p.pos.x - size * 0.35,
+                    p.pos.y - size * 0.35,
+                    size * 0.35,
+                    Color::new(1.0, 1.0, 1.0, 0.9),
+                );
+            }
             _ => {
                 let has_burn = def
                     .specials

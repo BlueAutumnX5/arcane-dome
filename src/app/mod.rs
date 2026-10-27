@@ -1790,15 +1790,20 @@ impl App {
                         ProjectileKind::Beam => t("Beam"),
                         ProjectileKind::MeleeArc => t("Melee"),
                     };
-                    let dmg = match &w.projectile.explosion {
-                        Some(e) => tf(
-                            "{} + {} blast",
-                            &[&format!("{:.0}", w.damage), &format!("{:.0}", e.damage)],
-                        ),
-                        None if w.total_pellets() > 1 => {
-                            format!("{:.0} x{}", w.damage, w.total_pellets())
+                    // Whole numbers bare, others to one place (4.5).
+                    let num = |v: f32| {
+                        if v.fract() == 0.0 {
+                            format!("{v:.0}")
+                        } else {
+                            format!("{v:.1}")
                         }
-                        None => format!("{:.0}", w.damage),
+                    };
+                    let dmg = match &w.projectile.explosion {
+                        Some(e) => tf("{} + {} blast", &[&num(w.damage), &num(e.damage)]),
+                        None if w.total_pellets() > 1 => {
+                            format!("{} x{}", num(w.damage), w.total_pellets())
+                        }
+                        None => num(w.damage),
                     };
                     let clip = if w.infinite_reserve() {
                         format!("{} / inf", w.magazine)

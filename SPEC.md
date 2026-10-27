@@ -158,12 +158,19 @@ Field reference:
 | `id` | string | unique, snake_case, must match filename |
 | `category` | enum | `starter, sidearm, close_range, automatic, long_range, heavy, explosive, melee` |
 | `projectile.type` | enum | `hitscan, bullet, grenade, rocket, beam, melee_arc` |
+| `projectile.on_wall` | enum | `mark, bounce, vanish`; default: bullets mark, grenades bounce, others vanish |
+| `projectile.bounciness` | 0 to 1 | share of speed kept per bounce, with no rolling friction (default: walls 0.6, floors 0.5 up and 0.8 along) |
+| `projectile.full_damage` | bool | hits for full damage however much it has slowed (bullets otherwise lose damage with speed) |
+| `projectile.color`, `projectile.size` | `#rrggbb`, tiles | drawn as a ball of this colour and radius (default size 0.1) instead of a tracer |
+| `icon` | enum | HUD picture: `pistol, smg, rifle, shotgun, flamer, marksman, sniper, rocket, grenade, laser, baton, hail` |
+| `loot` | bool | false keeps it out of pickups, stations and spawn loadouts (default true) |
 | `projectile.explosion` | object or null | `{ "radius_tiles": 3.0, "damage": 60, "falloff": "linear", "knockback": 12 }` |
 | `specials` | array of enums | `lifesteal, burn, multishot, credits_bonus, crit, stun, shield_break, freeze` |
 | `specials` params | optional object | e.g. `{ "type": "lifesteal", "ratio": 0.25 }` |
 
 The Milestone 1 set, with plain display names for now (file ids in brackets):
-Pistol (peacekeeper, starter), Shotgun (scattergun, 8 pellets), Assault Rifle (arc_rifle, automatic),
+Pistol (peacekeeper, starter), Shotgun (scattergun, 8 pellets), Hail Rifle (hail_rifle, automatic,
+bouncing ice balls; replaced the Assault Rifle, parked in `docs/future/weapons/arc_rifle.json`),
 Marksman Rifle (needle_gun, high headshot mult), Sniper Rifle (rail_spike, hitscan, pierce),
 Grenade Launcher (thumper, bouncing grenade), Rocket Launcher (hellbarrel, splash), Laser (sunbeam,
 continuous beam), Leech SMG (leechfang, lifesteal), Flamethrower (cinder_spitter, burn).

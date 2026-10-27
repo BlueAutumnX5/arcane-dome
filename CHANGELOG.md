@@ -2,6 +2,7 @@
 
 ## Next version (in progress)
 
+- New weapon: the **Hail Rifle** (Automatic). It sprays balls of ice that travel at running pace, drop a little over distance, and bounce off walls, floors and ceilings until they hit someone (or melt after 8 seconds). Every ball hits for 4.5, even after bouncing. 100 shots a clip. It takes the Assault Rifle's place for now; the Assault Rifle returns when weapons can be bought
 - New HUD on the PC:
   - Health sits at the top centre ("Health 97%", your name, "Shield 69%"). The bar fades from green through yellow to red as you lose health, with a thin yellow shield strip under it (phones get the same colours in their own spot)
   - The weapon in your hands is pictured top left, with its clip below it (or reload progress)
@@ -19,7 +20,7 @@
 - Match types are offered in the order they are listed, Deathmatch first; team-only ones skip the free-for-all choice
 - New match type: **Juggernaut**. One random fighter is the Juggernaut: red, in a beam of light, with 500 health and 200 shield; everyone else is on the blue side, hunting them. Kill the Juggernaut to become it. If the Juggernaut dies to the map or their own blast, someone at random takes over. An arrow at the screen edge points to the Juggernaut when they are off screen
   - Quick Match lets you choose what scores: kills as the Juggernaut, killing the Juggernaut, or both (one always stays on), plus a bonus that makes kills as the Juggernaut worth 2. The score limit is yours to set (10 to start)
-- New match type: **Gun Game**, free-for-all or in teams (Team Gun Game, where a kill by anyone on the team moves the whole team up). Every kill moves you to the next weapon, from easy to awkward: Assault Rifle, Leech SMG, Laser, Shotgun, Pistol, Flamethrower, Marksman Rifle, Rocket Launcher, Sniper Rifle, Grenade Launcher, then the Shock Baton. A kill with the Baton wins
+- New match type: **Gun Game**, free-for-all or in teams (Team Gun Game, where a kill by anyone on the team moves the whole team up). Every kill moves you to the next weapon, from easy to awkward: Hail Rifle, Leech SMG, Laser, Shotgun, Pistol, Flamethrower, Marksman Rifle, Rocket Launcher, Sniper Rifle, Grenade Launcher, then the Shock Baton. A kill with the Baton wins
   - Everyone carries the Shock Baton beside their current weapon (switch with Q, E or the mouse wheel); it only exists in Gun Game
   - Quick Match switches: a melee kill sends the victim back one weapon, and so does dying by your own fire or to the map
   - Ammo never runs out in Gun Game, and weapon pickups, ammo boxes and weapon stations are left out

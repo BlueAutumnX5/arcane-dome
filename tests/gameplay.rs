@@ -22,6 +22,12 @@ const LEECH: &str = r#"{ "id": "leech", "name": "Leech", "category": "automatic"
   "damage": 20, "fire_rate_rps": 10, "magazine": 30, "reserve_ammo": 0, "range_tiles": 30,
   "projectile": { "type": "hitscan" }, "specials": [{ "type": "lifesteal", "ratio": 0.5 }] }"#;
 
+const HAIL: &str = r##"{ "id": "hail", "name": "Hail", "category": "automatic",
+  "damage": 4.5, "headshot_mult": 1.0, "fire_rate_rps": 8, "magazine": 100, "reserve_ammo": 0,
+  "range_tiles": 22, "projectile": { "type": "bullet", "speed": 9, "gravity": 2, "drag": 0,
+    "lifetime_s": 8, "on_wall": "bounce", "bounciness": 0.9, "full_damage": true,
+    "color": "#ffffff" } }"##;
+
 const POWERUPS: &str = r##"{ "first_spawn_s": 1, "respawn_s": 120, "powerups": [
   { "id": "divine_shield", "name": "Divine Shield", "color": "#a45cff", "duration_s": 20, "effect": { "type": "invulnerable" } },
   { "id": "rapid_fire", "name": "Rapid Fire", "color": "#ffd23c", "duration_s": 20, "effect": { "type": "fire_rate", "mult": 2 } },
@@ -71,6 +77,7 @@ fn data() -> Arc<GameData> {
         ("rail", RAIL),
         ("boom", BOOM),
         ("leech", LEECH),
+        ("hail", HAIL),
     ]
     .iter()
     .map(|(id, t)| parse_weapon(&format!("weapons/{id}.json"), id, t).unwrap())
@@ -389,6 +396,46 @@ fn bullets_mark_the_wall_they_hit() {
     let mark = mark.expect("the bullet marked the wall");
     assert!((mark.x - 29.0).abs() < 0.3, "mark at {mark:?}");
     assert!(w.projectiles.is_empty());
+}
+
+#[test]
+fn hail_bounces_back_and_hits_for_full_damage() {
+    let mut w = world("deathmatch", 1, 0);
+    place(&mut w, 0, 10.0, "hail");
+    // Behind the shooter: only a ball coming back off the right wall finds it.
+    place(&mut w, 1, 3.0, "pistol");
+    w.step(&[aim_at(&w, 0, vec2(29.0, 5.6))]);
+    assert_eq!(w.projectiles.len(), 1);
+    let mut bounced = false;
+    for _ in 0..(7.0 / DT) as usize {
+        w.step(&idle(2));
+        if w.projectiles.first().is_some_and(|p| p.vel.x < 0.0) {
+            bounced = true;
+        }
+        if w.fighters[1].health < MAX_HEALTH {
+            break;
+        }
+    }
+    assert!(bounced, "the ball came back off the wall");
+    // Off the wall and along the floor, yet still the full 4.5.
+    let dealt = MAX_HEALTH - w.fighters[1].health;
+    assert!((dealt - 4.5).abs() < 1e-3, "dealt {dealt}");
+    assert!(w.projectiles.is_empty());
+}
+
+#[test]
+fn hail_rolls_on_until_its_time_is_up() {
+    let mut w = world("deathmatch", 1, 0);
+    place(&mut w, 0, 5.0, "hail");
+    // Nobody in the way: the ball has the arena to itself.
+    w.fighters[1].alive = false;
+    w.fighters[1].respawn_timer = 60.0;
+    w.step(&[aim_at(&w, 0, vec2(20.0, 6.9))]);
+    run(&mut w, (5.0 / DT) as usize);
+    let p = w.projectiles.first().expect("still bouncing after 5 s");
+    assert!(p.vel.length() > 5.0, "kept most of its speed: {:?}", p.vel);
+    run(&mut w, (3.5 / DT) as usize);
+    assert!(w.projectiles.is_empty(), "gone after its 8 s");
 }
 
 #[test]

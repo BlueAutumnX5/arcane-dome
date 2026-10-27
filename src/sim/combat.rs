@@ -282,15 +282,20 @@ impl World {
                 if p.bounces_left > 0 {
                     let hit_x = self.solid_at(vec2(next.x, p.pos.y));
                     let hit_y = self.solid_at(vec2(p.pos.x, next.y));
+                    // (wall, floor up, floor along, corner) speed kept.
+                    let (wall, up, along, corner) = match pd.bounciness {
+                        Some(b) => (b, b, 1.0, b),
+                        None => (0.6, 0.5, 0.8, 0.5),
+                    };
                     if hit_x {
-                        p.vel.x = -p.vel.x * 0.6;
+                        p.vel.x = -p.vel.x * wall;
                     }
                     if hit_y {
-                        p.vel.y = -p.vel.y * 0.5;
-                        p.vel.x *= 0.8;
+                        p.vel.y = -p.vel.y * up;
+                        p.vel.x *= along;
                     }
                     if !hit_x && !hit_y {
-                        p.vel = -p.vel * 0.5;
+                        p.vel = -p.vel * corner;
                     }
                     // Gentle rolling bounces do not use up the bounce budget.
                     if p.vel.length() > 4.0 {
@@ -325,7 +330,7 @@ impl World {
                 let headshot = o.is_headshot_point(p.pos);
                 let mut dmg = def.damage * if headshot { def.headshot_mult } else { 1.0 };
                 // Bullets hit as hard as they are still fast.
-                if p.kind == ProjectileKind::Bullet && p.speed0 > 0.0 {
+                if p.kind == ProjectileKind::Bullet && !pd.full_damage && p.speed0 > 0.0 {
                     dmg *= (p.vel.length() / p.speed0).clamp(0.0, 1.0);
                 }
                 self.damage(j, Some(p.owner), Some(p.weapon), dmg, headshot, true);

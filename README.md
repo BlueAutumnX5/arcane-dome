@@ -28,7 +28,7 @@ weapons, maps and modes all defined in JSON.
   limit can be turned off, even all of them for an endless match. Every
   match and round starts with a 3 second countdown.
   - **Gun Game**: every kill moves you (or, with teams on, your whole team)
-    to the next weapon, from the Assault Rifle to the Shock Baton; a kill with
+    to the next weapon, from the Hail Rifle to the Shock Baton; a kill with
     the Baton wins. Everyone carries the Baton as a sidearm. Switches decide
     whether a melee kill or a suicide sends you back one weapon.
   - **Juggernaut**: one fighter glows red with 500 health and 200 shield, and
@@ -45,9 +45,10 @@ weapons, maps and modes all defined in JSON.
   - **Capture the Flag** (teams): bring an enemy flag to your own while
     yours is home. A dropped flag goes home after 15 seconds, or at once when
     its team touches it.
-- **10 weapons**: Pistol, Assault Rifle, Leech SMG (heals you as you hit),
-  Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher,
-  Grenade Launcher and Laser, plus the Shock Baton in Gun Game.
+- **10 weapons**: Pistol, Hail Rifle (slow balls of ice that bounce until
+  they hit someone), Leech SMG (heals you as you hit), Shotgun, Flamethrower,
+  Marksman Rifle, Sniper Rifle, Rocket Launcher, Grenade Launcher and Laser,
+  plus the Shock Baton in Gun Game.
 - **Bots** with a view cone, reaction time and three difficulties (Easy,
   Normal, Hard), set per team.
 - **Map gadgets**: thrusters (stand on the pad and press jump), weapon
@@ -250,13 +251,13 @@ Game tembak-menembak arena platformer 2 Dimensi, side-scrolling, yang dibuat men
   - **Frostline Relay:** stasiun pemancar di pegunungan bersalju yang dirancang untuk 3 dan 4 tim, dengan tebing, lembah, pulau es, dan lorong pemancar menuju atap menara.
   - **Redstone Arches:** ngarai gurun untuk 2 tim, dengan sebuah lengkungan batu raksasa yang bisa dilintasi.
 - **8 mode permainan:** Deathmatch, Elimination, Gun Game, Juggernaut, King of the Hill, Dominasi, Wilayah (Territories), dan Rebut Bendera (Capture the Flag). Sebagian besar bisa dimainkan secara *free-for-all* atau dengan 2 hingga 4 tim (Biru, Merah, Hijau, dan Kuning; setiap tim memilih warnanya sendiri). Elimination memiliki tiga variasi: **Rounds** (pertandingan berbasis ronde), **Last Man Standing** (setiap pemain memiliki jatah nyawa sendiri), dan **Attrition** (setiap tim berbagi satu jatah nyawa). Semua batas pertandingan bisa dinonaktifkan, termasuk semuanya sekaligus untuk menghasilkan pertandingan tanpa akhir. Setiap pertandingan dan ronde dimulai dengan hitung mundur 3 detik.
-  - **Gun Game:** setiap kill memindahkanmu (atau seluruh timmu, jika bermain dengan tim) ke senjata berikutnya, dari Assault Rifle sampai Shock Baton; kill dengan Baton memenangkan pertandingan. Semua pemain membawa Baton sebagai senjata cadangan. Ada pengaturan apakah kill jarak dekat atau bunuh diri membuatmu mundur satu senjata.
+  - **Gun Game:** setiap kill memindahkanmu (atau seluruh timmu, jika bermain dengan tim) ke senjata berikutnya, dari Hail Rifle sampai Shock Baton; kill dengan Baton memenangkan pertandingan. Semua pemain membawa Baton sebagai senjata cadangan. Ada pengaturan apakah kill jarak dekat atau bunuh diri membuatmu mundur satu senjata.
   - **Juggernaut:** satu petarung berwarna merah dengan 500 darah dan 200 perisai, dan semua yang lain memburunya; bunuh Juggernaut untuk menggantikannya. Kamu bisa memilih apakah kill sebagai Juggernaut, membunuh Juggernaut, atau keduanya yang menghasilkan skor, ditambah bonus opsional untuk kill Juggernaut.
   - **King of the Hill:** satu poin setiap detik pihakmu sendirian berdiri di bukit; bukit pindah ke zona lain sesuai waktu yang kamu pilih.
   - **Dominasi** (tim): berdiri di zona untuk merebutnya (lebih cepat bersama rekan, terhenti saat ada musuh di dalamnya); setiap zona yang dikuasai menghasilkan poin.
   - **Wilayah** (2 tim): zona-zona membentuk satu garis; rebut zona di sebelah zonamu untuk mendesak ke ujung musuh, dan kuasai semua zona untuk mencetak skor.
   - **Rebut Bendera** (tim): bawa bendera musuh ke benderamu saat benderamu ada di markas. Bendera yang jatuh kembali ke markas setelah 15 detik, atau langsung saat disentuh timnya.
-- **10 senjata:** Pistol, Assault Rifle, Leech SMG (memulihkan kesehatan saat peluru mengenai lawan), Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher, Grenade Launcher, dan Laser, ditambah Shock Baton di Gun Game.
+- **10 senjata:** Pistol, Hail Rifle (bola es lambat yang terus memantul sampai mengenai lawan), Leech SMG (memulihkan kesehatan saat peluru mengenai lawan), Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher, Grenade Launcher, dan Laser, ditambah Shock Baton di Gun Game.
 - **Bot AI** dengan kerucut pandang, waktu reaksi, dan tiga tingkat kesulitan (Easy, Normal, Hard). Pengaturan dapat ditentukan untuk setiap tim.
 - **Perangkat khusus pada peta:** pendorong (*thruster*, injak landasannya lalu tekan tombol lompat), stasiun senjata, stasiun perisai, dan titik kemunculan *power-up* (Divine Shield, Rapid Fire, Critical Strike, Shadowstep).
 - **Editor peta:** gambar medan, tempatkan titik kemunculan pemain, item, dan perangkat khusus, batalkan atau ulangi perubahan, serta atur nama, ukuran, jumlah tim, dan jenis pertandingan untuk peta tersebut. Fitur **Validate** memeriksa apakah bot bisa mencapai semua lokasi penting. **Test Play** memungkinkanmu langsung mencoba peta melawan bot, sedangkan **Publish** memasukkan peta ke Quick Match. Fitur Export dan Import memungkinkan berbagi peta melalui folder `Arcane Dome Maps` di dalam Documents. Kamu juga bisa menyeret berkas peta ke editor. Setiap tombol memiliki penjelasan yang muncul saat kursor diarahkan ke atasnya, sedangkan menu Instructions (F1) menjelaskan hal-hal lainnya.

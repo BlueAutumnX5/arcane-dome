@@ -86,7 +86,7 @@ m.pickup("ammo", 62.5, 30, respawn=15)
 m.pickup("ammo", 12, 8, respawn=15)
 m.pickup("weapon", 26, 18, weapon="thumper", respawn=30)
 m.pickup("weapon", 6, 14, weapon="needle_gun", respawn=25)
-m.pickup("weapon", 52, 24.5, weapon="arc_rifle", respawn=25)
+m.pickup("weapon", 52, 24.5, weapon="hail_rifle", respawn=25)
 m.pickup("weapon", 57.5, 12, weapon="rail_spike", respawn=40)
 
 m.obj("thruster", 10, 32, height_tiles=24.5)
