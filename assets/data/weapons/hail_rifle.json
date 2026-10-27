@@ -14,7 +14,7 @@
   "range_tiles": 22,
   "projectile": {
     "type": "bullet",
-    "speed": 18.0,
+    "speed": 35.0,
     "gravity": 2.0,
     "drag": 0.0,
     "lifetime_s": 60.0,
