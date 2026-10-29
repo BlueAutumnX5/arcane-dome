@@ -2,7 +2,7 @@
 
 ## Next version (in progress)
 
-- New weapon: the **Hail Rifle** (Automatic). It sprays balls of ice that travel at running pace, drop a little over distance, and bounce off walls, floors and ceilings until they hit someone (or melt after 30 seconds). Every ball hits for 4.5, even after bouncing. 100 shots a clip. It takes the Assault Rifle's place for now; the Assault Rifle returns when weapons can be bought
+- New weapon: the **Hail Rifle** (Automatic). It sprays fast balls of ice (about four times running speed) that drop slightly over long distances and bounce off walls, floors and ceilings until they hit someone (or melt after 60 seconds). Every ball hits for 4.5, even after bouncing. 100 shots a clip, 150 spare. It takes the Assault Rifle's place for now; the Assault Rifle returns when weapons can be bought
 - New HUD on the PC:
   - Health sits at the top centre ("Health 97%", your name, "Shield 69%"). The bar fades from green through yellow to red as you lose health, with a thin yellow shield strip under it (phones get the same colours in their own spot)
   - The weapon in your hands is pictured top left, with its clip below it (or reload progress)

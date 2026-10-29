@@ -45,8 +45,8 @@ weapons, maps and modes all defined in JSON.
   - **Capture the Flag** (teams): bring an enemy flag to your own while
     yours is home. A dropped flag goes home after 15 seconds, or at once when
     its team touches it.
-- **10 weapons**: Pistol, Hail Rifle (slow balls of ice that bounce until
-  they hit someone), Leech SMG (heals you as you hit), Shotgun, Flamethrower,
+- **10 weapons**: Pistol, Hail Rifle (balls of ice that bounce until they
+  hit someone), Leech SMG (heals you as you hit), Shotgun, Flamethrower,
   Marksman Rifle, Sniper Rifle, Rocket Launcher, Grenade Launcher and Laser,
   plus the Shock Baton in Gun Game.
 - **Bots** with a view cone, reaction time and three difficulties (Easy,
@@ -257,7 +257,7 @@ Game tembak-menembak arena platformer 2 Dimensi, side-scrolling, yang dibuat men
   - **Dominasi** (tim): berdiri di zona untuk merebutnya (lebih cepat bersama rekan, terhenti saat ada musuh di dalamnya); setiap zona yang dikuasai menghasilkan poin.
   - **Wilayah** (2 tim): zona-zona membentuk satu garis; rebut zona di sebelah zonamu untuk mendesak ke ujung musuh, dan kuasai semua zona untuk mencetak skor.
   - **Rebut Bendera** (tim): bawa bendera musuh ke benderamu saat benderamu ada di markas. Bendera yang jatuh kembali ke markas setelah 15 detik, atau langsung saat disentuh timnya.
-- **10 senjata:** Pistol, Hail Rifle (bola es lambat yang terus memantul sampai mengenai lawan), Leech SMG (memulihkan kesehatan saat peluru mengenai lawan), Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher, Grenade Launcher, dan Laser, ditambah Shock Baton di Gun Game.
+- **10 senjata:** Pistol, Hail Rifle (bola es yang terus memantul sampai mengenai lawan), Leech SMG (memulihkan kesehatan saat peluru mengenai lawan), Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher, Grenade Launcher, dan Laser, ditambah Shock Baton di Gun Game.
 - **Bot AI** dengan kerucut pandang, waktu reaksi, dan tiga tingkat kesulitan (Easy, Normal, Hard). Pengaturan dapat ditentukan untuk setiap tim.
 - **Perangkat khusus pada peta:** pendorong (*thruster*, injak landasannya lalu tekan tombol lompat), stasiun senjata, stasiun perisai, dan titik kemunculan *power-up* (Divine Shield, Rapid Fire, Critical Strike, Shadowstep).
 - **Editor peta:** gambar medan, tempatkan titik kemunculan pemain, item, dan perangkat khusus, batalkan atau ulangi perubahan, serta atur nama, ukuran, jumlah tim, dan jenis pertandingan untuk peta tersebut. Fitur **Validate** memeriksa apakah bot bisa mencapai semua lokasi penting. **Test Play** memungkinkanmu langsung mencoba peta melawan bot, sedangkan **Publish** memasukkan peta ke Quick Match. Fitur Export dan Import memungkinkan berbagi peta melalui folder `Arcane Dome Maps` di dalam Documents. Kamu juga bisa menyeret berkas peta ke editor. Setiap tombol memiliki penjelasan yang muncul saat kursor diarahkan ke atasnya, sedangkan menu Instructions (F1) menjelaskan hal-hal lainnya.
