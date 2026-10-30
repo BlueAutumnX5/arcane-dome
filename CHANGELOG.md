@@ -1,6 +1,6 @@
 # Changes
 
-## Next version (in progress)
+## v0.2.0
 
 - New weapon: the **Hail Rifle** (Automatic). It sprays balls of ice (about twice running speed) that arc down like lobbed shots and bounce off walls, floors and ceilings until they hit someone (or melt after 60 seconds). Every ball hits for 4.5, even after bouncing. 100 shots a clip, 150 spare. It takes the Assault Rifle's place for now; the Assault Rifle returns when weapons can be bought
 - New HUD on the PC:
