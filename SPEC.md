@@ -1,7 +1,7 @@
 # Arcane Dome: Specification
 
 A side-scrolling platform arena shooter. Original code, original art, original names.
-Stack: Rust + Macroquad, native on Linux, Windows and Android (9 and newer), optional WASM later.
+Stack: Rust + Macroquad, native on Linux, Windows and Android (5.0 and newer), optional WASM later.
 The focus is arena matches, many weapons, many maps, all data-driven.
 A campaign (defending Earth with a dome powered by three artifacts placed around
 the world) is planned for much later and is out of scope for now.

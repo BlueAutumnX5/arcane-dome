@@ -3,7 +3,7 @@
 #
 # Needs the Android SDK (ANDROID_HOME) with an NDK, build-tools and a
 # platform installed, a JDK, and the Rust targets:
-#   rustup target add aarch64-linux-android armv7-linux-androideabi
+#   rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 #
 # Signing: ARCANE_KEYSTORE (+ ARCANE_KEYSTORE_PASS, ARCANE_KEY_ALIAS) names
 # the release key; without it the standard Android debug key is used
@@ -13,9 +13,10 @@ cd "$(dirname "$0")/.."
 
 PACKAGE=io.github.blueautumnx5.arcanedome
 LIB=arcane_dome
-MIN_SDK=28    # Android 9
+MIN_SDK=21    # Android 5.0, the oldest the NDK (and so Rust) supports
 TARGET_SDK=34
-TARGETS=${ANDROID_TARGETS:-"aarch64-linux-android armv7-linux-androideabi"}
+# ARM for phones; x86 for old Intel phones and tablets, Chromebooks and emulators.
+TARGETS=${ANDROID_TARGETS:-"aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android"}
 
 SDK=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
 [ -d "$SDK" ] || { echo "Set ANDROID_HOME to the Android SDK folder." >&2; exit 1; }
@@ -42,6 +43,7 @@ for target in $TARGETS; do
     case $target in
         aarch64-linux-android) abi=arm64-v8a; clang=aarch64-linux-android$MIN_SDK-clang ;;
         armv7-linux-androideabi) abi=armeabi-v7a; clang=armv7a-linux-androideabi$MIN_SDK-clang ;;
+        i686-linux-android) abi=x86; clang=i686-linux-android$MIN_SDK-clang ;;
         x86_64-linux-android) abi=x86_64; clang=x86_64-linux-android$MIN_SDK-clang ;;
         *) echo "Unknown target $target" >&2; exit 1 ;;
     esac

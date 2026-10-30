@@ -66,7 +66,7 @@ weapons, maps and modes all defined in JSON.
   is new.
 - **Languages**: English and Bahasa Indonesia (the map editor is English
   only for now).
-- **Android** (9 and newer): the same game with touch controls. The map
+- **Android** (5.0 and newer): the same game with touch controls. The map
   editor stays on the PC version for now.
 - Placeholder art: shapes and colours drawn in code. No sound yet.
 
@@ -134,7 +134,7 @@ needs the Android SDK (`ANDROID_HOME`) with an NDK, build-tools and a
 platform, a JDK, and the Rust targets:
 
 ```bash
-rustup target add aarch64-linux-android armv7-linux-androideabi
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 ```
 
 ```bash
@@ -263,7 +263,7 @@ Game tembak-menembak arena platformer 2 Dimensi, side-scrolling, yang dibuat men
 - **Editor peta:** gambar medan, tempatkan titik kemunculan pemain, item, dan perangkat khusus, batalkan atau ulangi perubahan, serta atur nama, ukuran, jumlah tim, dan jenis pertandingan untuk peta tersebut. Fitur **Validate** memeriksa apakah bot bisa mencapai semua lokasi penting. **Test Play** memungkinkanmu langsung mencoba peta melawan bot, sedangkan **Publish** memasukkan peta ke Quick Match. Fitur Export dan Import memungkinkan berbagi peta melalui folder `Arcane Dome Maps` di dalam Documents. Kamu juga bisa menyeret berkas peta ke editor. Setiap tombol memiliki penjelasan yang muncul saat kursor diarahkan ke atasnya, sedangkan menu Instructions (F1) menjelaskan hal-hal lainnya.
 - **Pengaturan:** bahasa, mode layar penuh, animasi transisi antarmenu, efek darah, dan penghitung FPS. Pengaturan akan diingat ketika game dijalankan kembali. Menu utama juga menyediakan **View Changes** untuk melihat perubahan terbaru.
 - **Bahasa:** English dan Bahasa Indonesia. Untuk saat ini, editor peta hanya tersedia dalam bahasa Inggris.
-- **Android (versi 9 dan lebih baru):** game yang sama dengan kontrol layar sentuh. Editor peta masih tersedia di versi PC saja.
+- **Android (versi 5.0 dan lebih baru):** game yang sama dengan kontrol layar sentuh. Editor peta masih tersedia di versi PC saja.
 - Grafis sementara (*placeholder art*): bentuk dan warna yang digambar langsung melalui kode. Belum ada suara.
 
 ## Kontrol
@@ -335,7 +335,7 @@ Skrip `android/build-apk.sh` akan membangun APK di lokasi `target/android/arcane
 Kamu memerlukan Android SDK melalui variabel lingkungan `ANDROID_HOME`, beserta NDK, build-tools, platform Android, JDK, dan target Rust berikut:
 
 ```bash
-rustup target add aarch64-linux-android armv7-linux-androideabi
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 ```
 
 Kemudian, jalankan:
