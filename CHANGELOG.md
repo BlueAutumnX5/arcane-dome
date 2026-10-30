@@ -1,6 +1,6 @@
 # Changes
 
-## Next version (in progress)
+## v0.2.1
 
 - Android: runs on Android 5.0 and newer (it needed Android 9 before), and on Intel-based phones, tablets and Chromebooks too
 
