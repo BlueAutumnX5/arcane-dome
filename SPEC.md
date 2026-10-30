@@ -1,7 +1,7 @@
 # Arcane Dome: Specification
 
 A side-scrolling platform arena shooter. Original code, original art, original names.
-Stack: Rust + Macroquad, native on Linux and Windows, optional WASM later.
+Stack: Rust + Macroquad, native on Linux, Windows and Android (9 and newer), optional WASM later.
 The focus is arena matches, many weapons, many maps, all data-driven.
 A campaign (defending Earth with a dome powered by three artifacts placed around
 the world) is planned for much later and is out of scope for now.
@@ -62,14 +62,23 @@ Beyond the plan, Milestone 1 also gained: thrusters, weapon and shield stations,
 powerups, 2 to 4 teams with pickable colours, free-for-all Elimination, a start countdown,
 a death screen, and bot-behaviour tools (`map_check`, `bot_watch`).
 
-## Milestone 2 (next)
-- [ ] Map editor in-game, so anyone can build maps (v1 below; hand-placed bot jump links in v2)
+## Milestone 2 checklist (done, v0.2.0)
+- [x] Map editor in-game, so anyone can build and share maps (v1 below)
+- [x] Capture the Flag and King of the Hill, plus Domination and Territories
+
+Beyond the plan, Milestone 2 also gained: Juggernaut and Gun Game (with the Shock
+Baton), the Hail Rifle, bullets that slow and drop with range, human-like bot aim, a
+new HUD with weapon icons, Bahasa Indonesia, and an Android version with touch
+controls and aim assist.
+
+## Milestone 3 (next)
 - [ ] Animations for fighters and weapons
 - [ ] Textures for terrain and decor
 - [ ] Sound: CC0 packs and generated effects, credited in CREDITS.md
-- [ ] Maybe: Capture the Flag and King of the Hill
+- [ ] Map editor v2: decor, themes and sky editing, hand-placed bot jump links
+- [ ] Maybe: Zombie and Zombie Escape modes
 
-### Map editor v1 (Milestone 2, step 1) (done)
+### Map editor v1 (Milestone 2) (done)
 An in-game screen ("Map Editor" on the main menu). It reuses the map renderer,
 physics and nav graph, and writes the same map JSON the game loads.
 
@@ -93,7 +102,7 @@ physics and nav graph, and writes the same map JSON the game loads.
 - **Sharing**: Export writes `<id>.json` to "Arcane Dome Maps" in Documents
   (or `ARCANE_DOME_MAPS`); Import reads from there or from a file dropped on
   the window. An id clash asks: replace your draft, or import as a copy.
-- **v2 (later)**: decor, themes and sky editing, hand-placed bot jump links.
+- **v2 (Milestone 3)**: decor, themes and sky editing, hand-placed bot jump links.
 
 ## Suggested layout
 ```

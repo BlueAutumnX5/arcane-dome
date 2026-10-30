@@ -213,13 +213,13 @@ MODES=domination,capture_the_flag cargo run --release --example mode_watch -- fo
 
 ## Roadmap
 
-Milestone 1 is done (v0.1.0). Milestone 2:
+Milestone 1 is done (v0.1.0), and so is Milestone 2 (v0.2.0): the map editor,
+Capture the Flag, King of the Hill, Domination and Territories. Milestone 3:
 
-1. A map editor, so anyone can build and share maps (done)
-2. Animations and textures
-3. Sound
-4. Capture the Flag, King of the Hill, Domination and Territories (done)
-5. Later: Zombie and Zombie Escape modes
+1. Animations and textures
+2. Sound
+3. Map editor v2: decor, themes and sky editing
+4. Later: Zombie and Zombie Escape modes
 
 ## License
 
@@ -410,13 +410,12 @@ MODES=domination,capture_the_flag cargo run --release --example mode_watch -- fo
 
 ## Peta jalan pengembangan (Roadmap)
 
-Milestone 1 telah selesai (`v0.1.0`). Berikut daftar pekerjaan untuk Milestone 2:
+Milestone 1 telah selesai (`v0.1.0`), begitu juga Milestone 2 (`v0.2.0`): editor peta, serta mode Capture the Flag, King of the Hill, Dominasi, dan Wilayah. Berikut daftar pekerjaan untuk Milestone 3:
 
-1. Editor peta agar siapa pun bisa membuat dan berbagi peta (**selesai**).
-2. Animasi dan tekstur.
-3. Suara.
-4. Mode Capture the Flag, King of the Hill, Dominasi, dan Wilayah (**selesai**).
-5. Nanti: mode Zombie dan Zombie Escape.
+1. Animasi dan tekstur.
+2. Suara.
+3. Editor peta v2: dekorasi, tema, dan pengaturan langit.
+4. Nanti: mode Zombie dan Zombie Escape.
 
 ## Lisensi
 
