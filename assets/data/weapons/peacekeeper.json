@@ -3,6 +3,7 @@
   "name": "Pistol",
   "short_name": "Pistol",
   "category": "starter",
+  "icon": "pistol",
   "damage": 17.0,
   "headshot_mult": 2.0,
   "fire_rate_rps": 4.0,

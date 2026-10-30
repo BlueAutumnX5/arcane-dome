@@ -6,7 +6,7 @@ mod settings;
 mod touch;
 mod ui;
 
-use crate::data::{GameData, ProjectileKind, find_assets_dir};
+use crate::data::{GameData, ProjectileKind, Rules, find_assets_dir};
 use crate::i18n::{t, tf, tn};
 use crate::render::{TEAM_COLORS, resync_texture_bindings, use_screen};
 use crate::sim::{Difficulty, ElimStyle, MAX_TEAMS, MatchConfig, TEAM_NAMES};
@@ -18,7 +18,11 @@ use std::sync::Arc;
 use ui::{ACCENT, Side, Ui};
 
 // Limit choices; 0 means Off.
-const SCORE_LIMITS: [u32; 11] = [0, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
+const SCORE_LIMITS: [u32; 17] = [
+    0, 1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300,
+];
+/// King of the Hill: seconds between hill moves; 0 = it stays put.
+const HILL_MOVES: [f32; 5] = [0.0, 30.0, 60.0, 90.0, 120.0];
 const ROUND_COUNTS: [u32; 5] = [1, 3, 5, 7, 9];
 /// Most bots one team can have.
 const MAX_TEAM_BOTS: i32 = 7;
@@ -299,11 +303,13 @@ fn test_match(mut s: Session, blood: bool) -> Session {
     s
 }
 
-/// Team settings offered for this map in this mode: 0 (teams off, every
-/// mode has it), then the team counts both the map and the mode support.
+/// Team settings offered for this map in this mode: 0 (teams off, unless
+/// the mode is for teams only), then the team counts both the map and the
+/// mode support.
 fn allowed_team_counts(map: &crate::data::MapDef, mode: &crate::data::ModeDef) -> Vec<usize> {
     let most = (mode.teams as usize).min(MAX_TEAMS);
     std::iter::once(0)
+        .filter(|_| !mode.team_only)
         .chain(
             map.team_counts
                 .iter()
@@ -345,6 +351,15 @@ struct Setup {
     powerups: bool,
     stations: bool,
     infinite_ammo: bool,
+    /// Juggernaut scoring (at least one of the first two stays on).
+    jugg_kills_score: bool,
+    killing_jugg_scores: bool,
+    jugg_bonus: bool,
+    /// Gun Game knock-backs.
+    melee_demotes: bool,
+    suicide_demotes: bool,
+    /// King of the Hill: index into HILL_MOVES.
+    hill_move: usize,
 }
 
 struct App {
@@ -368,6 +383,8 @@ struct App {
     info_scroll: ui::Scroll,
     /// Rendered map pictures for the setup screen, by map id.
     thumbs: std::collections::HashMap<String, crate::render::MapThumb>,
+    /// The FPS counter's memory figures, and when they were read.
+    memory: (f64, String),
 }
 
 pub async fn run() {
@@ -407,6 +424,12 @@ pub async fn run() {
             powerups: true,
             stations: true,
             infinite_ammo: false,
+            jugg_kills_score: true,
+            killing_jugg_scores: true,
+            jugg_bonus: false,
+            melee_demotes: true,
+            suicide_demotes: true,
+            hill_move: 2,
         },
         ui: Ui::default(),
         seed: macroquad::miniquad::date::now() as u64,
@@ -418,6 +441,7 @@ pub async fn run() {
         setup_scroll: Default::default(),
         info_scroll: Default::default(),
         thumbs: Default::default(),
+        memory: (f64::MIN, String::new()),
     };
     app.reset_mode_defaults();
 
@@ -539,13 +563,29 @@ impl App {
         self.draw_fps();
     }
 
-    fn draw_fps(&self) {
+    fn draw_fps(&mut self) {
         if self.settings.show_fps {
             let s = ui::scale();
+            // Memory, read once a second: a figure that keeps climbing
+            // points at a leak.
+            let now = get_time();
+            if now - self.memory.0 >= 1.0 {
+                let mb = |b: u64| b / (1 << 20);
+                let (ram, gpu) = crate::platform::memory_use();
+                let mut text = String::new();
+                if let Some(r) = ram {
+                    text += &format!("   RAM {} MB", mb(r));
+                }
+                if let Some(g) = gpu {
+                    text += &format!("   GPU {} MB", mb(g));
+                }
+                self.memory = (now, text);
+            }
+            // Bottom left, clear of the match HUD's panels.
             ui::text_left(
-                &format!("{} FPS", get_fps()),
+                &format!("{} FPS{}", get_fps(), self.memory.1),
                 8.0 * s,
-                16.0 * s,
+                screen_height() - 6.0 * s,
                 15.0 * s,
                 Color::new(1.0, 1.0, 0.6, 0.9),
             );
@@ -860,7 +900,7 @@ impl App {
                 SettingRow::Fps,
                 t("FPS Counter"),
                 on_off(st.show_fps),
-                t("Show frames per second in the top left corner."),
+                t("Show frames per second and memory use in the top left corner."),
             ),
         ];
         // A phone is always fullscreen, and has no slides for now.
@@ -1044,6 +1084,9 @@ impl App {
             self.setup.rounds = nearest(&l, r as f32);
         }
         self.setup.time = nearest(&TIME_LIMITS, mode.time_limit_s);
+        if let Some(h) = mode.hill_move_s {
+            self.setup.hill_move = nearest(&HILL_MOVES, h);
+        }
         if let Some(l) = mode.lives {
             let list: Vec<f32> = LIVES.iter().map(|&v| v as f32).collect();
             self.setup.lives = nearest(&list, l as f32);
@@ -1079,6 +1122,12 @@ impl App {
             powerups: c.powerups,
             stations: c.stations,
             infinite_ammo: c.infinite_ammo,
+            jugg_kills_score: c.jugg_kills_score,
+            killing_jugg_scores: c.killing_jugg_scores,
+            jugg_bonus: c.jugg_bonus,
+            melee_demotes: c.melee_demotes,
+            suicide_demotes: c.suicide_demotes,
+            hill_move_s: Some(HILL_MOVES[c.hill_move]),
             ..Default::default()
         };
         MatchConfig {
@@ -1171,7 +1220,7 @@ impl App {
         } else {
             style_blurb(style)
         };
-        for line in ui::wrap(blurb, pv.w, dsize).iter().take(2) {
+        for line in ui::wrap(blurb, pv.w - 10.0 * s, dsize).iter().take(2) {
             y += dsize;
             ui::text_left(
                 line,
@@ -1198,10 +1247,56 @@ impl App {
                 count_or_off(TEAM_LIVES[self.setup.team_lives]),
             ),
         };
-        let d_limit = self
-            .ui
-            .stepper("s_limit", limit_label, &limit_value, row(y), false, true);
-        y += rh + 4.0 * s;
+        // Gun Game ends when a ladder is finished: its knock-back switches
+        // take the score limit's place.
+        let gun_game = mode.rules == Rules::GunGame;
+        let (mut d_limit, mut d_melee, mut d_suicide) = (0, 0, 0);
+        if gun_game {
+            let rows = [
+                (
+                    "s_melee",
+                    t("Melee Demotes"),
+                    self.setup.melee_demotes,
+                    t("A kill with a melee weapon also sends the victim back one weapon."),
+                ),
+                (
+                    "s_suicide",
+                    t("Suicide Demotes"),
+                    self.setup.suicide_demotes,
+                    t("Dying by your own fire or to the map sends you back one weapon."),
+                ),
+            ];
+            for (k, (id, label, on, tip)) in rows.into_iter().enumerate() {
+                let d = self.ui.stepper(id, label, &on_off(on), row(y), false, true);
+                self.ui.hint(&format!("{id}_tip"), row(y), tip);
+                if k == 0 {
+                    d_melee = d;
+                } else {
+                    d_suicide = d;
+                }
+                y += rh + 4.0 * s;
+            }
+        } else {
+            d_limit = self
+                .ui
+                .stepper("s_limit", limit_label, &limit_value, row(y), false, true);
+            y += rh + 4.0 * s;
+        }
+        // King of the Hill: how often the hill moves (maps with one zone
+        // keep it in place anyway).
+        let mut d_hill = 0;
+        if mode.rules == Rules::KingOfTheHill {
+            let secs = HILL_MOVES[self.setup.hill_move];
+            let value = if secs > 0.0 {
+                tf("Every {} s", &[&secs])
+            } else {
+                t("Never").to_owned()
+            };
+            d_hill = self
+                .ui
+                .stepper("s_hill", t("Hill Moves"), &value, row(y), false, true);
+            y += rh + 4.0 * s;
+        }
         let tl = if !mode.respawn && style == ElimStyle::Rounds {
             t("Round Time")
         } else {
@@ -1343,6 +1438,63 @@ impl App {
             );
             total = 1 + self.setup.ffa_bots;
         }
+        let (mut d_jkills, mut d_jslay, mut d_jbonus) = (0, 0, 0);
+        if mode.rules == Rules::Juggernaut {
+            let y = top + 48.0 * s + 140.0 * s + 14.0 * s;
+            let rows_h = 3.0 * 38.0 * s;
+            ui::panel(
+                Rect::new(rx, y, rw, 30.0 * s + rows_h + 10.0 * s),
+                Some(t("Scoring")),
+            );
+            let r = |k: f32| {
+                Rect::new(
+                    rx + 10.0 * s,
+                    y + 38.0 * s + k * 38.0 * s,
+                    rw - 20.0 * s,
+                    32.0 * s,
+                )
+            };
+            let c = &self.setup;
+            d_jkills = self.ui.stepper(
+                "s_jkills",
+                t("Kills as Juggernaut"),
+                &on_off(c.jugg_kills_score),
+                r(0.0),
+                false,
+                true,
+            );
+            self.ui.hint(
+                "s_jkills_tip",
+                r(0.0),
+                t("Each kill you make while you are the Juggernaut scores a point."),
+            );
+            d_jslay = self.ui.stepper(
+                "s_jslay",
+                t("Killing the Juggernaut"),
+                &on_off(c.killing_jugg_scores),
+                r(1.0),
+                false,
+                true,
+            );
+            self.ui.hint(
+                "s_jslay_tip",
+                r(1.0),
+                t("Killing the Juggernaut scores a point. One way to score always stays on."),
+            );
+            d_jbonus = self.ui.stepper(
+                "s_jbonus",
+                t("Juggernaut Bonus"),
+                &on_off(c.jugg_bonus),
+                r(2.0),
+                false,
+                c.jugg_kills_score,
+            );
+            self.ui.hint(
+                "s_jbonus_tip",
+                r(2.0),
+                t("Kills made as the Juggernaut score 2 points instead of 1."),
+            );
+        }
         if let Some([lo, hi]) = map.recommended_players {
             let note = tf("{} players  (map suits {}-{})", &[&total, &lo, &hi]);
             let warn = total < lo || total > hi;
@@ -1357,6 +1509,7 @@ impl App {
         let c = &self.setup;
         let no_clock = TIME_LIMITS[c.time] == 0.0;
         let endless = no_clock
+            && !gun_game
             && match (mode.respawn, STYLES[c.elim_style]) {
                 (true, _) => SCORE_LIMITS[c.score] == 0,
                 (false, ElimStyle::Rounds) => false,
@@ -1424,6 +1577,27 @@ impl App {
         }
         if d_inf != 0 {
             c.infinite_ammo = !c.infinite_ammo;
+        }
+        if d_melee != 0 {
+            c.melee_demotes = !c.melee_demotes;
+        }
+        if d_hill != 0 {
+            c.hill_move = step(c.hill_move, d_hill, HILL_MOVES.len());
+        }
+        if d_suicide != 0 {
+            c.suicide_demotes = !c.suicide_demotes;
+        }
+        // Turning off the last way to score turns the other one back on.
+        if d_jkills != 0 {
+            c.jugg_kills_score = !c.jugg_kills_score;
+            c.killing_jugg_scores |= !c.jugg_kills_score;
+        }
+        if d_jslay != 0 {
+            c.killing_jugg_scores = !c.killing_jugg_scores;
+            c.jugg_kills_score |= !c.killing_jugg_scores;
+        }
+        if d_jbonus != 0 {
+            c.jugg_bonus = !c.jugg_bonus;
         }
         // Step through the team counts this map and mode allow, and keep
         // the choice on that list when the map or mode changes.
@@ -1616,15 +1790,20 @@ impl App {
                         ProjectileKind::Beam => t("Beam"),
                         ProjectileKind::MeleeArc => t("Melee"),
                     };
-                    let dmg = match &w.projectile.explosion {
-                        Some(e) => tf(
-                            "{} + {} blast",
-                            &[&format!("{:.0}", w.damage), &format!("{:.0}", e.damage)],
-                        ),
-                        None if w.total_pellets() > 1 => {
-                            format!("{:.0} x{}", w.damage, w.total_pellets())
+                    // Whole numbers bare, others to one place (4.5).
+                    let num = |v: f32| {
+                        if v.fract() == 0.0 {
+                            format!("{v:.0}")
+                        } else {
+                            format!("{v:.1}")
                         }
-                        None => format!("{:.0}", w.damage),
+                    };
+                    let dmg = match &w.projectile.explosion {
+                        Some(e) => tf("{} + {} blast", &[&num(w.damage), &num(e.damage)]),
+                        None if w.total_pellets() > 1 => {
+                            format!("{} x{}", num(w.damage), w.total_pellets())
+                        }
+                        None => num(w.damage),
                     };
                     let clip = if w.infinite_reserve() {
                         format!("{} / inf", w.magazine)

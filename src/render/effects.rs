@@ -1,6 +1,6 @@
 use crate::data::ProjectileKind;
-use crate::i18n::{t, tn};
-use crate::sim::{Event, World};
+use crate::i18n::{t, tf, tn};
+use crate::sim::{Event, FlagEvent, World};
 use macroquad::prelude::*;
 
 struct Tracer {
@@ -21,6 +21,14 @@ pub struct FeedLine {
     pub parts: Vec<(String, Color)>,
     pub mine: bool,
     pub age: f32,
+}
+
+/// A side's name in its colour, for the feed.
+fn side_part(world: &World, side: usize) -> (String, Color) {
+    (
+        t(&world.side_name(side)).to_owned(),
+        super::objectives::side_color(world, side),
+    )
 }
 
 /// Short-lived visuals created from sim events.
@@ -47,6 +55,7 @@ pub const MAX_MARKS: usize = 512;
 
 impl Effects {
     pub fn consume(&mut self, world: &World, player: Option<usize>) {
+        let plain = Color::new(1.0, 1.0, 1.0, 0.85);
         for e in &world.events {
             match e {
                 Event::Tracer { from, to, kind } => self.tracers.push(Tracer {
@@ -104,7 +113,6 @@ impl Effects {
                         let f = &world.fighters[i];
                         (t(&f.name).to_owned(), super::fighter_color(f))
                     };
-                    let plain = Color::new(1.0, 1.0, 1.0, 0.85);
                     let mut parts = Vec::new();
                     match killer {
                         Some(k) => {
@@ -124,17 +132,90 @@ impl Effects {
                         }
                     }
                     let mine = player.is_some() && (*killer == player || Some(*victim) == player);
-                    self.feed.push(FeedLine {
-                        parts,
-                        mine,
-                        age: 0.0,
+                    self.say(parts, mine);
+                }
+                Event::Juggernaut { fighter } => {
+                    let f = &world.fighters[*fighter];
+                    let red = super::fighter_color(f);
+                    let parts = if Some(*fighter) == player {
+                        vec![(t("You are the Juggernaut").to_owned(), red)]
+                    } else {
+                        vec![
+                            (t(&f.name).to_owned(), red),
+                            (t("is the Juggernaut").to_owned(), plain),
+                        ]
+                    };
+                    self.say(parts, Some(*fighter) == player);
+                }
+                Event::ZoneTaken { zone, side } => {
+                    let parts = vec![
+                        side_part(world, *side),
+                        (
+                            tf("took {}", &[&super::objectives::zone_letter(*zone)]),
+                            plain,
+                        ),
+                    ];
+                    let mine = player.is_some_and(|p| world.side_of(p) == *side);
+                    self.say(parts, mine);
+                }
+                Event::HillMoved { .. } => {
+                    self.say(vec![(t("The hill moved").to_owned(), plain)], false);
+                }
+                Event::Pushed { side } => {
+                    let parts = vec![
+                        side_part(world, *side),
+                        (t("holds every zone and scores").to_owned(), plain),
+                    ];
+                    let mine = player.is_some_and(|p| world.side_of(p) == *side);
+                    self.say(parts, mine);
+                }
+                Event::Flag {
+                    flag,
+                    fighter,
+                    what,
+                } => {
+                    let team = world.flags[*flag].side;
+                    let (flag_name, c) = side_part(world, team);
+                    let flag_part = (tf("{} flag", &[&flag_name]), c);
+                    let who = fighter.map(|i| {
+                        let f = &world.fighters[i];
+                        (t(&f.name).to_owned(), super::fighter_color(f))
                     });
-                    if self.feed.len() > 6 {
-                        self.feed.remove(0);
-                    }
+                    let verb = |v: &str| (t(v).to_owned(), plain);
+                    let parts = match (what, who) {
+                        (FlagEvent::Taken, Some(w)) => vec![w, verb(tn("took")), flag_part],
+                        (FlagEvent::Dropped, Some(w)) => vec![w, verb(tn("dropped")), flag_part],
+                        (FlagEvent::Captured, Some(w)) => {
+                            vec![w, verb(tn("captured")), flag_part]
+                        }
+                        (FlagEvent::Returned, Some(w)) => {
+                            vec![w, verb(tn("returned")), flag_part]
+                        }
+                        (_, None) => vec![flag_part, verb(tn("went home"))],
+                    };
+                    let mine = player.is_some() && *fighter == player;
+                    self.say(parts, mine);
+                }
+                Event::Ladder {
+                    side, up: false, ..
+                } if player.is_some_and(|p| world.side_of(p) == *side) => {
+                    let text = t("Knocked back a weapon").to_owned();
+                    self.say(vec![(text, Color::new(1.0, 0.55, 0.4, 1.0))], true);
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Add a line to the kill feed, dropping the oldest past six.
+    fn say(&mut self, parts: Vec<(String, Color)>, mine: bool) {
+        self.feed.push(FeedLine {
+            parts,
+            mine,
+            age: 0.0,
+        });
+        if self.feed.len() > 6 {
+            self.feed.remove(0);
         }
     }
 

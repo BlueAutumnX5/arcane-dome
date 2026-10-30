@@ -2,6 +2,7 @@
 
 use super::world::{ElimStyle, Event, MAX_TEAMS, TEAM_NAMES};
 use super::{ObjectState, World};
+use crate::data::Rules;
 
 /// Seconds between elimination rounds.
 const INTERMISSION: f32 = 3.0;
@@ -33,8 +34,11 @@ impl World {
         }
     }
 
+    /// Same team; in Juggernaut, everyone but the Juggernaut is on one side.
     pub fn allies(&self, a: usize, b: usize) -> bool {
-        a == b || (self.mode.is_team() && self.fighters[a].team == self.fighters[b].team)
+        a == b
+            || (self.mode.is_team() && self.fighters[a].team == self.fighters[b].team)
+            || self.juggernaut.is_some_and(|j| a != j && b != j)
     }
 
     pub fn side_name(&self, side: usize) -> String {
@@ -234,6 +238,9 @@ impl World {
         }
         for i in order {
             self.spawn_fighter(i);
+        }
+        if self.mode.rules == Rules::Juggernaut {
+            self.pick_juggernaut(None);
         }
     }
 }

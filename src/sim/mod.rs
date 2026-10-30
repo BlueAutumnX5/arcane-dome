@@ -5,9 +5,11 @@ mod combat;
 mod fighter;
 mod gadgets;
 mod input;
+mod objectives;
 pub mod physics;
 mod rng;
 mod rules;
+mod variants;
 mod world;
 
 pub use combat::{MAX_PROJECTILES, Projectile};
@@ -17,6 +19,7 @@ pub use fighter::{
 };
 pub use gadgets::{ObjectState, absorb};
 pub use input::Input;
+pub use objectives::{FlagEvent, FlagState, HILL_MOVE_S, ZoneState};
 pub use rng::Rng;
 pub use rules::Phase;
 pub use world::{

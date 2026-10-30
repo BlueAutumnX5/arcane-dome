@@ -20,15 +20,35 @@ weapons, maps and modes all defined in JSON.
     with cliffs, a valley, an ice island and a relay shaft to the tower roof.
   - Redstone Arches: a desert canyon built for 2 teams, under a giant stone
     arch you can walk across.
-- **2 modes**, Deathmatch and Elimination, each played free-for-all or with
-  2 to 4 teams (Blue, Red, Green, Yellow; each team picks its colour).
+- **8 modes**: Deathmatch, Elimination, Gun Game, Juggernaut, King of the
+  Hill, Domination, Territories and Capture the Flag. Most can be played
+  free-for-all or with 2 to 4 teams (Blue, Red, Green, Yellow; each team picks its colour).
   Elimination comes in three styles: Rounds, Last Man Standing (everyone has
   their own lives) and Attrition (each team shares a pool of lives). Every
   limit can be turned off, even all of them for an endless match. Every
   match and round starts with a 3 second countdown.
-- **10 weapons**: Pistol, Assault Rifle, Leech SMG (heals you as you hit),
-  Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher,
-  Grenade Launcher and Laser.
+  - **Gun Game**: every kill moves you (or, with teams on, your whole team)
+    to the next weapon, from the Hail Rifle to the Shock Baton; a kill with
+    the Baton wins. Everyone carries the Baton as a sidearm. Switches decide
+    whether a melee kill or a suicide sends you back one weapon.
+  - **Juggernaut**: one fighter glows red with 500 health and 200 shield, and
+    everyone else hunts them; kill the Juggernaut to become it. Choose whether
+    kills as the Juggernaut, killing the Juggernaut, or both score, with an
+    optional bonus for the Juggernaut's kills.
+  - **King of the Hill**: a point for every second your side alone stands
+    in the hill; the hill moves to another zone on a timer you choose.
+  - **Domination** (teams): stand in a zone to capture it (faster with
+    teammates, stopped while an enemy is inside); every zone you hold earns
+    points.
+  - **Territories** (2 teams): the zones form a line; capture the one next
+    to yours to push toward the enemy's end, and hold every zone to score.
+  - **Capture the Flag** (teams): bring an enemy flag to your own while
+    yours is home. A dropped flag goes home after 15 seconds, or at once when
+    its team touches it.
+- **10 weapons**: Pistol, Hail Rifle (balls of ice that bounce until they
+  hit someone), Leech SMG (heals you as you hit), Shotgun, Flamethrower,
+  Marksman Rifle, Sniper Rifle, Rocket Launcher, Grenade Launcher and Laser,
+  plus the Shock Baton in Gun Game.
 - **Bots** with a view cone, reaction time and three difficulties (Easy,
   Normal, Hard), set per team.
 - **Map gadgets**: thrusters (stand on the pad and press jump), weapon
@@ -153,6 +173,10 @@ All positions are in tiles. Spawns, pickups and objects are given by their
 
 Objects are thrusters (`height_tiles`), weapon stations, shield stations
 (`shield` 50 or 100) and powerup spots (`powerup`: always the same powerup).
+`zones` (areas with `w` and `h`) are the hills and capture points of King of
+the Hill, Domination and Territories; `flags` are the flag bases of Capture
+the Flag, owned like spawns (`team`, `by_teams`). The editor has a tool for
+each, and tells you when a match type a map offers is missing them.
 Purely visual `decor` (walls, windows, girders, chains, lamps, trees...) and a
 `theme` (sky colours, sun, skyline) set the mood.
 
@@ -180,6 +204,13 @@ To watch bots play a map and report anyone stuck or falling into hazards (add
 cargo run --release --example bot_watch -- foundry_ascent 180 4
 ```
 
+To see how bots play the special and objective modes (match length, zones
+taken, flags captured), optionally only some of them:
+
+```bash
+MODES=domination,capture_the_flag cargo run --release --example mode_watch -- foundry_ascent 2
+```
+
 ## Roadmap
 
 Milestone 1 is done (v0.1.0). Milestone 2:
@@ -187,7 +218,8 @@ Milestone 1 is done (v0.1.0). Milestone 2:
 1. A map editor, so anyone can build and share maps (done)
 2. Animations and textures
 3. Sound
-4. Possibly Capture the Flag and King of the Hill
+4. Capture the Flag, King of the Hill, Domination and Territories (done)
+5. Later: Zombie and Zombie Escape modes
 
 ## License
 
@@ -218,8 +250,14 @@ Game tembak-menembak arena platformer 2 Dimensi, side-scrolling, yang dibuat men
   - **Foundry Ascent:** pabrik baja di sekitar lubang lava, dilengkapi menara yang bisa dipanjat dan lorong pendorong (*thruster shaft*). Mendukung 2 hingga 4 tim.
   - **Frostline Relay:** stasiun pemancar di pegunungan bersalju yang dirancang untuk 3 dan 4 tim, dengan tebing, lembah, pulau es, dan lorong pemancar menuju atap menara.
   - **Redstone Arches:** ngarai gurun untuk 2 tim, dengan sebuah lengkungan batu raksasa yang bisa dilintasi.
-- **2 mode permainan:** Deathmatch dan Elimination. Keduanya bisa dimainkan secara *free-for-all* atau dengan 2 hingga 4 tim (Biru, Merah, Hijau, dan Kuning; setiap tim memilih warnanya sendiri). Elimination memiliki tiga variasi: **Rounds** (pertandingan berbasis ronde), **Last Man Standing** (setiap pemain memiliki jatah nyawa sendiri), dan **Attrition** (setiap tim berbagi satu jatah nyawa). Semua batas pertandingan bisa dinonaktifkan, termasuk semuanya sekaligus untuk menghasilkan pertandingan tanpa akhir. Setiap pertandingan dan ronde dimulai dengan hitung mundur 3 detik.
-- **10 senjata:** Pistol, Assault Rifle, Leech SMG (memulihkan kesehatan saat peluru mengenai lawan), Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher, Grenade Launcher, dan Laser.
+- **8 mode permainan:** Deathmatch, Elimination, Gun Game, Juggernaut, King of the Hill, Dominasi, Wilayah (Territories), dan Rebut Bendera (Capture the Flag). Sebagian besar bisa dimainkan secara *free-for-all* atau dengan 2 hingga 4 tim (Biru, Merah, Hijau, dan Kuning; setiap tim memilih warnanya sendiri). Elimination memiliki tiga variasi: **Rounds** (pertandingan berbasis ronde), **Last Man Standing** (setiap pemain memiliki jatah nyawa sendiri), dan **Attrition** (setiap tim berbagi satu jatah nyawa). Semua batas pertandingan bisa dinonaktifkan, termasuk semuanya sekaligus untuk menghasilkan pertandingan tanpa akhir. Setiap pertandingan dan ronde dimulai dengan hitung mundur 3 detik.
+  - **Gun Game:** setiap kill memindahkanmu (atau seluruh timmu, jika bermain dengan tim) ke senjata berikutnya, dari Hail Rifle sampai Shock Baton; kill dengan Baton memenangkan pertandingan. Semua pemain membawa Baton sebagai senjata cadangan. Ada pengaturan apakah kill jarak dekat atau bunuh diri membuatmu mundur satu senjata.
+  - **Juggernaut:** satu petarung berwarna merah dengan 500 darah dan 200 perisai, dan semua yang lain memburunya; bunuh Juggernaut untuk menggantikannya. Kamu bisa memilih apakah kill sebagai Juggernaut, membunuh Juggernaut, atau keduanya yang menghasilkan skor, ditambah bonus opsional untuk kill Juggernaut.
+  - **King of the Hill:** satu poin setiap detik pihakmu sendirian berdiri di bukit; bukit pindah ke zona lain sesuai waktu yang kamu pilih.
+  - **Dominasi** (tim): berdiri di zona untuk merebutnya (lebih cepat bersama rekan, terhenti saat ada musuh di dalamnya); setiap zona yang dikuasai menghasilkan poin.
+  - **Wilayah** (2 tim): zona-zona membentuk satu garis; rebut zona di sebelah zonamu untuk mendesak ke ujung musuh, dan kuasai semua zona untuk mencetak skor.
+  - **Rebut Bendera** (tim): bawa bendera musuh ke benderamu saat benderamu ada di markas. Bendera yang jatuh kembali ke markas setelah 15 detik, atau langsung saat disentuh timnya.
+- **10 senjata:** Pistol, Hail Rifle (bola es yang terus memantul sampai mengenai lawan), Leech SMG (memulihkan kesehatan saat peluru mengenai lawan), Shotgun, Flamethrower, Marksman Rifle, Sniper Rifle, Rocket Launcher, Grenade Launcher, dan Laser, ditambah Shock Baton di Gun Game.
 - **Bot AI** dengan kerucut pandang, waktu reaksi, dan tiga tingkat kesulitan (Easy, Normal, Hard). Pengaturan dapat ditentukan untuk setiap tim.
 - **Perangkat khusus pada peta:** pendorong (*thruster*, injak landasannya lalu tekan tombol lompat), stasiun senjata, stasiun perisai, dan titik kemunculan *power-up* (Divine Shield, Rapid Fire, Critical Strike, Shadowstep).
 - **Editor peta:** gambar medan, tempatkan titik kemunculan pemain, item, dan perangkat khusus, batalkan atau ulangi perubahan, serta atur nama, ukuran, jumlah tim, dan jenis pertandingan untuk peta tersebut. Fitur **Validate** memeriksa apakah bot bisa mencapai semua lokasi penting. **Test Play** memungkinkanmu langsung mencoba peta melawan bot, sedangkan **Publish** memasukkan peta ke Quick Match. Fitur Export dan Import memungkinkan berbagi peta melalui folder `Arcane Dome Maps` di dalam Documents. Kamu juga bisa menyeret berkas peta ke editor. Setiap tombol memiliki penjelasan yang muncul saat kursor diarahkan ke atasnya, sedangkan menu Instructions (F1) menjelaskan hal-hal lainnya.
@@ -332,6 +370,8 @@ Nilai `material` menentukan tampilan permukaan, misalnya batu, logam, kayu, pasi
 
 Objek yang tersedia meliputi thruster (`height_tiles`), stasiun senjata, stasiun perisai (`shield` dengan nilai 50 atau 100), dan titik kemunculan power-up (`powerup`, yang selalu menghasilkan jenis power-up yang sama).
 
+`zones` (area dengan `w` dan `h`) adalah bukit dan titik rebutan untuk King of the Hill, Dominasi, dan Wilayah; `flags` adalah markas bendera untuk Rebut Bendera, dimiliki seperti titik kemunculan (`team`, `by_teams`). Editor punya alat untuk keduanya, dan memberi tahu jika sebuah mode yang ditawarkan peta belum punya zona atau benderanya.
+
 Elemen dekorasi yang hanya bersifat visual disimpan di `decor`. Contohnya adalah dinding, jendela, balok konstruksi, rantai, lampu, pohon, dan sebagainya. Sementara itu, `theme` mengatur suasana peta melalui warna langit, matahari, dan garis cakrawala.
 
 Titik kemunculan pemain dapat dimiliki oleh sebuah tim (indeks 0 hingga 3; pemain berada di tim 0) atau digunakan untuk mode *free-for-all*. Kepemilikan titik kemunculan bisa berubah sesuai jumlah tim melalui `by_teams`.
@@ -362,6 +402,12 @@ cargo run --release --example bot_watch -- foundry_ascent 180 4
 
 Tambahkan `MODE=elimination TEAMS=4` untuk pertandingan antartim atau `VERBOSE=1` untuk menampilkan informasi yang lebih terperinci.
 
+Untuk melihat cara bot memainkan mode khusus dan mode objektif (lama pertandingan, zona yang direbut, bendera yang dibawa pulang), boleh juga hanya beberapa mode:
+
+```bash
+MODES=domination,capture_the_flag cargo run --release --example mode_watch -- foundry_ascent 2
+```
+
 ## Peta jalan pengembangan (Roadmap)
 
 Milestone 1 telah selesai (`v0.1.0`). Berikut daftar pekerjaan untuk Milestone 2:
@@ -369,7 +415,8 @@ Milestone 1 telah selesai (`v0.1.0`). Berikut daftar pekerjaan untuk Milestone 2
 1. Editor peta agar siapa pun bisa membuat dan berbagi peta (**selesai**).
 2. Animasi dan tekstur.
 3. Suara.
-4. Kemungkinan penambahan mode Capture the Flag dan King of the Hill.
+4. Mode Capture the Flag, King of the Hill, Dominasi, dan Wilayah (**selesai**).
+5. Nanti: mode Zombie dan Zombie Escape.
 
 ## Lisensi
 

@@ -5,7 +5,7 @@ use super::fighter::*;
 use super::physics::Aabb;
 use super::world::{Event, give_weapon};
 use super::{DT, World};
-use crate::data::{Category, GameData, MapDef, MapObject, ObjectKind, PowerupEffect};
+use crate::data::{GameData, MapDef, MapObject, ObjectKind, PowerupEffect};
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
 
@@ -233,7 +233,7 @@ impl World {
     pub(crate) fn update_objects(&mut self) {
         let data = Arc::clone(&self.data);
         let extras: Vec<usize> = (0..data.weapons.len())
-            .filter(|&w| data.weapons[w].category != Category::Starter)
+            .filter(|&w| data.weapons[w].is_loot())
             .collect();
         for k in 0..self.objects.len() {
             let kind = self.objects[k].def.kind;
@@ -313,10 +313,10 @@ impl World {
             ObjectKind::ShieldStation => {
                 let amount = o.def.shield_amount();
                 let f = &mut self.fighters[i];
-                if f.shield >= MAX_SHIELD {
+                if f.shield >= f.max_shield {
                     return false;
                 }
-                f.shield = (f.shield + amount).min(MAX_SHIELD);
+                f.shield = (f.shield + amount).min(f.max_shield);
                 true
             }
             ObjectKind::PowerupSpot => match o.powerup {

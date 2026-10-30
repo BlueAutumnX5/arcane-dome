@@ -5,7 +5,7 @@
   "tile_size": 32,
   "size": [64, 36],
   "theme": {"sky_top": "#150f12", "sky_bottom": "#5c2f1c", "far": "#2c1d1a", "skyline": "girders", "sun": [0.78, 0.2], "sun_color": "#ff8a3c"},
-  "modes": ["deathmatch", "elimination"],
+  "modes": ["deathmatch", "elimination", "gun_game", "juggernaut", "king_of_the_hill", "domination", "territories", "capture_the_flag"],
   "recommended_players": [4, 12],
   "team_counts": [2, 3, 4],
   "shapes": [
@@ -96,7 +96,7 @@
     {"type": "ammo", "x": 12, "y": 8, "respawn_s": 15},
     {"type": "weapon", "x": 26, "y": 18, "respawn_s": 30, "weapon_id": "thumper"},
     {"type": "weapon", "x": 6, "y": 14, "respawn_s": 25, "weapon_id": "needle_gun"},
-    {"type": "weapon", "x": 52, "y": 24.5, "respawn_s": 25, "weapon_id": "arc_rifle"},
+    {"type": "weapon", "x": 52, "y": 24.5, "respawn_s": 25, "weapon_id": "hail_rifle"},
     {"type": "weapon", "x": 57.5, "y": 12, "respawn_s": 40, "weapon_id": "rail_spike"}
   ],
   "objects": [
@@ -110,5 +110,17 @@
     {"type": "shield_station", "x": 6, "y": 8},
     {"type": "shield_station", "x": 42.5, "y": 18},
     {"type": "shield_station", "x": 62, "y": 12, "shield": 100, "min_delay_s": 90, "max_delay_s": 120}
+  ],
+  "zones": [
+    {"x": 12, "y": 20, "w": 8, "h": 4},
+    {"x": 32, "y": 18, "w": 10, "h": 4},
+    {"x": 50, "y": 24.5, "w": 6, "h": 4}
+  ],
+  "flags": [
+    {"x": 3.5, "y": 32, "team": 0},
+    {"x": 63, "y": 30, "team": 1},
+    {"x": 7.5, "y": 8, "team": 2, "by_teams": {"3": null}},
+    {"x": 35.2, "y": 11.5, "team": null, "by_teams": {"3": 2}},
+    {"x": 62.5, "y": 12, "team": 3}
   ]
 }

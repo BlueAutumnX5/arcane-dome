@@ -158,12 +158,19 @@ Field reference:
 | `id` | string | unique, snake_case, must match filename |
 | `category` | enum | `starter, sidearm, close_range, automatic, long_range, heavy, explosive, melee` |
 | `projectile.type` | enum | `hitscan, bullet, grenade, rocket, beam, melee_arc` |
+| `projectile.on_wall` | enum | `mark, bounce, vanish`; default: bullets mark, grenades bounce, others vanish |
+| `projectile.bounciness` | 0 to 1 | share of speed kept per bounce, with no rolling friction (default: walls 0.6, floors 0.5 up and 0.8 along) |
+| `projectile.full_damage` | bool | hits for full damage however much it has slowed (bullets otherwise lose damage with speed) |
+| `projectile.color`, `projectile.size` | `#rrggbb`, tiles | drawn as a ball of this colour and radius (default size 0.1) instead of a tracer |
+| `icon` | enum | HUD picture: `pistol, smg, rifle, shotgun, flamer, marksman, sniper, rocket, grenade, laser, baton, hail` |
+| `loot` | bool | false keeps it out of pickups, stations and spawn loadouts (default true) |
 | `projectile.explosion` | object or null | `{ "radius_tiles": 3.0, "damage": 60, "falloff": "linear", "knockback": 12 }` |
 | `specials` | array of enums | `lifesteal, burn, multishot, credits_bonus, crit, stun, shield_break, freeze` |
 | `specials` params | optional object | e.g. `{ "type": "lifesteal", "ratio": 0.25 }` |
 
 The Milestone 1 set, with plain display names for now (file ids in brackets):
-Pistol (peacekeeper, starter), Shotgun (scattergun, 8 pellets), Assault Rifle (arc_rifle, automatic),
+Pistol (peacekeeper, starter), Shotgun (scattergun, 8 pellets), Hail Rifle (hail_rifle, automatic,
+bouncing ice balls; replaced the Assault Rifle, parked in `docs/future/weapons/arc_rifle.json`),
 Marksman Rifle (needle_gun, high headshot mult), Sniper Rifle (rail_spike, hitscan, pierce),
 Grenade Launcher (thumper, bouncing grenade), Rocket Launcher (hellbarrel, splash), Laser (sunbeam,
 continuous beam), Leech SMG (leechfang, lifesteal), Flamethrower (cinder_spitter, burn).
@@ -209,6 +216,13 @@ position of whoever stands there.
     { "type": "weapon_station", "x": 14, "y": 26 },
     { "type": "shield_station", "x": 62, "y": 12, "shield": 100, "min_delay_s": 90, "max_delay_s": 120 },
     { "type": "powerup_spot", "x": 32, "y": 8.5, "powerup": "critical_strike" }
+  ],
+  "zones": [
+    { "x": 12, "y": 20, "w": 8, "h": 4 }
+  ],
+  "flags": [
+    { "x": 3.5, "y": 32, "team": 0 },
+    { "x": 35.2, "y": 11.5, "team": null, "by_teams": { "3": 2 } }
   ]
 }
 ```
@@ -226,6 +240,11 @@ position of whoever stands there.
 - Spawn `team`: team 0 to 3 (the player is on team 0), or null for free-for-all. `by_teams`
   gives a spawn another owner in matches with a given team count, e.g. `{"3": 2}` or `{"3": null}`. Teams 0 and 1
   need at least 2 spawns each; teams 2 and 3 are optional but need 2 if present.
+- `zones` (optional): areas standing on the floor at (`x`, `y`), `w` wide and `h` high
+  (default 6 x 4), for King of the Hill (1 or more), Domination (2 or more) and
+  Territories (3 or more, numbered left to right, and the map must offer 2 teams).
+- `flags` (optional): Capture the Flag bases, owned like spawns (`team`, `by_teams`).
+  Each team count the map offers needs exactly one flag per team.
 - `team_counts` (optional), for example `[2, 4]`: the team counts the map is fair for.
   Default: 2 up to the number of teams with their own spawns. A four-corner map is fair
   for 2 or 4 teams but not 3 (two teams would share a side), so it lists `[2, 4]`.
@@ -235,6 +254,7 @@ Validation rules the loader enforces:
 - At least 2 spawns for teams 0 and 1 (and for teams 2 and 3 if they have any), and 4
   free-for-all spawns. Every count in `team_counts` has spawns for all its teams.
 - Every `weapon_id` and `powerup` exists.
+- Every objective mode the map lists has the zones or flags it needs.
 - Every spawn, pickup and object has room for a body and a floor close below it.
 - Errors name the file and the field, for example
   `maps/foundry_ascent.json: spawns[2]: is inside solid terrain`.

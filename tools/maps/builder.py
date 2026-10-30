@@ -6,11 +6,11 @@ surface height (where feet stand); slabs extend downward by `thick`.
 import json
 
 class Map:
-    def __init__(self, id, name, description, size, theme, modes=("deathmatch", "elimination"), players=(4, 12)):
+    def __init__(self, id, name, description, size, theme, modes=("deathmatch", "elimination", "gun_game", "juggernaut", "king_of_the_hill", "domination", "territories", "capture_the_flag"), players=(4, 12)):
         self.d = {"id": id, "name": name, "description": description, "tile_size": 32,
                   "size": list(size), "theme": theme, "modes": list(modes),
                   "recommended_players": list(players), "shapes": [], "decor": [],
-                  "spawns": [], "pickups": [], "objects": []}
+                  "spawns": [], "pickups": [], "objects": [], "zones": [], "flags": []}
         self.solids = []  # (x0, x1, top, bottom) boxes for headroom checks
 
     # --- terrain -----------------------------------------------------------
@@ -59,6 +59,19 @@ class Map:
         self.d["objects"].append(o)
         return self
 
+    def zone(self, x, y, w=6, h=4):
+        """An area to hold or capture, standing on the floor at (x, y)."""
+        self.d["zones"].append({"x": x, "y": y, "w": w, "h": h})
+        return self
+
+    def flag(self, x, y, team=None, by_teams=None):
+        """A team's flag base; by_teams like spawns, e.g. {"3": None}."""
+        f = {"x": x, "y": y, "team": team}
+        if by_teams:
+            f["by_teams"] = by_teams
+        self.d["flags"].append(f)
+        return self
+
     def decor(self, kind, x, y, w=1, h=1, **kw):
         o = {"type": kind, "x": x, "y": y, "w": w, "h": h}
         o.update(kw)
@@ -70,6 +83,7 @@ class Map:
         """Every placement should have at least 2 tiles of clear space above."""
         problems = []
         places = [("spawn", s) for s in self.d["spawns"]] + [("pickup", p) for p in self.d["pickups"]] + [("object", o) for o in self.d["objects"]]
+        places += [("zone", z) for z in self.d["zones"]] + [("flag", f) for f in self.d["flags"]]
         for what, p in places:
             x, y = p["x"], p["y"]
             for (x0, x1, top, bottom) in self.solids:
@@ -83,12 +97,14 @@ class Map:
         keys += [k for k in ["team_counts"] if k in self.d]
         for k in keys:
             lines.append(f'  "{k}": {json.dumps(self.d[k])},')
-        for k in ["shapes", "decor", "spawns", "pickups", "objects"]:
+        lists = ["shapes", "decor", "spawns", "pickups", "objects"]
+        lists += [k for k in ["zones", "flags"] if self.d[k]]
+        for k in lists:
             items = self.d[k]
             lines.append(f'  "{k}": [')
             for i, it in enumerate(items):
                 lines.append("    " + json.dumps(it) + ("," if i + 1 < len(items) else ""))
-            lines.append("  ]" + ("," if k != "objects" else ""))
+            lines.append("  ]" + ("," if k != lists[-1] else ""))
         lines.append("}")
         with open(path, "w") as f:
             f.write("\n".join(lines) + "\n")

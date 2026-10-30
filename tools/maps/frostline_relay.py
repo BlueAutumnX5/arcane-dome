@@ -71,7 +71,7 @@ m.pickup("weapon", 17.5, 22, weapon="needle_gun", respawn=25)
 m.pickup("weapon", 54.5, 22, weapon="needle_gun", respawn=25)
 m.pickup("weapon", 41, 15, weapon="thumper", respawn=30)
 m.pickup("weapon", 32, 40, weapon="scattergun", respawn=25)
-m.pickup("weapon", 40, 40, weapon="arc_rifle", respawn=25)
+m.pickup("weapon", 40, 40, weapon="hail_rifle", respawn=25)
 m.pickup("weapon", 37.5, 8, weapon="rail_spike", respawn=40)
 
 # --- Gadgets ---------------------------------------------------------------------------------
@@ -108,6 +108,18 @@ for x, h in [(14.5, 1.6), (26.5, 2.2), (44.5, 1.8), (57, 1.5), (35.8, 1.2)]:
             color="#bfe9ff")
 m.decor("girder", 16.3, 28, w=0.4, h=5.4)                       # ledge struts
 m.decor("girder", 55.3, 28, w=0.4, h=5.4)
+
+# --- Objectives ----------------------------------------------------------------
+# Zones: the two terraces and the ice island between them.
+m.zone(20, 22, w=6).zone(36, 31, w=8).zone(52, 22, w=6)
+# Flags: Blue and Red on their plateaus (in the valley with 3 teams), Green on
+# the tower, Gold in the valley.
+m.flag(2.5, 28, team=0, by_teams={"3": None})
+m.flag(69.5, 28, team=1, by_teams={"3": None})
+m.flag(27.5, 40, by_teams={"3": 0})
+m.flag(44.5, 40, by_teams={"3": 1})
+m.flag(31.5, 15, team=2)
+m.flag(33.5, 40, team=3, by_teams={"3": None})
 
 problems = m.headroom_report()
 for p in problems:

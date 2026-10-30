@@ -6,5 +6,41 @@
   "elimination": {
     "teams": 4, "respawn": false, "rounds": 5, "time_limit_s": 180, "lives": 3, "team_lives": 15,
     "description": "No respawns. The last one standing takes the round (or the last team, with teams on)."
+  },
+  "gun_game": {
+    "teams": 4, "respawn": true, "time_limit_s": 600, "rules": "gun_game",
+    "ladder": [
+      "hail_rifle", "leechfang", "sunbeam", "scattergun", "peacekeeper", "cinder_spitter",
+      "needle_gun", "hellbarrel", "rail_spike", "thumper", "shock_baton"
+    ],
+    "description": "Each kill moves you to the next weapon; a kill with the last one wins. With teams on, the team moves up together."
+  },
+  "juggernaut": {
+    "teams": 1, "respawn": true, "score_limit": 10, "time_limit_s": 600, "rules": "juggernaut",
+    "juggernaut_health": 500, "juggernaut_shield": 200,
+    "description": "One fighter is the Juggernaut: red, 500 health, 200 shield. Whoever kills the Juggernaut becomes it."
+  },
+  "king_of_the_hill": {
+    "name": "King of the Hill",
+    "teams": 4, "respawn": true, "score_limit": 50, "team_score_limit": 100, "time_limit_s": 600,
+    "rules": "king_of_the_hill",
+    "hill_move_s": 60,
+    "description": "Score a point for every second your side alone holds the hill. With more than one zone, the hill moves now and then."
+  },
+  "domination": {
+    "teams": 4, "team_only": true, "respawn": true, "score_limit": 200, "time_limit_s": 600,
+    "rules": "domination", "capture_s": 6, "zone_points_per_s": 0.5,
+    "description": "Stand in a zone to capture it. Every zone your team holds earns points over time."
+  },
+  "territories": {
+    "teams": 2, "team_only": true, "respawn": true, "score_limit": 3, "time_limit_s": 600,
+    "rules": "territories", "capture_s": 6,
+    "description": "Capture the zone next to yours to push toward the enemy's end. Hold every zone to score; then the line resets."
+  },
+  "capture_the_flag": {
+    "name": "Capture the Flag",
+    "teams": 4, "team_only": true, "respawn": true, "score_limit": 3, "time_limit_s": 600,
+    "rules": "capture_the_flag", "flag_return_s": 15,
+    "description": "Bring an enemy flag to your own while yours is home. A dropped flag returns after 15 seconds, or when its team touches it."
   }
 }

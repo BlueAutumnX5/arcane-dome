@@ -128,6 +128,52 @@ fn default_respawn() -> f32 {
     20.0
 }
 
+/// Default size of a zone, in tiles.
+pub const ZONE_W: f32 = 6.0;
+pub const ZONE_H: f32 = 4.0;
+
+/// An area to hold or capture (King of the Hill, Domination, Territories).
+/// It stands on the floor at (x, y), reaching `w / 2` to each side and `h`
+/// up.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZoneDef {
+    pub x: f32,
+    pub y: f32,
+    #[serde(default = "zone_w")]
+    pub w: f32,
+    #[serde(default = "zone_h")]
+    pub h: f32,
+}
+
+fn zone_w() -> f32 {
+    ZONE_W
+}
+
+fn zone_h() -> f32 {
+    ZONE_H
+}
+
+impl ZoneDef {
+    pub fn feet(&self) -> Vec2 {
+        vec2(self.x, self.y)
+    }
+
+    /// Top-left and bottom-right corners.
+    pub fn rect(&self) -> (Vec2, Vec2) {
+        (
+            vec2(self.x - self.w / 2.0, self.y - self.h),
+            vec2(self.x + self.w / 2.0, self.y),
+        )
+    }
+
+    /// Does a box from `min` to `max` (a body) overlap the zone?
+    pub fn touches(&self, min: Vec2, max: Vec2) -> bool {
+        let (a, b) = self.rect();
+        min.x < b.x && max.x > a.x && min.y < b.y && max.y > a.y
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BotHint {
@@ -344,6 +390,11 @@ struct MapFile {
     pickups: Vec<PickupDef>,
     #[serde(default)]
     objects: Vec<MapObject>,
+    #[serde(default)]
+    zones: Vec<ZoneDef>,
+    /// Capture the Flag: each team's flag base, owned like spawns.
+    #[serde(default)]
+    flags: Vec<SpawnDef>,
     /// Reserved for scripted hazards.
     #[serde(default)]
     #[allow(dead_code)]
@@ -392,6 +443,10 @@ pub struct MapDef {
     pub spawns: Vec<SpawnDef>,
     pub pickups: Vec<PickupDef>,
     pub objects: Vec<MapObject>,
+    /// Areas to hold or capture, sorted left to right.
+    pub zones: Vec<ZoneDef>,
+    /// Flag bases: `team_for(n)` says whose flag it is in an n team match.
+    pub flags: Vec<SpawnDef>,
     pub bot_hints: Vec<BotHint>,
 }
 
@@ -461,6 +516,8 @@ impl MapDef {
             spawns: Vec::new(),
             pickups: Vec::new(),
             objects: Vec::new(),
+            zones: Vec::new(),
+            flags: Vec::new(),
             bot_hints: Vec::new(),
         }
     }
@@ -762,6 +819,14 @@ pub fn parse_map(
             b.x += 0.5;
             b.y += 1.0;
         }
+        for z in &mut file.zones {
+            z.x += 0.5;
+            z.y += 1.0;
+        }
+        for f in &mut file.flags {
+            f.x += 0.5;
+            f.y += 1.0;
+        }
     }
 
     let file_team_counts = file.team_counts.clone();
@@ -783,8 +848,11 @@ pub fn parse_map(
         spawns: file.spawns,
         pickups: file.pickups,
         objects: file.objects,
+        zones: file.zones,
+        flags: file.flags,
         bot_hints: file.bot_hints,
     };
+    map.zones.sort_by(|a, b| a.x.total_cmp(&b.x));
 
     // Spawns.
     // Teams 0 and 1 need their own spawns. Teams 2 and 3 may have some; if
@@ -940,6 +1008,25 @@ pub fn parse_map(
                 "{what}.shield: must be between 1 and 100 (got {})",
                 o.shield_amount()
             ));
+        }
+    }
+
+    // Zones (sorted, so numbered left to right) and flags.
+    for (i, z) in map.zones.iter().enumerate() {
+        let what = format!("zones[{i}]");
+        check_placement(&map, &what, z.feet(), 1.0, &mut errs);
+        if !(2.0..=24.0).contains(&z.w) || !(2.0..=12.0).contains(&z.h) {
+            errs.push(format!(
+                "{what}: w must be 2 to 24 and h 2 to 12 (got {} x {})",
+                z.w, z.h
+            ));
+        }
+    }
+    for (i, f) in map.flags.iter().enumerate() {
+        let what = format!("flags[{i}]");
+        check_placement(&map, &what, f.feet(), 3.0, &mut errs);
+        if f.team.is_some_and(|t| t > 3) {
+            errs.push(format!("{what}.team: must be 0 to 3"));
         }
     }
 

@@ -2,7 +2,7 @@ use super::fighter::*;
 use super::physics::{line_of_sight, raycast};
 use super::world::Event;
 use super::{DT, Input, Phase, World};
-use crate::data::{Falloff, ProjectileKind, Special, WallHit, WeaponDef};
+use crate::data::{Falloff, ProjectileKind, Rules, Special, WallHit, WeaponDef};
 use macroquad::math::{Vec2, vec2};
 use std::sync::Arc;
 
@@ -71,6 +71,10 @@ impl World {
         }
 
         let def = &data.weapons[f.current];
+        if self.mode.rules == Rules::GunGame {
+            // One weapon at a time and no ammo pickups: never run dry.
+            f.inventory[f.current].reserve = def.reserve_ammo;
+        }
         if f.reload_timer > 0.0 {
             f.reload_timer -= DT;
             if f.reload_timer <= 0.0 {
@@ -278,15 +282,20 @@ impl World {
                 if p.bounces_left > 0 {
                     let hit_x = self.solid_at(vec2(next.x, p.pos.y));
                     let hit_y = self.solid_at(vec2(p.pos.x, next.y));
+                    // (wall, floor up, floor along, corner) speed kept.
+                    let (wall, up, along, corner) = match pd.bounciness {
+                        Some(b) => (b, b, 1.0, b),
+                        None => (0.6, 0.5, 0.8, 0.5),
+                    };
                     if hit_x {
-                        p.vel.x = -p.vel.x * 0.6;
+                        p.vel.x = -p.vel.x * wall;
                     }
                     if hit_y {
-                        p.vel.y = -p.vel.y * 0.5;
-                        p.vel.x *= 0.8;
+                        p.vel.y = -p.vel.y * up;
+                        p.vel.x *= along;
                     }
                     if !hit_x && !hit_y {
-                        p.vel = -p.vel * 0.5;
+                        p.vel = -p.vel * corner;
                     }
                     // Gentle rolling bounces do not use up the bounce budget.
                     if p.vel.length() > 4.0 {
@@ -321,7 +330,7 @@ impl World {
                 let headshot = o.is_headshot_point(p.pos);
                 let mut dmg = def.damage * if headshot { def.headshot_mult } else { 1.0 };
                 // Bullets hit as hard as they are still fast.
-                if p.kind == ProjectileKind::Bullet && p.speed0 > 0.0 {
+                if p.kind == ProjectileKind::Bullet && !pd.full_damage && p.speed0 > 0.0 {
                     dmg *= (p.vel.length() / p.speed0).clamp(0.0, 1.0);
                 }
                 self.damage(j, Some(p.owner), Some(p.weapon), dmg, headshot, true);
@@ -484,7 +493,7 @@ impl World {
                     Special::Lifesteal { ratio } => {
                         let att = &mut self.fighters[a];
                         if att.alive {
-                            att.health = (att.health + amount * ratio).min(MAX_HEALTH);
+                            att.health = (att.health + amount * ratio).min(att.max_health);
                         }
                     }
                     Special::Burn { dps, duration_s } => {
@@ -530,8 +539,12 @@ impl World {
         v.died_at = time;
         v.burn = None;
         v.vel = Vec2::ZERO;
+        let rules = self.mode.rules;
         let credited = match attacker {
             Some(a) if a != victim => Some(a),
+            // A Juggernaut lost to the map or their own blast goes to
+            // someone at random, not to whoever last hit them.
+            _ if rules == Rules::Juggernaut => None,
             _ => v
                 .last_attacker
                 .filter(|(_, t)| time - t < ASSIST_WINDOW)
@@ -540,24 +553,35 @@ impl World {
         .filter(|&a| !self.allies(a, victim));
         self.spend_life(victim);
 
-        let playing = self.phase == Phase::Playing;
-        if let Some(k) = credited {
-            self.fighters[k].kills += 1;
-            if playing {
-                let side = self.side_of(k);
-                self.scores[side] += 1;
-            }
-        } else if playing && self.mode.respawn && !self.mode.is_team() {
-            // Free-for-all suicide penalty.
-            let side = self.side_of(victim);
-            self.scores[side] -= 1;
-        }
         self.events.push(Event::Kill {
             victim,
             killer: credited,
             weapon,
             headshot,
         });
+        let playing = self.phase == Phase::Playing;
+        if let Some(k) = credited {
+            self.fighters[k].kills += 1;
+        }
+        match rules {
+            Rules::Juggernaut => self.juggernaut_kill(victim, credited, playing),
+            Rules::GunGame => self.gun_game_kill(victim, credited, weapon, playing),
+            // The objective scores, not the kills.
+            Rules::CaptureTheFlag => self.drop_flags(victim),
+            Rules::KingOfTheHill | Rules::Domination | Rules::Territories => {}
+            Rules::Standard => {
+                if let Some(k) = credited {
+                    if playing {
+                        let side = self.side_of(k);
+                        self.scores[side] += 1;
+                    }
+                } else if playing && self.mode.respawn && !self.mode.is_team() {
+                    // Free-for-all suicide penalty.
+                    let side = self.side_of(victim);
+                    self.scores[side] -= 1;
+                }
+            }
+        }
     }
 }
 

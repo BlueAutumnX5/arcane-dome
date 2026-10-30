@@ -1,0 +1,15 @@
+{
+  "id": "shock_baton",
+  "name": "Shock Baton",
+  "short_name": "Baton",
+  "category": "melee",
+  "icon": "baton",
+  "loot": false,
+  "damage": 55.0,
+  "headshot_mult": 1.0,
+  "fire_rate_rps": 1.6,
+  "magazine": 0,
+  "reserve_ammo": 0,
+  "range_tiles": 2.0,
+  "projectile": { "type": "melee_arc" }
+}

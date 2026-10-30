@@ -1,6 +1,38 @@
-use super::{DataError, is_snake_case, parse_json};
+use super::{DataError, MapDef, is_snake_case, parse_json};
 use serde::Deserialize;
 use std::collections::BTreeMap;
+
+/// A twist on how kills count, beyond plain scoring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Rules {
+    #[default]
+    Standard,
+    /// One fighter is the Juggernaut and everyone else hunts them.
+    Juggernaut,
+    /// Every kill moves the killer (or their team) to the next weapon.
+    GunGame,
+    /// Points for every second a side alone holds the hill (a zone; with
+    /// several, it moves now and then).
+    KingOfTheHill,
+    /// Capture zones; each one held earns points over time.
+    Domination,
+    /// Zones in a line: capture toward the enemy's end, and holding every
+    /// zone scores (then the line resets).
+    Territories,
+    /// Take an enemy flag home to your own flag.
+    CaptureTheFlag,
+}
+
+impl Rules {
+    /// Played around the map's zones.
+    pub fn uses_zones(self) -> bool {
+        matches!(
+            self,
+            Self::KingOfTheHill | Self::Domination | Self::Territories
+        )
+    }
+}
 
 /// Match rules. Behavior comes from the fields, not the id, so new modes
 /// (e.g. a free-for-all elimination) need only a new entry in `modes.json`.
@@ -35,6 +67,32 @@ pub struct ModeDef {
     /// Elimination, Attrition: default lives in each team's pool.
     #[serde(default)]
     pub team_lives: Option<u32>,
+    #[serde(default)]
+    pub rules: Rules,
+    /// Gun Game: weapon ids in order. A kill with the last one wins, so the
+    /// score limit is the ladder's length.
+    #[serde(default)]
+    pub ladder: Vec<String>,
+    /// Juggernaut: the Juggernaut's health and shield.
+    #[serde(default)]
+    pub juggernaut_health: Option<f32>,
+    #[serde(default)]
+    pub juggernaut_shield: Option<f32>,
+    /// Played in teams only (Domination, Territories, Capture the Flag).
+    #[serde(default)]
+    pub team_only: bool,
+    /// King of the Hill: seconds before the hill moves (0 = never).
+    #[serde(default)]
+    pub hill_move_s: Option<f32>,
+    /// Zones: seconds one fighter needs to capture one.
+    #[serde(default)]
+    pub capture_s: Option<f32>,
+    /// Domination: points a side earns per second for each zone it holds.
+    #[serde(default)]
+    pub zone_points_per_s: Option<f32>,
+    /// Capture the Flag: seconds a dropped flag waits before going home.
+    #[serde(default)]
+    pub flag_return_s: Option<f32>,
 }
 
 impl ModeDef {
@@ -67,13 +125,49 @@ impl ModeDef {
     pub fn is_team(&self) -> bool {
         self.teams >= 2
     }
+
+    /// What `map` lacks to offer this mode, if anything.
+    pub fn map_problem(&self, map: &MapDef) -> Option<String> {
+        let zones = map.zones.len();
+        let name = &self.id;
+        match self.rules {
+            Rules::KingOfTheHill if zones < 1 => Some(format!("{name} needs at least 1 zone")),
+            Rules::Domination if zones < 2 => Some(format!("{name} needs at least 2 zones")),
+            Rules::Territories if zones < 3 => Some(format!("{name} needs at least 3 zones")),
+            Rules::Territories if !map.team_counts.contains(&2) => {
+                Some(format!("{name} is for 2 teams: team_counts must include 2"))
+            }
+            Rules::CaptureTheFlag => map.team_counts.iter().find_map(|&n| {
+                (0..n).find_map(|t| {
+                    let have = map
+                        .flags
+                        .iter()
+                        .filter(|f| f.team_for(n as usize) == Some(t))
+                        .count();
+                    (have != 1).then(|| {
+                        format!(
+                            "{name} needs one flag for team {t} in {n} team matches (has {have})"
+                        )
+                    })
+                })
+            }),
+            _ => None,
+        }
+    }
 }
 
 pub fn parse_modes(label: &str, text: &str) -> Result<Vec<ModeDef>, Vec<DataError>> {
-    let raw: BTreeMap<String, ModeDef> = parse_json(label, text).map_err(|e| vec![e])?;
+    let mut raw: BTreeMap<String, ModeDef> = parse_json(label, text).map_err(|e| vec![e])?;
+    // Keep the file's order: it is the order Quick Match offers them in.
+    let order: serde_json::Map<String, serde_json::Value> =
+        parse_json(label, text).map_err(|e| vec![e])?;
     let mut errors = Vec::new();
     let mut out = Vec::new();
-    for (id, mut mode) in raw {
+    for id in order.keys() {
+        let Some(mut mode) = raw.remove(id) else {
+            continue;
+        };
+        let id = id.clone();
         let mut bad = |msg: String| errors.push(DataError::new(label, format!("{id}.{msg}")));
         if !is_snake_case(&id) {
             bad("id must be snake_case".into());
@@ -81,7 +175,20 @@ pub fn parse_modes(label: &str, text: &str) -> Result<Vec<ModeDef>, Vec<DataErro
         if !(1..=4).contains(&mode.teams) {
             bad(format!("teams: must be 1 to 4 (got {})", mode.teams));
         }
-        if mode.respawn && mode.score_limit.is_none_or(|s| s == 0) {
+        let gun_game = mode.rules == Rules::GunGame;
+        if gun_game && (mode.ladder.is_empty() || !mode.respawn) {
+            bad("ladder: gun_game needs respawn and at least one weapon".into());
+        }
+        if mode.rules == Rules::Juggernaut && (mode.teams != 1 || !mode.respawn) {
+            bad("teams: juggernaut is free-for-all (teams 1) with respawn".into());
+        }
+        if mode.team_only && mode.teams < 2 {
+            bad("team_only: needs teams 2 or more".into());
+        }
+        if mode.rules == Rules::Territories && mode.teams != 2 {
+            bad("teams: territories is for exactly 2 teams".into());
+        }
+        if mode.respawn && !gun_game && mode.score_limit.is_none_or(|s| s == 0) {
             bad("score_limit: required and greater than 0 when respawn is true".into());
         }
         if !mode.respawn && mode.rounds.is_none_or(|r| r == 0) {
@@ -123,6 +230,18 @@ mod tests {
         assert_eq!(modes[1].match_name(), "Elimination");
         modes[1].teams = 3;
         assert_eq!(modes[1].match_name(), "Team Elimination");
+    }
+
+    #[test]
+    fn twists_check_their_fields() {
+        let text = r#"{
+          "gg": { "teams": 4, "respawn": true, "time_limit_s": 60, "rules": "gun_game" },
+          "jg": { "teams": 2, "respawn": true, "score_limit": 5, "time_limit_s": 60, "rules": "juggernaut" }
+        }"#;
+        let err = parse_modes("modes.json", text).unwrap_err();
+        assert_eq!(err.len(), 2, "{err:?}");
+        assert!(err[0].to_string().contains("gg.ladder"), "{}", err[0]);
+        assert!(err[1].to_string().contains("jg.teams"), "{}", err[1]);
     }
 
     #[test]

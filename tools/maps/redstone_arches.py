@@ -125,6 +125,12 @@ m.decor("lamp", W - 10.6, 19, h=1.8, flip=True)
 m.decor("tank", 0.2, 11.5, w=2, h=2.4, color="#8b6a46")             # water tanks on the arch ends
 m.decor("tank", W - 2.2, 11.5, w=2, h=2.4, color="#8b6a46")
 
+# --- Objectives ----------------------------------------------------------------
+# Zones: the two lower ledges and the floating platform in the middle.
+m.zone(25.5, 31, w=5).zone(36, 24, w=6).zone(46.5, 31, w=5)
+m.flag(3, 19, team=0)
+m.flag(69, 19, team=1)
+
 problems = m.headroom_report()
 for p in problems:
     print("HEADROOM:", p)

@@ -60,5 +60,22 @@ for o in mp["objects"]:
     c = {"thruster": (80, 255, 220), "weapon_station": (255, 160, 60), "shield_station": (90, 220, 255),
          "powerup_spot": (190, 110, 255)}[o["type"]]
     d.rectangle([o["x"] * S - 5, (o["y"] - 0.5) * S - 5, o["x"] * S + 5, (o["y"] - 0.5) * S + 5], outline=c, width=2)
+TEAM = {0: (90, 160, 255), 1: (255, 100, 90), 2: (110, 220, 110), 3: (255, 210, 80)}
+for z in mp.get("zones", []):
+    w, h = z.get("w", 6), z.get("h", 4)
+    d.rectangle([(z["x"] - w / 2) * S, (z["y"] - h) * S, (z["x"] + w / 2) * S, z["y"] * S],
+                fill=(255, 255, 255, 40), outline=(255, 255, 255, 200), width=2)
+for f in mp.get("flags", []):
+    c = TEAM.get(f.get("team"), (240, 240, 240))
+    x, y = f["x"] * S, f["y"] * S
+    d.line([(x, y), (x, y - 2.2 * S)], fill=(230, 230, 230), width=2)
+    d.polygon([(x, y - 2.2 * S), (x + 1.1 * S, y - 1.8 * S), (x, y - 1.4 * S)], fill=c)
+# Tile ruler along the top and left, every 4 tiles.
+for gx in range(0, int(W) + 1, 4):
+    d.line([(gx * S, 0), (gx * S, 6)], fill=(255, 255, 255, 160))
+    d.text((gx * S + 2, 6), str(gx), fill=(255, 255, 255, 200))
+for gy in range(0, int(H) + 1, 4):
+    d.line([(0, gy * S), (6, gy * S)], fill=(255, 255, 255, 160))
+    d.text((8, gy * S - 5), str(gy), fill=(255, 255, 255, 200))
 im.save(out)
 print("saved", out)

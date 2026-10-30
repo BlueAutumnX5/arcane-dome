@@ -1,5 +1,5 @@
 use super::nav::{EdgeKind, NavGraph};
-use crate::data::{Category, ObjectKind, PickupKind, WeaponDef};
+use crate::data::{Category, ObjectKind, PickupKind, Rules, WeaponDef, ZoneDef};
 use crate::sim::physics::{hazard_dps, line_of_sight, standing_on_hatch};
 use crate::sim::{DT, Difficulty, Event, Fighter, Input, Rng, World};
 use macroquad::math::{Vec2, vec2};
@@ -51,6 +51,9 @@ struct Params {
     lead: f32,
     /// Random hop chance per second while fighting.
     jumpy: f32,
+    /// In a fight, the chance each footwork change is holding still rather
+    /// than strafing.
+    hold_chance: f32,
     /// 0 aims at the chest, 1 at the head.
     head_bias: f32,
     /// Half-width of the view cone, in degrees. Enemies outside it are unseen.
@@ -82,17 +85,18 @@ struct Params {
 fn params(d: Difficulty) -> Params {
     match d {
         Difficulty::Easy => Params {
-            reaction: (0.9, 1.4),
+            reaction: (0.7, 1.1),
             aim_error_deg: 14.0,
             lead: 0.0,
             jumpy: 0.05,
+            hold_chance: 0.6,
             head_bias: 0.0,
-            fov_half_deg: 50.0,
-            turn_rate: 2.5,
+            fov_half_deg: 56.0,
+            turn_rate: 3.2,
             hear_range: 3.0,
             burst: (0.5, 0.8),
             travel: (2.0, 4.5),
-            break_away: 0.45,
+            break_away: 0.3,
             misjudge_chance: 0.9,
             misjudge: (0.25, 0.5),
             correct: 0.45,
@@ -104,6 +108,7 @@ fn params(d: Difficulty) -> Params {
             aim_error_deg: 8.0,
             lead: 0.45,
             jumpy: 0.15,
+            hold_chance: 0.4,
             head_bias: 0.15,
             fov_half_deg: 60.0,
             turn_rate: 4.5,
@@ -122,6 +127,7 @@ fn params(d: Difficulty) -> Params {
             aim_error_deg: 4.0,
             lead: 0.85,
             jumpy: 0.35,
+            hold_chance: 0.4,
             head_bias: 0.4,
             fov_half_deg: 70.0,
             turn_rate: 8.0,
@@ -146,6 +152,8 @@ enum Goal {
     Retreat(usize),
     /// A station or the powerup spot (index into `World::objects`).
     Object(usize),
+    /// Where the match's objective wants the bot: a zone, a flag, home.
+    Objective(Vec2),
 }
 
 /// What a bot does with its legs while in a fight.
@@ -503,6 +511,10 @@ impl Brain {
                 .total_cmp(&eye.distance(b.center()))
         });
 
+        // Sides can change (a new Juggernaut): never keep a friend as target.
+        if self.target.is_some_and(|t| world.allies(self.id, t)) {
+            self.target = None;
+        }
         // Keep fighting the current target while it stays in view.
         if let Some(t) = self.target
             && let Some(o) = seen.iter().find(|o| o.id == t)
@@ -623,6 +635,78 @@ impl Brain {
         }
     }
 
+    /// Where the objective calls this bot, if anywhere: the hill; a zone to
+    /// take (or, for some, one of ours under attack); an enemy flag, home
+    /// with one, or after our own flag. `None` leaves it to fight and roam.
+    fn objective_spot(&mut self, world: &World) -> Option<Vec2> {
+        let me = &world.fighters[self.id];
+        let side = world.side_of(self.id);
+        let near = |p: Vec2| me.feet.distance(p);
+        // Spread out inside a zone instead of piling onto one spot.
+        let mut inside = |z: &ZoneDef| vec2(z.x + self.rng.range(-0.3, 0.3) * z.w, z.y);
+        match world.mode.rules {
+            Rules::KingOfTheHill => world.hill.map(|h| inside(&world.zones[h].def)),
+            Rules::Domination | Rules::Territories => {
+                let zones = &world.zones;
+                let nearest = |list: Vec<usize>| {
+                    list.into_iter().min_by(|&a, &b| {
+                        near(zones[a].def.feet()).total_cmp(&near(zones[b].def.feet()))
+                    })
+                };
+                let take = nearest(
+                    (0..zones.len())
+                        .filter(|&k| zones[k].owner != Some(side) && world.can_push(k, side))
+                        .collect(),
+                );
+                let threatened = nearest(
+                    (0..zones.len())
+                        .filter(|&k| {
+                            zones[k].owner == Some(side)
+                                && (zones[k].capturer.is_some_and(|c| c != side)
+                                    || zones[k].present.iter().any(|&s| s != side))
+                        })
+                        .collect(),
+                );
+                // About a third of each team stays back to guard.
+                let guard = self.id.is_multiple_of(3);
+                let k = if guard {
+                    threatened.or(take)
+                } else {
+                    take.or(threatened)
+                }?;
+                Some(inside(&zones[k].def))
+            }
+            Rules::CaptureTheFlag => {
+                let flags = &world.flags;
+                let mine = flags.iter().find(|f| f.side == side);
+                if world.carried_flag(self.id).is_some() {
+                    return mine.map(|f| f.home);
+                }
+                // Our flag is out: half the team goes after it (the carrier,
+                // or where it lies to send it home).
+                if let Some(f) = mine
+                    && !f.at_home()
+                    && self.id.is_multiple_of(2)
+                {
+                    return Some(f.pos);
+                }
+                // A quarter guards home; the rest go for the nearest enemy
+                // flag nobody on our side has yet.
+                if self.id % 4 == 3 {
+                    return mine.map(|f| f.home + vec2(self.rng.range(-2.0, 2.0), 0.0));
+                }
+                flags
+                    .iter()
+                    .filter(|f| {
+                        f.side != side && f.carrier.is_none_or(|c| world.side_of(c) != side)
+                    })
+                    .map(|f| f.pos)
+                    .min_by(|a, b| near(*a).total_cmp(&near(*b)))
+            }
+            _ => None,
+        }
+    }
+
     /// The best station or powerup worth walking to right now.
     fn wanted_object(&self, world: &World, armed: bool) -> Option<usize> {
         let me = &world.fighters[self.id];
@@ -654,6 +738,7 @@ impl Brain {
             Goal::Pickup(k) => world.pickups[k].active,
             Goal::Object(k) => world.objects[k].ready,
             Goal::Hunt(j) => world.fighters[j].alive,
+            Goal::Objective(_) => true,
             Goal::Wander(n) | Goal::Retreat(n) => {
                 world.fighters[self.id].feet.distance(nav.pos(n)) > 1.0
             }
@@ -665,6 +750,7 @@ impl Brain {
             Goal::Pickup(k) => world.pickups[k].pos + vec2(0.0, 0.4),
             Goal::Object(k) => world.objects[k].pos,
             Goal::Hunt(_) => self.hunt_spot,
+            Goal::Objective(p) => p,
             Goal::Wander(n) | Goal::Retreat(n) => nav.pos(n),
         }
     }
@@ -687,6 +773,11 @@ impl Brain {
     /// commit to it or break away (still firing while backing off). The
     /// choice comes up again now and then during a long fight.
     fn size_up_fight(&mut self, world: &World, nav: &NavGraph, me: &Fighter) {
+        // A flag carrier runs home whatever happens.
+        if world.carried_flag(self.id).is_some() {
+            self.engaged = None;
+            return;
+        }
         let t = match (self.target, self.target_visible) {
             (Some(t), true) => t,
             _ => {
@@ -725,6 +816,12 @@ impl Brain {
         nearest: Option<usize>,
     ) -> Goal {
         let me = &world.fighters[self.id];
+        // A flag carrier heads home before anything else.
+        if world.carried_flag(self.id).is_some()
+            && let Some(home) = self.objective_spot(world)
+        {
+            return Goal::Objective(home);
+        }
         let closest_pickup = |want: &dyn Fn(usize) -> bool| {
             (0..world.pickups.len())
                 .filter(|&k| world.pickups[k].active && want(k))
@@ -769,6 +866,9 @@ impl Brain {
             return Goal::Pickup(k);
         }
 
+        if let Some(spot) = self.objective_spot(world) {
+            return Goal::Objective(spot);
+        }
         if let Some(k) = self.wanted_object(world, armed) {
             return Goal::Object(k);
         }
@@ -1021,7 +1121,7 @@ impl Brain {
         // Alternate between strafing and holding still (sometimes crouched).
         self.stance_timer -= DT;
         if self.stance_timer <= 0.0 {
-            if self.rng.chance(0.4) {
+            if self.rng.chance(self.p.hold_chance) {
                 self.stance = Stance::Hold {
                     crouch: self.rng.chance(0.4),
                 };
@@ -1375,9 +1475,20 @@ mod tests {
         let (w, nav) = duel(Difficulty::Easy);
         let mut b = Brain::new(1, 1, Difficulty::Easy);
         b.aim_angle = PI; // facing the player
-        watch(&mut b, &w, &nav, 0.8);
-        assert_eq!(b.target, None, "easy bots need at least 0.9 s to react");
-        watch(&mut b, &w, &nav, 0.7);
+        watch(&mut b, &w, &nav, 0.6);
+        assert_eq!(b.target, None, "easy bots need at least 0.7 s to react");
+        watch(&mut b, &w, &nav, 0.6);
         assert_eq!(b.target, Some(0));
+    }
+
+    #[test]
+    fn harder_bots_see_wider_react_faster_and_hold_less() {
+        let [e, n, h] = Difficulty::ALL.map(params);
+        for (lo, hi) in [(&e, &n), (&n, &h)] {
+            assert!(lo.fov_half_deg < hi.fov_half_deg);
+            assert!(lo.reaction.0 > hi.reaction.0 && lo.reaction.1 > hi.reaction.1);
+            assert!(lo.turn_rate < hi.turn_rate);
+            assert!(lo.hold_chance >= hi.hold_chance);
+        }
     }
 }

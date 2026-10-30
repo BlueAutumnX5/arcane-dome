@@ -117,9 +117,82 @@ pub fn install_crash_log() {
     }
 }
 
+/// Memory the game holds, in bytes: RAM (its resident set), and graphics
+/// memory where the kernel reports it (Linux GPU drivers list it per open
+/// GPU file in /proc/self/fdinfo; an integrated GPU's memory is system RAM
+/// that the RAM figure does not include). `None` where the system won't say.
+pub fn memory_use() -> (Option<u64>, Option<u64>) {
+    let ram = std::fs::read_to_string("/proc/self/statm")
+        .ok()
+        .and_then(|s| s.split_whitespace().nth(1)?.parse::<u64>().ok())
+        .map(|pages| pages * 4096);
+    let mut clients: Vec<String> = Vec::new();
+    let mut gpu = None;
+    for entry in std::fs::read_dir("/proc/self/fdinfo")
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let Ok(text) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        // One GPU client can be open under several file numbers.
+        if let Some((client, bytes)) = drm_memory(&text)
+            && !clients.contains(&client)
+        {
+            clients.push(client);
+            gpu = Some(gpu.unwrap_or(0) + bytes);
+        }
+    }
+    (ram, gpu)
+}
+
+/// A GPU file's client id and the memory it holds, from its fdinfo text:
+/// resident memory if listed, else the totals (older kernels), else the
+/// older `drm-memory-` lines.
+fn drm_memory(fdinfo: &str) -> Option<(String, u64)> {
+    let client = fdinfo
+        .lines()
+        .find_map(|l| l.strip_prefix("drm-client-id:"))?
+        .trim()
+        .to_owned();
+    let key = ["drm-resident-", "drm-total-", "drm-memory-"]
+        .into_iter()
+        .find(|k| fdinfo.contains(k))?;
+    let bytes = fdinfo
+        .lines()
+        .filter(|l| l.starts_with(key))
+        .filter_map(|l| {
+            let mut v = l.split_once(':')?.1.split_whitespace();
+            let n: u64 = v.next()?.parse().ok()?;
+            Some(match v.next() {
+                Some("KiB") => n << 10,
+                Some("MiB") => n << 20,
+                Some("GiB") => n << 30,
+                _ => n,
+            })
+        })
+        .sum();
+    Some((client, bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpu_memory_is_read_from_a_drm_fdinfo() {
+        let i915 = "pos:\t0\nflags:\t02100002\ndrm-driver:\ti915\ndrm-client-id:\t42\n\
+                    drm-total-system0:\t12 MiB\ndrm-resident-system0:\t10 MiB\n\
+                    drm-resident-stolen-system0:\t512 KiB\ndrm-engine-render:\t9000 ns\n";
+        assert_eq!(
+            drm_memory(i915),
+            Some(("42".into(), (10 << 20) + (512 << 10)))
+        );
+        let old_amd = "drm-client-id:\t7\ndrm-memory-vram:\t2048 KiB\ndrm-memory-gtt:\t1024 KiB\n";
+        assert_eq!(drm_memory(old_amd), Some(("7".into(), 3 << 20)));
+        assert_eq!(drm_memory("pos:\t0\nflags:\t02\n"), None);
+    }
 
     #[test]
     fn bundle_unpacks_once_and_cleans_up_after_itself() {

@@ -3,6 +3,7 @@
   "name": "Rocket Launcher",
   "short_name": "Rockets",
   "category": "heavy",
+  "icon": "rocket",
   "damage": 25.0,
   "fire_rate_rps": 0.9,
   "recoil": 2.5,
