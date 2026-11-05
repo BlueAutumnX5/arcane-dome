@@ -8,7 +8,7 @@
 
 ## Code
 
-- Arcane Dome contributors, MIT License.
+- Arcane Dome contributors, GNU GPL v3 (GPL-3.0-only).
 
 ## Libraries
 

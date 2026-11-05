@@ -223,7 +223,7 @@ Capture the Flag, King of the Hill, Domination and Territories. Milestone 3:
 
 ## License
 
-Code is released under the [MIT License](LICENSE). Third-party assets keep their
+Code is released under the [GNU General Public License v3](LICENSE). Third-party assets keep their
 own licenses, listed in [CREDITS.md](CREDITS.md).
 
 <br>
@@ -419,4 +419,4 @@ Milestone 1 telah selesai (`v0.1.0`), begitu juga Milestone 2 (`v0.2.0`): editor
 
 ## Lisensi
 
-Kode dirilis di bawah [Lisensi MIT](LICENSE). Aset pihak ketiga tetap mengikuti lisensinya masing-masing, yang tercantum dalam [CREDITS.md](CREDITS.md).
+Kode dirilis di bawah [GNU General Public License v3](LICENSE). Aset pihak ketiga tetap mengikuti lisensinya masing-masing, yang tercantum dalam [CREDITS.md](CREDITS.md).
