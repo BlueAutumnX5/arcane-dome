@@ -1,6 +1,6 @@
 ![English](https://img.shields.io/badge/README-English-1f6feb?style=for-the-badge)
 ## 🇬🇧 ENGLISH Section ||| Untuk Bahasa Indonesia, scroll ke bawah lagi.
->  [!CAUTION]
+>  [!WARNING]
 > # VERY VERY VERY VERY EARLY development!1!1!1! Do not expect playable visuals and gameplay yet!
 
 # Arcane Dome
